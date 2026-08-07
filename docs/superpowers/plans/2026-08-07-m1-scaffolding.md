@@ -674,3 +674,6 @@ Expected: GitHub Actions 三个 job 全绿——
 - `electron-builder.yml` 需恢复 `extraResources`（`dist-python/beancount-engine` → `python/beancount-engine`），注释已标注
 - `package.json` 需补 `build:python` script
 - CI 的 Python 步骤已条件化，M2 落地 `python/` 即自动启用
+- **硬约束（最终审查裁定）**：`python/requirements.txt` 与 `python/requirements-dev.txt` 必须**同一 commit 一次性创建**——CI 的 setup-python 条件为两文件 OR 而缓存依赖两文件并存，分开提交会复发 a1f2168 修复过的失败模式
+- **文档同步（最终审查 Important-2）**：`technical-proposal/release-pipeline.md` 的示例 publish owner/repo 为 `chaoo/beanwise`，与实际 `raychaoo/BeanWise` 不一致，M2 顺手一行同步（否则 M8 发布演练照文档配置会让 electron-updater 静默失败）
+- **测试钩子（最终审查 Important-1，建议 M3）**：生产 CSP（CSP_PROD）无自动化回归覆盖（E2E 未打包模式恒走 CSP_DEV），M3 加测试钩子

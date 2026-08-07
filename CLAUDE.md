@@ -71,6 +71,7 @@ pytest python/tests  # Python Beancount 引擎测试
 - Python `stdout` 响应后**必须 `flush()`**，否则 Node 端收不到
 - 所有 RPC 请求必须带超时（默认 30s），防止悬挂
 - 未签名的 Windows 包会被 SmartScreen 拦截；`latest.yml` 必须随产物一起发布，否则 electron-updater 静默失败
+- 国内网络安装/打包需镜像变量：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`（Electron 二进制）+ `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`（NSIS 工具链），两者缺一不可；排障先查 `%TEMP%\eb-dl-*.lock` 与孤儿 node/electron 进程
 - beancount 动态导入较多，PyInstaller 用 `--collect-all beancount` 并显式收集 `beanquery`（v3 拆包）
 - Monaco 需自定义 beancount 语法高亮，不要用默认语言模式
 
