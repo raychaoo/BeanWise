@@ -47,10 +47,13 @@ jobs:
       - name: Frontend unit tests
         run: npm run test:unit
 
+      # M1 起 python/ 尚不存在，Python 步骤按文件存在性自动跳过；M2 落地后自动启用
       - name: Install Python deps
+        if: hashFiles('python/requirements-dev.txt') != ''
         run: pip install -r python/requirements-dev.txt
 
       - name: Python engine tests
+        if: hashFiles('python/requirements-dev.txt') != ''
         run: pytest python/tests
 
   # ─────────────────────────── 2. 端到端测试 ─────────────────────────
@@ -77,6 +80,7 @@ jobs:
         run: npm ci
 
       - name: Install Python deps
+        if: hashFiles('python/requirements.txt') != ''
         run: pip install -r python/requirements.txt
 
       # Electron 与 chromium 共享系统依赖，--with-deps 一并安装
@@ -111,12 +115,12 @@ jobs:
         run: npm ci
 
       - name: Install Python deps
+        if: hashFiles('python/requirements.txt') != ''
         run: pip install -r python/requirements.txt pyinstaller
 
-      # 注意：PyInstaller 输出目录必须设置为 dist-python/，
-      # 避免与 electron-builder 的 dist/ 输出目录冲突
-      # （在 python/service.spec 里配置 distpath，或命令加 --distpath dist-python）
+      # PyInstaller 输出目录必须为 dist-python/（见 CLAUDE.md 约束 #5）
       - name: Build Python engine (PyInstaller)
+        if: hashFiles('python/requirements.txt') != ''
         run: npm run build:python
 
       # 签名策略：
