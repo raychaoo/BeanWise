@@ -2,6 +2,8 @@ name: Build & Release
 
 on:
   push:
+    branches:
+      - main                  # 推送 main 触发测试 + 构建验证（不发布）
     tags:
       - "v*"                  # 打 tag 触发完整构建 + 发布
   pull_request:
