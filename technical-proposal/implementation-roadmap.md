@@ -68,7 +68,7 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
 
 - GitHub PAT / DeepSeek Key 只存主进程（safeStorage 加密），渲染进程不可见
 - 渲染进程不直连 Python / SQLite / git；AI 请求走主进程代理
-- CSP：生产 `default-src 'self'`，禁 remote / `unsafe-inline` / `unsafe-eval`；开发模式例外：`script-src` 放行 `unsafe-inline`（react-refresh）+ `connect-src ws://localhost:*`（HMR），见 CLAUDE.md 约束 #8
+- CSP：生产 `default-src 'self'`，禁 remote / `unsafe-inline` / `unsafe-eval`；开发模式例外：`script-src` / `style-src` 放行 `unsafe-inline`（react-refresh / vite client 内联样式）+ `connect-src ws://localhost:*`（HMR），见 CLAUDE.md 约束 #8
 - electron-log 脱敏，禁止记录 PAT / API Key
 
 ### 平台与版本（2026-08 定稿：仅 Windows）
