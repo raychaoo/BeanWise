@@ -448,8 +448,7 @@ Expected: 无报错（main/preload 走 node 配置、renderer 走 web 配置，�
 ```bash
 git add src/shared/app.ts src/shared/app.test.ts src/main/index.ts src/preload/index.ts src/renderer/src/App.tsx
 git commit -m "test: 引入共享 APP_NAME 常量与单测基线（M1）
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
+"
 ```
 
 ---
@@ -519,8 +518,7 @@ Expected: PASS（1 个测试；`test:e2e` 会先跑 `electron-vite build` 再启
 ```bash
 git add e2e/smoke.spec.ts src/renderer/src/App.tsx
 git commit -m "test: Playwright Electron E2E 冒烟基线（M1）
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
+"
 ```
 
 ---
@@ -574,8 +572,7 @@ Expected: 构建成功；`dist/` 下出现 `BeanWise Setup 0.1.0.exe` 与 `lates
 ```bash
 git add electron-builder.yml
 git commit -m "build: electron-builder 配置 Windows NSIS 单平台打包（M1）
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
+"
 ```
 
 ---
@@ -644,8 +641,7 @@ Expected: `YAML OK`
 ```bash
 git add .github/workflows/release.yml
 git commit -m "ci: Python 步骤按文件存在性条件化，M1 三 job 全绿（M1）
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
+"
 ```
 
 - [ ] **Step 6: Push 并验证 CI（M1 绿灯验收）**
