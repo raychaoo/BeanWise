@@ -3,8 +3,8 @@ import { join } from 'path'
 import { APP_NAME } from '../shared/app'
 
 const CSP_PROD = "default-src 'self'"
-// 开发模式：electron-vite HMR 需要 WebSocket 连本地 dev server
-const CSP_DEV = "default-src 'self'; connect-src 'self' ws://localhost:*"
+// 开发模式：electron-vite HMR 需要 react-refresh 内联脚本（unsafe-inline）与 WebSocket
+const CSP_DEV = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:*"
 
 function applyCsp(): void {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
