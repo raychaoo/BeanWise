@@ -1,0 +1,19 @@
+appId: com.chaoo.beanwise
+productName: BeanWise
+directories:
+  output: dist
+files:
+  - out/**            # Vite 构建产物
+  - package.json
+extraResources:
+  - from: dist-python/beancount-engine
+    to: python/beancount-engine
+publish:
+  provider: github    # electron-updater 从 GitHub Releases 读 latest.yml
+  owner: chaoo
+  repo: beanwise
+win:
+  target: [nsis]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
