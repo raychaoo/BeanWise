@@ -33,6 +33,7 @@ jobs:
           cache: npm
 
       - uses: actions/setup-python@v5
+        if: hashFiles('python/requirements.txt', 'python/requirements-dev.txt') != ''
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -73,6 +74,7 @@ jobs:
           cache: npm
 
       - uses: actions/setup-python@v5
+        if: hashFiles('python/requirements.txt') != ''
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -108,6 +110,7 @@ jobs:
           cache: npm
 
       - uses: actions/setup-python@v5
+        if: hashFiles('python/requirements.txt') != ''
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
