@@ -1,5 +1,6 @@
 import { app, BrowserWindow, session } from 'electron'
 import { join } from 'path'
+import { APP_NAME } from '../shared/app'
 
 const CSP_PROD = "default-src 'self'"
 // 开发模式：electron-vite HMR 需要 WebSocket 连本地 dev server
@@ -21,7 +22,7 @@ function createWindow(): void {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
-    title: 'BeanWise',
+    title: APP_NAME,
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.mjs'),
       sandbox: false // electron-vite ESM preload 需要；M3 安全评审再收紧
