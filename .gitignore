@@ -4,3 +4,4 @@ dist/
 dist-python/
 .vite/
 *.log
+test-results/
