@@ -5,13 +5,11 @@ directories:
 files:
   - out/**            # Vite 构建产物
   - package.json
-extraResources:
-  - from: dist-python/beancount-engine
-    to: python/beancount-engine
+# extraResources（dist-python/beancount-engine）由 M2 里程碑恢复
 publish:
   provider: github    # electron-updater 从 GitHub Releases 读 latest.yml
-  owner: chaoo
-  repo: beanwise
+  owner: raychaoo
+  repo: BeanWise
 win:
   target: [nsis]
 nsis:
