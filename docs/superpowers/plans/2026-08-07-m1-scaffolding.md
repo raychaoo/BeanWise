@@ -13,7 +13,7 @@
 - **平台仅 Windows**（2026-08 定稿）：NSIS 安装包、`latest.yml` 随产物发布；主进程 `window-all-closed` 直接 `app.quit()`（无 darwin 分支）
 - **版本**：Node ≥22（本机 v22.10.0，CI NODE_VERSION=22）、Python 3.11（M2 才需要）、Beancount v3 锁定（本里程碑不涉及）
 - **TS 严格模式**：`strict: true`；`typecheck` = `tsc --noEmit` 分别跑 node（main/preload/shared）与 web（renderer/shared）两个配置
-- **CSP（约束 #8）**：生产 `default-src 'self'`；开发模式仅放行 `ws://localhost:*`（HMR），不放开任何远程加载 / `unsafe-inline` / `unsafe-eval`
+- **CSP（约束 #8）**：生产 `default-src 'self'`；开发模式放行 `script-src 'self' 'unsafe-inline'`（react-refresh 内联脚本，2026-08-07 用户裁决）+ `connect-src ws://localhost:*`（HMR）；不放开任何远程加载 / `unsafe-eval`
 - **IPC 契约锚点**：`src/shared/ipc.ts` 是通道契约唯一来源（本里程碑只建文件与命名规范，不定义业务通道，M3 填充）
 - **Preload 白名单**：contextBridge 只暴露 `window.beanwise` 一个对象，形状 = `src/shared/api.ts` 的 `BeanWiseApi`
 - **PyInstaller 输出固定 `dist-python/`**：本里程碑**不创建** `dist-python/`，electron-builder 的 `extraResources` 一并移除，由 M2 恢复（注释标注）
@@ -206,8 +206,8 @@ import { app, BrowserWindow, session } from 'electron'
 import { join } from 'path'
 
 const CSP_PROD = "default-src 'self'"
-// 开发模式：electron-vite HMR 需要 WebSocket 连本地 dev server
-const CSP_DEV = "default-src 'self'; connect-src 'self' ws://localhost:*"
+// 开发模式：react-refresh 内联脚本（unsafe-inline）+ HMR WebSocket（用户 2026-08-07 裁决）
+const CSP_DEV = "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:*"
 
 function applyCsp(): void {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {

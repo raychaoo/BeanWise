@@ -56,7 +56,7 @@ pytest python/tests  # Python Beancount 引擎测试
 5. **PyInstaller 输出目录固定为 `dist-python/`**（在 `python/service.spec` 配置 `distpath`），与 electron-builder 的 `dist/` 输出冲突会导致发布产物错误
 6. **IPC 入参校验**：主进程对所有入参做类型与路径校验（防目录穿越），Preload 只暴露白名单 API
 7. **原生模块**：better-sqlite3 需 `electron-rebuild` + `asarUnpack` 配置，否则运行时加载失败
-8. **CSP**：渲染进程 `default-src 'self'`，禁止 remote 加载、禁止 `unsafe-inline` / `unsafe-eval`
+8. **CSP**：渲染进程生产环境 `default-src 'self'`，禁止 remote 加载、禁止 `unsafe-inline` / `unsafe-eval`；开发模式（未打包）例外：`script-src` 放行 `unsafe-inline`（react-refresh 内联脚本，2026-08-07 裁决）+ `connect-src ws://localhost:*`（HMR）
 
 ## 代码规范
 
