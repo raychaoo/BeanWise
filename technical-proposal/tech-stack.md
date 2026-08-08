@@ -16,7 +16,7 @@
 | Python 3.11 | Beancount 引擎运行环境 | — |
 | PyInstaller | 将 Python 引擎打包为独立二进制，随 Electron 分发（`extraResources`） | 推荐 `--collect-all beancount`（动态导入多）+ 显式收集 `beanquery`（v3 拆包）；`--onefile` 启动有解压延迟，引擎常驻可接受 |
 | stdio JSON-RPC | Node ↔ Python 通信协议，JSONL 逐行 | 无端口冲突，生命周期随主进程 |
-| better-sqlite3 + Drizzle ORM | SQLite 索引层 | 原生模块，需 `electron-rebuild` + `asarUnpack` |
+| better-sqlite3 + Drizzle ORM | SQLite 索引层 | 原生模块；13.x 自带 in-tarball N-API prebuild，`asarUnpack` + `npmRebuild: false` 即可（M3 实测，无需 electron-rebuild） |
 | isomorphic-git | git 同步引擎（纯 JS 实现 git 协议，无原生依赖），对接 GitHub 私有仓库 | 替代已停维护的 libgit2 绑定（nodegit） |
 
 ## UI 层

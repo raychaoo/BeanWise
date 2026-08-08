@@ -55,7 +55,7 @@ pytest python/tests  # Python Beancount 引擎测试
 4. **Beancount 锁定 v3**：禁止引入 v2 语法 / API，两者差异大不可混用
 5. **PyInstaller 输出目录固定为 `dist-python/`**（在 `python/service.spec` 配置 `distpath`），与 electron-builder 的 `dist/` 输出冲突会导致发布产物错误
 6. **IPC 入参校验**：主进程对所有入参做类型与路径校验（防目录穿越），Preload 只暴露白名单 API
-7. **原生模块**：better-sqlite3 需 `electron-rebuild` + `asarUnpack` 配置，否则运行时加载失败
+7. **原生模块**：better-sqlite3 13.x 自带 in-tarball N-API prebuild（Electron 43 实测加载），配置 `asarUnpack` + `npmRebuild: false` 即可；`postinstall`（`scripts/postinstall.mjs`）在 CI 下 fail-loud，本机无编译工具链时降级警告（2026-08-09 M3 实测：无需 electron-rebuild）
 8. **CSP**：渲染进程生产环境 `default-src 'self'`，禁止 remote 加载、禁止 `unsafe-inline` / `unsafe-eval`；开发模式（未打包）例外：`script-src` / `style-src` 放行 `unsafe-inline`（react-refresh 内联脚本与 vite client 内联样式，2026-08-07 裁决）+ `connect-src ws://localhost:*`（HMR）
 
 ## 代码规范
