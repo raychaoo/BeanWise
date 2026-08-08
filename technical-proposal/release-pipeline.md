@@ -37,12 +37,12 @@ files:
   - out/**            # Vite 构建产物
   - package.json
 extraResources:
-  - from: dist-python/beancount-engine
-    to: python/beancount-engine
+  - from: dist-python/beancount-engine.exe
+    to: python/
 publish:
   provider: github    # electron-updater 从 GitHub Releases 读 latest.yml
-  owner: chaoo
-  repo: beanwise
+  owner: raychaoo
+  repo: BeanWise
 win:
   target: [nsis]
 nsis:

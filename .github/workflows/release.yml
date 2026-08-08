@@ -44,16 +44,16 @@ jobs:
       - name: Install Node deps
         run: npm ci
 
+      # M2 起 python/ 落地：引擎冒烟（Vitest）与 pytest 都需要 beancount，pip 安装前置
+      - name: Install Python deps
+        if: hashFiles('python/requirements-dev.txt') != ''
+        run: pip install -r python/requirements-dev.txt
+
       - name: TypeScript typecheck
         run: npm run typecheck
 
       - name: Frontend unit tests
         run: npm run test:unit
-
-      # M1 起 python/ 尚不存在，Python 步骤按文件存在性自动跳过；M2 落地后自动启用
-      - name: Install Python deps
-        if: hashFiles('python/requirements-dev.txt') != ''
-        run: pip install -r python/requirements-dev.txt
 
       - name: Python engine tests
         if: hashFiles('python/requirements-dev.txt') != ''
