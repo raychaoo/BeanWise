@@ -12,6 +12,8 @@ import json
 import sys
 import traceback
 
+from . import ledger
+
 
 class RpcError(Exception):
     """带 JSON-RPC 错误码的协议错误。"""
@@ -40,10 +42,22 @@ def _shutdown(params: dict) -> dict:
     return {"shutdown": True}
 
 
+def _parse_file(params: dict) -> dict:
+    filename = _require_string(params, "filename")
+    return ledger.parse_file(filename)
+
+
+def _validate(params: dict) -> dict:
+    filename = _require_string(params, "filename")
+    return ledger.validate(filename)
+
+
 METHODS = {
     "ping": _ping,
     "shutdown": _shutdown,
-    # parse_file / validate（Task 2）、query / render_report（Task 3）在此注册
+    "parse_file": _parse_file,
+    "validate": _validate,
+    # query / render_report（Task 3）在此注册
 }
 
 

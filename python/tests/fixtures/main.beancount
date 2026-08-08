@@ -1,0 +1,14 @@
+option "title" "BeanWise Test Ledger"
+option "operating_currency" "CNY"
+
+2026-01-01 open Assets:Bank:CNB
+2026-01-01 open Equity:Opening-Balances
+2026-01-01 open Expenses:Food
+
+2026-01-02 * "Breakfast"
+  Assets:Bank:CNB  -15.00 CNY
+  Expenses:Food
+
+2026-01-03 * "Coffee"
+  Assets:Bank:CNB  -25.00 CNY
+  Expenses:Food

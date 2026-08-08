@@ -1,0 +1,8 @@
+option "title" "Bad Ledger"
+option "operating_currency" "CNY"
+
+2026-01-01 open Assets:Bank:CNB
+2026-01-01 open Equity:Opening-Balances
+
+2026-01-02 * "Unbalanced"
+  Assets:Bank:CNB  -15.00 CNY
