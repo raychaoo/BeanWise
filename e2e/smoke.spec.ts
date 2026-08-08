@@ -9,8 +9,8 @@ test('应用启动并渲染主窗口', async () => {
 
   await expect(win).toHaveTitle('BeanWise')
   await expect(win.getByRole('heading', { name: 'BeanWise' })).toBeVisible()
-  // preload 白名单 API 已注入渲染进程
-  await expect(win.locator('#preload-app-name')).toHaveText('BeanWise')
+  // preload 白名单 API 已注入渲染进程（M3 面板渲染依赖 getLedgerStatus / listLedgerEntries 调用成功）
+  await expect(win.getByRole('button', { name: '刷新索引' })).toBeVisible()
 
   await app.close()
 })
