@@ -96,9 +96,9 @@ def handle_request(line: str) -> dict | None:
 
     method = request["method"]
     params = request.get("params", {})
-    if not isinstance(params, dict):
-        return {"jsonrpc": "2.0", "id": None, "error": {"code": -32602, "message": "params 必须是对象"}}
     request_id = request.get("id")
+    if not isinstance(params, dict):
+        return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "params 必须是对象"}}
 
     handler = METHODS.get(method)
     if handler is None:

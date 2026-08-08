@@ -51,7 +51,9 @@ def render_report(filename: str, query_string: str, fmt: str = "text") -> dict:
     entries, errors, options = loader.load_file(filename)
     result_types, result_rows = _run_query(entries, options, query_string)
     out = io.StringIO()
-    dcontext = options["dcontext"]
+    dcontext = options.get("dcontext")
+    if dcontext is None:
+        raise QueryError("beancount 加载结果缺少 dcontext，options 结构异常（可能是 beancount 版本变更）")
     if fmt == "csv":
         render_csv(result_types, result_rows, dcontext, out)
     else:

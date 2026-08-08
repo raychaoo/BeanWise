@@ -45,6 +45,12 @@ def test_bad_params_type_rejected():
     assert response["error"]["code"] == -32602
 
 
+def test_bad_params_type_echoes_request_id():
+    response = handle_request('{"jsonrpc": "2.0", "id": 4, "method": "ping", "params": [1]}')
+    assert response["error"]["code"] == -32602
+    assert response["id"] == 4  # id 可确定时必须回显（JSON-RPC 2.0 §4.3/§5.1）
+
+
 def test_notification_gets_no_response():
     assert handle_request('{"jsonrpc": "2.0", "method": "ping", "params": {}}') is None
 
