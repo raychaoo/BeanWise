@@ -5,3 +5,9 @@ dist-python/
 .vite/
 *.log
 test-results/
+
+# Python
+build/
+__pycache__/
+*.py[cod]
+.pytest_cache/
