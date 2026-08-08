@@ -48,7 +48,7 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
 
 ### Node ↔ Python（stdio JSON-RPC）
 
-- JSON-RPC 2.0，JSONL 逐行（`\n` 分隔）；方法：`ping` / `parse_file` / `validate` / `query` / `render_report` / `shutdown`
+- JSON-RPC 2.0，JSONL 逐行（`\n` 分隔）；方法：`ping` / `parse_file` / `parse_entries` / `validate` / `query` / `render_report` / `shutdown`
 - stdout 响应后必须 `flush()`；所有请求带超时（默认 30s）
 - 主进程 spawn 管理；异常退出指数退避重启；`before-quit` 优雅关闭
 - 开发模式调本机 `python3 service.py --stdio`；打包后经 `extraResources` 从 `process.resourcesPath` 定位
@@ -58,6 +58,13 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
 - 类型定义唯一来源：`src/shared/ipc.ts` → preload 白名单 → main handler 注册，禁止旁路
 - 通道命名：`{domain}:{action}` 小写 kebab，如 `ledger:validate`、`sync:push`、`ai:parse`
 - 主进程对所有入参做类型与路径校验（防目录穿越）
+- M3 定稿通道（类型唯一来源 `src/shared/ipc.ts`，M4-M8 复用）：
+
+  | 通道 | params | result 要点 |
+  |---|---|---|
+  | `ledger:refresh-index` | 无（路径主进程持有） | `{changed, status: ok\|error\|missing, entryCount, errorCount, message?}` |
+  | `ledger:status` | 无 | `LedgerStatus \| null`（path/title/operatingCurrency[]/entryCount/errorCount/status/lastError/updatedAt） |
+  | `ledger:list-entries` | `{limit? 默认100上限1000, offset? 默认0}` | `{entries: [{id,type,date,flag,payee,narration,account,lineno}], total}` |
 
 ### 数据流铁律
 
