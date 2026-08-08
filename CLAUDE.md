@@ -74,6 +74,7 @@ pytest python/tests  # Python Beancount 引擎测试
 - 国内网络安装/打包需镜像变量：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`（Electron 二进制）+ `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`（NSIS 工具链），两者缺一不可；排障先查 `%TEMP%\eb-dl-*.lock` 与孤儿 node/electron 进程
 - beancount 动态导入较多，PyInstaller 用 `--collect-all beancount` 并显式收集 `beanquery`（v3 拆包）
 - Monaco 需自定义 beancount 语法高亮，不要用默认语言模式
+- VS Code 集成终端会泄漏 `ELECTRON_RUN_AS_NODE=1`，导致 `npm run dev` / E2E 报 "module 'electron' does not provide an export named 'BrowserWindow'"；运行前 `env -u ELECTRON_RUN_AS_NODE`
 
 ## 文档索引
 
