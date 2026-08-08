@@ -58,11 +58,27 @@ export class PythonSvc {
   }
 
   private spawnProcess(): void {
+    // 清理挂起的退避 timer：退避窗口内的 ensureRunning/request 会直接 spawn，
+    // 若不清掉，timer 触发时会再 spawn 一次并替换 this.proc → 前一个成为孤儿进程
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer)
+      this.retryTimer = null
+    }
     const [cmd, ...args] = this.options.command
     const proc = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'inherit'] })
     this.proc = proc
     proc.stdin?.on('error', () => {}) // 进程提前退出时忽略管道错误
     proc.stdout?.on('error', () => {})
+    proc.on('error', (err) => {
+      // spawn 失败（如引擎二进制缺失 ENOENT）不触发 'exit'：必须按进程死亡处理——
+      // 快速失败在途请求并调度重启，否则请求挂到超时、且无 listener 的 error 会抛未捕获异常
+      if (this.proc !== proc) return // 迟到的 error（已在 exit 后重启）不误伤当前进程
+      this.proc = null
+      const svcErr = new PythonSvcError(`引擎进程启动失败（spawn: ${err.message}）`)
+      for (const resolve of this.pending.values()) resolve({ id: 0, error: { code: -32603, message: svcErr.message } })
+      this.pending.clear()
+      this.scheduleRestart()
+    })
     const rl = createInterface({ input: proc.stdout! })
     rl.on('line', (line) => {
       let env: RpcEnvelope
