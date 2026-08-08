@@ -16,20 +16,25 @@
     "test:unit": "vitest run",
     "test:e2e": "npm run build && playwright test",
     "dist:win": "npm run build && electron-builder --win",
-    "build:python": "node scripts/build-python.mjs"
+    "build:python": "node scripts/build-python.mjs",
+    "postinstall": "electron-builder install-app-deps || echo [postinstall] native-rebuild skipped: better-sqlite3 ships N-API prebuilds, no node-gyp toolchain required"
   },
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "drizzle-orm": "^0.45.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3",
+    "electron-rebuild": "^3.2.9",
     "electron-vite": "^6.0.0-beta.1",
     "typescript": "^7.0.2",
     "vite": "^8.2.1",

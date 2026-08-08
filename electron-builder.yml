@@ -5,6 +5,11 @@ directories:
 files:
   - out/**            # Vite 构建产物
   - package.json
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**"
+# better-sqlite3 13.x 随 npm 包自带 N-API 预编译二进制（prebuilds/），Node/Electron ABI 兼容，
+# 无需 node-gyp 重建（本机无 VS Build Tools 时 install-app-deps 亦可通过）
+npmRebuild: false
 extraResources:
   # M2：PyInstaller 产物打入安装包（resources/python/beancount-engine.exe，M3 PythonSvc 定位点）
   - from: dist-python/beancount-engine.exe
