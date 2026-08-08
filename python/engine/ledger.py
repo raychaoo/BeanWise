@@ -6,6 +6,7 @@ ValidationError）。因此 validate 与 parse_file 共享同一加载管线，�
 错误列表（解析 + 记账 + 校验）完全一致——M3 校验流程可任选其一，或两者都调做冗余。
 """
 from beancount import loader
+from beancount.core.data import Open, Transaction
 
 
 def _serialize_errors(errors) -> list[dict]:
@@ -46,3 +47,44 @@ def validate(filename: str) -> dict:
     """显式校验入口：返回全量错误列表（与 parse_file.errors 相同，见模块 docstring）。"""
     _entries, errors, _options = loader.load_file(filename)
     return {"errors": _serialize_errors(errors)}
+
+
+def _serialize_entry(entry) -> dict:
+    """把 beancount entry 转成 JSON 友好 dict（M3 SQLite 索引数据源）。
+
+    扁平结构：通用字段（type/date/lineno）+ 类型专属字段（Transaction 的
+    postings、Open 的 account），其余类型只带通用字段。金额 Decimal 一律
+    str() 保持精度（与 M2 协议一致）。
+    """
+    item = {
+        "type": type(entry).__name__,
+        "date": entry.date.isoformat(),
+        "lineno": entry.meta.get("lineno") if isinstance(entry.meta, dict) else None,
+    }
+    if isinstance(entry, Transaction):
+        item["flag"] = entry.flag
+        item["payee"] = entry.payee
+        item["narration"] = entry.narration
+        item["postings"] = [
+            {
+                "account": p.account,
+                "units_number": str(p.units.number),
+                "units_currency": p.units.currency,
+                "cost_number": str(p.cost.number) if p.cost else None,
+                "cost_currency": p.cost.currency if p.cost else None,
+            }
+            for p in entry.postings
+        ]
+    elif isinstance(entry, Open):
+        item["account"] = entry.account
+    return item
+
+
+def parse_entries(filename: str) -> dict:
+    """解析文件，返回条目明细 + 错误列表 + options（M3 SQLite 索引数据源）。"""
+    entries, errors, options = loader.load_file(filename)
+    return {
+        "entries": [_serialize_entry(e) for e in entries],
+        "errors": _serialize_errors(errors),
+        "options": _serialize_options(options),
+    }

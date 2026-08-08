@@ -48,6 +48,11 @@ def _parse_file(params: dict) -> dict:
     return ledger.parse_file(filename)
 
 
+def _parse_entries(params: dict) -> dict:
+    filename = _require_string(params, "filename")
+    return ledger.parse_entries(filename)
+
+
 def _validate(params: dict) -> dict:
     filename = _require_string(params, "filename")
     return ledger.validate(filename)
@@ -77,6 +82,7 @@ def _render_report(params: dict) -> dict:
 METHODS = {
     "ping": _ping,
     "parse_file": _parse_file,
+    "parse_entries": _parse_entries,
     "validate": _validate,
     "query": _query,
     "render_report": _render_report,
