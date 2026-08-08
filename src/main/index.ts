@@ -81,7 +81,10 @@ app.on('before-quit', (event) => {
   quitHandled = true
   event.preventDefault()
   void (async () => {
-    if (pythonSvc) await pythonSvc.stop()
-    app.quit()
+    try {
+      if (pythonSvc) await pythonSvc.stop()
+    } finally {
+      app.quit()
+    }
   })()
 })
