@@ -13,6 +13,7 @@ import sys
 import traceback
 
 from . import ledger
+from . import querying
 
 
 class RpcError(Exception):
@@ -52,12 +53,31 @@ def _validate(params: dict) -> dict:
     return ledger.validate(filename)
 
 
+def _query(params: dict) -> dict:
+    filename = _require_string(params, "filename")
+    query_string = _require_string(params, "query")
+    try:
+        return querying.run_query(filename, query_string)
+    except querying.QueryError as exc:
+        raise RpcError(-32001, str(exc)) from exc
+
+
+def _render_report(params: dict) -> dict:
+    filename = _require_string(params, "filename")
+    query_string = _require_string(params, "query")
+    fmt = params.get("format", "text")
+    if fmt not in ("text", "csv"):
+        raise RpcError(-32602, "format 只能是 'text' 或 'csv'")
+    return querying.render_report(filename, query_string, fmt)
+
+
 METHODS = {
     "ping": _ping,
-    "shutdown": _shutdown,
     "parse_file": _parse_file,
     "validate": _validate,
-    # query / render_report（Task 3）在此注册
+    "query": _query,
+    "render_report": _render_report,
+    "shutdown": _shutdown,
 }
 
 
