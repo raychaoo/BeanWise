@@ -5,7 +5,10 @@ directories:
 files:
   - out/**            # Vite 构建产物
   - package.json
-# extraResources（dist-python/beancount-engine）由 M2 里程碑恢复
+extraResources:
+  # M2：PyInstaller 产物打入安装包（resources/python/beancount-engine.exe，M3 PythonSvc 定位点）
+  - from: dist-python/beancount-engine.exe
+    to: python/
 publish:
   provider: github    # electron-updater 从 GitHub Releases 读 latest.yml
   owner: raychaoo
