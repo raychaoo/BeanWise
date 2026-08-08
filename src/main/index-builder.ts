@@ -65,7 +65,9 @@ function upsertMeta(db: DrizzleDb, patch: Partial<typeof ledgerMeta.$inferInsert
 /**
  * 索引重建管线（数据流铁律：先校验 → 通过才重建；失败保持旧索引）：
  * 1. 文件不存在 → status='missing'
- * 2. hash 变更检测：与 ledger_meta 缓存相同 → 跳过（changed=false）
+ * 2. hash 变更检测：仅当缓存 status='ok' 且 hash 相同 → 跳过（changed=false）；
+ *    error/missing 一律重新解析（错误路径不更新 fileHash，文件回退到旧 ok 内容时
+ *    若只比对 hash 会误跳过并残留 stale error）
  * 3. parse_entries 校验：errors 非空 → status='error'，不重建
  * 4. 事务：清空 postings/entries → 全量插入 → 更新 ledger_meta
  * 注意：M3 的「增量」= 变更检测跳过；解析与重建本身是全量的（引擎无状态）。
@@ -86,7 +88,7 @@ export async function refreshIndex(
   }
 
   const meta = db.select().from(ledgerMeta).where(eq(ledgerMeta.id, 1)).get()
-  if (meta?.fileHash === fileHash && meta.status !== 'missing') {
+  if (meta?.fileHash === fileHash && meta.status === 'ok') {
     return {
       changed: false,
       status: meta.status,

@@ -43,7 +43,7 @@ describe('索引重建管线（M3）', () => {
     expect(status?.operatingCurrency).toEqual(['CNY'])
     expect(status?.status).toBe('ok')
 
-    const listed = listEntries(drizzle,100, 0)
+    const listed = listEntries(drizzle, 100, 0)
     expect(listed.total).toBe(5)
     const txs = listed.entries.filter((e) => e.type === 'Transaction')
     expect(txs).toHaveLength(2)
@@ -67,7 +67,7 @@ describe('索引重建管线（M3）', () => {
     const result = await refreshIndex(drizzle, engine, workFile)
     expect(result.changed).toBe(true)
     expect(result.entryCount).toBe(6)
-    const listed = listEntries(drizzle,100, 0)
+    const listed = listEntries(drizzle, 100, 0)
     expect(listed.entries.some((e) => e.narration === 'Lunch')).toBe(true)
   }, 30_000)
 
@@ -79,7 +79,25 @@ describe('索引重建管线（M3）', () => {
     expect(result.message).toContain('does not balance')
     // 旧索引仍为上一次 ok 的内容
     expect(getLedgerStatus(drizzle)?.entryCount).toBe(6)
-    expect(listEntries(drizzle,100, 0).total).toBe(6)
+    expect(listEntries(drizzle, 100, 0).total).toBe(6)
+  }, 30_000)
+
+  it('error 后文件回退到与上次 ok 完全一致的内容 → 重新解析，status 恢复 ok（防 stale error 残留）', async () => {
+    // 坏内容解析失败时不更新 fileHash（有意保留上次 ok 的 hash）；若 skip guard 不要求
+    // status==='ok'，回退到相同内容会误命中 skip → changed=false + 残留 error。
+    copyFileSync(MAIN_FIXTURE, workFile)
+    const first = await refreshIndex(drizzle, engine, workFile)
+    expect(first.status).toBe('ok')
+    copyFileSync(BAD_FIXTURE, workFile)
+    const bad = await refreshIndex(drizzle, engine, workFile)
+    expect(bad.status).toBe('error')
+    expect(bad.changed).toBe(true)
+    copyFileSync(MAIN_FIXTURE, workFile) // 内容与 first 完全一致（hash 相同）
+    const again = await refreshIndex(drizzle, engine, workFile)
+    expect(again.changed).toBe(true)
+    expect(again.status).toBe('ok')
+    expect(again.errorCount).toBe(0)
+    expect(getLedgerStatus(drizzle)?.status).toBe('ok')
   }, 30_000)
 
   it('文件不存在 → status=missing', async () => {
@@ -90,7 +108,7 @@ describe('索引重建管线（M3）', () => {
   it('listEntries 分页 limit/offset 生效', async () => {
     copyFileSync(MAIN_FIXTURE, workFile)
     await refreshIndex(drizzle, engine, workFile)
-    const page = listEntries(drizzle,2, 1)
+    const page = listEntries(drizzle, 2, 1)
     expect(page.entries).toHaveLength(2)
     expect(page.total).toBe(5)
     expect(page.entries[0].date >= '2026-01-01').toBe(true) // 按 date, id 升序
