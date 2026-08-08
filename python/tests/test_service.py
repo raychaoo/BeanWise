@@ -55,6 +55,11 @@ def test_notification_gets_no_response():
     assert handle_request('{"jsonrpc": "2.0", "method": "ping", "params": {}}') is None
 
 
+def test_parse_entries_missing_filename_rejected():
+    response = handle_request('{"jsonrpc": "2.0", "id": 6, "method": "parse_entries", "params": {}}')
+    assert response["error"]["code"] == -32602
+
+
 def test_render_report_bad_bql_returns_query_error():
     response = handle_request(
         json.dumps(
