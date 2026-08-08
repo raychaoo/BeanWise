@@ -68,7 +68,10 @@ def _render_report(params: dict) -> dict:
     fmt = params.get("format", "text")
     if fmt not in ("text", "csv"):
         raise RpcError(-32602, "format 只能是 'text' 或 'csv'")
-    return querying.render_report(filename, query_string, fmt)
+    try:
+        return querying.render_report(filename, query_string, fmt)
+    except querying.QueryError as exc:
+        raise RpcError(-32001, str(exc)) from exc
 
 
 METHODS = {

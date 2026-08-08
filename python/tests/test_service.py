@@ -1,5 +1,11 @@
 """RPC 分发单元测试（进程内直接调用 handle_request）。"""
+import json
+from pathlib import Path
+
 from engine.rpc import handle_request
+
+FIXTURES = Path(__file__).parent / "fixtures"
+MAIN = str(FIXTURES / "main.beancount")
 
 
 def _result(line: str) -> dict:
@@ -41,3 +47,17 @@ def test_bad_params_type_rejected():
 
 def test_notification_gets_no_response():
     assert handle_request('{"jsonrpc": "2.0", "method": "ping", "params": {}}') is None
+
+
+def test_render_report_bad_bql_returns_query_error():
+    response = handle_request(
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "render_report",
+                "params": {"filename": MAIN, "query": "SELECT FROM"},
+            }
+        )
+    )
+    assert response["error"]["code"] == -32001
