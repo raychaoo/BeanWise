@@ -65,6 +65,8 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
   | `ledger:refresh-index` | 无（路径主进程持有） | `{changed, status: ok\|error\|missing, entryCount, errorCount, message?}` |
   | `ledger:status` | 无 | `LedgerStatus \| null`（path/title/operatingCurrency[]/entryCount/errorCount/status/lastError/updatedAt） |
   | `ledger:list-entries` | `{limit? 默认100上限1000, offset? 默认0}` | `{entries: [{id,type,date,flag,payee,narration,account,lineno}], total}` |
+  | `ledger:add-entry`（M4） | `{date, flag?('*'\|'!'), payee?, narration?, postings: [{account, number: str(十进制金额), currency}]}`（2~20 行） | `{ok, message?, status, entryCount, errorCount}`（status 为索引重建后状态） |
+  | `ledger:list-accounts`（M4） | 无 | `{accounts: string[]}`（postings 表 DISTINCT，上限 500） |
 
 ### 数据流铁律
 
@@ -93,7 +95,7 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
 | M1 | Vite+Electron+TS 骨架、npm scripts、electron-builder 出包、CI 基线 | 业务代码；签名（留 M8） |
 | M2 | Python service + JSON-RPC + 6 个方法 + pytest + PyInstaller | 增量解析策略（M3）；AI 解析（走主进程代理，不经 Python） |
 | M3 | 3 层 IPC 骨架、Drizzle 表结构、增量解析→索引重建、PythonSvc 生命周期 | 业务 UI；录入表单 |
-| M4 | ProForm 录入表单、校验错误展示、落文件→索引链路 | 编辑已有交易（M5）；AI 录入（M7） |
+| M4 | ProForm 录入表单、校验错误展示、落文件→索引链路（金额一律十进制字符串 + 末行自动平衡；追加写 + 索引 error 时 truncate 回滚；首文件自动补账户 open 行——写失败策略见 data-consistency.md） | 编辑已有交易（M5）；AI 录入（M7） |
 | M5 | Monaco 编辑器 + beancount 语法高亮、保存/校验、DiffEditor 基础 | 三路合并 UI（M6） |
 | M6 | isomorphic-git 推拉、PAT 录入（safeStorage）、三路合并冲突 UI | 自动定时同步（可后置） |
 | M7 | DeepSeek 代理、function calling tool schema、主进程 schema 校验 | 提示词工程打磨 |

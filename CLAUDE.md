@@ -28,7 +28,7 @@ pytest python/tests  # Python Beancount 引擎测试
 ## 技术栈
 
 - **桌面框架**：Electron · Vite · React + TypeScript（strict）
-- **UI**：Ant Design + ProComponents（ProForm 录入）· Ant Charts · Monaco Editor · Zustand
+- **UI**：Ant Design（antd 5.x，**禁 v6**：@ant-design/pro-components 2.8.x peer 仅 `^4 || ^5`，v6 迁移评估留 M8；必须配 @ant-design/v5-patch-for-react-19，main.tsx 首行导入）+ ProComponents（ProForm 录入）· Ant Charts · Monaco Editor · Zustand 5
 - **数据**：better-sqlite3 + Drizzle ORM · electron-log · electron-store · Electron safeStorage
 - **引擎**：Python 3.11 + Beancount v3 · PyInstaller · stdio JSON-RPC
 - **工程化**：Vitest · pytest · Playwright · electron-builder · electron-updater · GitHub Actions
@@ -56,7 +56,7 @@ pytest python/tests  # Python Beancount 引擎测试
 5. **PyInstaller 输出目录固定为 `dist-python/`**（在 `python/service.spec` 配置 `distpath`），与 electron-builder 的 `dist/` 输出冲突会导致发布产物错误
 6. **IPC 入参校验**：主进程对所有入参做类型与路径校验（防目录穿越），Preload 只暴露白名单 API
 7. **原生模块**：better-sqlite3 13.x 自带 in-tarball N-API prebuild（Electron 43 实测加载），配置 `asarUnpack` + `npmRebuild: false` 即可；`postinstall`（`scripts/postinstall.mjs`）在 CI 下 fail-loud，本机无编译工具链时降级警告（2026-08-09 M3 实测：无需 electron-rebuild）
-8. **CSP**：渲染进程生产环境 `default-src 'self'`，禁止 remote 加载、禁止 `unsafe-inline` / `unsafe-eval`；开发模式（未打包）例外：`script-src` / `style-src` 放行 `unsafe-inline`（react-refresh 内联脚本与 vite client 内联样式，2026-08-07 裁决）+ `connect-src ws://localhost:*`（HMR）
+8. **CSP**：渲染进程生产环境 `default-src 'self'; style-src 'self' 'unsafe-inline'`——`style-src` 放宽因 antd v5 CSS-in-JS 运行时注入 `<style>`（2026-08-09 裁决），`script-src` 保持严格：禁止 remote 加载、禁止 `unsafe-inline` / `unsafe-eval`；开发模式（未打包）例外：`script-src` / `style-src` 放行 `unsafe-inline`（react-refresh 内联脚本与 vite client 内联样式，2026-08-07 裁决）+ `connect-src ws://localhost:*`（HMR）
 
 ## 代码规范
 
@@ -74,6 +74,8 @@ pytest python/tests  # Python Beancount 引擎测试
 - 国内网络安装/打包需镜像变量：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`（Electron 二进制）+ `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`（NSIS 工具链），两者缺一不可；排障先查 `%TEMP%\eb-dl-*.lock` 与孤儿 node/electron 进程
 - beancount 动态导入较多，PyInstaller 用 `--collect-all beancount` 并显式收集 `beanquery`（v3 拆包）
 - Monaco 需自定义 beancount 语法高亮，不要用默认语言模式
+- 金额一律十进制字符串（`src/shared/decimal.ts` 精确运算，禁 `parseFloat` / `Number`）：渲染端 InputNumber 用 `stringMode` 直取字符串，主进程余额校验用 `addDecimalStrings`；antd InputNumber 的 `precision` 在 stringMode 下不生效（仅做显示约束，数值校验以正则为准）
+- antd 锁定 5.x：pro-components 2.8.x 不支持 antd v6（peer 仅 `^4 || ^5`），升级需连带 pro-components 3.x beta，M8 图表期再评估
 - VS Code 集成终端会泄漏 `ELECTRON_RUN_AS_NODE=1`，导致 `npm run dev` / E2E 报 "module 'electron' does not provide an export named 'BrowserWindow'"；运行前 `env -u ELECTRON_RUN_AS_NODE`
 
 ## 文档索引
