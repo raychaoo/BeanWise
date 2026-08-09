@@ -22,7 +22,9 @@ body {
 }
 
 /* M5：编辑器视图布局 */
-.editor-view { display: flex; flex-direction: column; height: 100%; }
+/* position: relative 为 .editor-empty 的 absolute 提供包含块——否则其以初始包含块
+   （视口）为参照，missing 空态会覆盖全窗口并拦截 Sider/Header 点击（Fix round 1） */
+.editor-view { position: relative; display: flex; flex-direction: column; height: 100%; }
 .editor-toolbar { padding-bottom: 8px; }
 .editor-main { flex: 1; min-height: 0; border: 1px solid #f0f0f0; }
 .editor-conflict { margin-bottom: 8px; }
