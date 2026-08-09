@@ -9,7 +9,7 @@
 | 5 | CI/CD | 无 | **GitHub Actions Windows 单平台构建** | 与 GitHub 仓库、electron-updater 形成闭环 |
 | 6 | E2E 测试 | 仅单测 | **补 Playwright** | 录入→校验→同步链路单测覆盖不到 |
 | 7 | 签名 | 无 | **electron-builder Authenticode 代码签名** | 自动更新的硬性前置条件 |
-| 8 | Monaco | 仅架构图提及 | **正式纳入技术栈** | 承担编辑、beancount 语法高亮、git diff 三职责 |
+| 8 | Monaco | 仅架构图提及 | **正式纳入技术栈（M5 落地）** | 承担编辑、beancount 语法高亮、git diff 三职责；M5 定稿：裸 monaco-editor（0.56）+ Vite `?worker` 本地打包 worker（`monaco-editor/editor/editor.worker?worker`——0.56 exports map 下带 `esm/vs` 前缀会双写报错）、自研 monarch beancount 语言、生产 CSP 补 `worker-src 'self'`；编辑器保存走整文件覆盖（tmp 校验 + rename 原子替换，校验失败不落盘） |
 | 9 | git 冲突 UX | 未定义 | **自研三路合并 UI（基于 Monaco 双向 DiffEditor 组合）** | 否则同步功能体验断裂；Monaco 无内置三路合并器（VS Code 合并编辑器为闭源，不在 Monaco 中） |
 | 10 | 安全边界 | 未定义 | **CSP + Key 只存主进程** | Token / API Key 不落渲染进程 |
 | 11 | git 同步引擎 | AutoGit v2.2 + libgit2 | **isomorphic-git** | 原方案在 npm 查无此库；唯一 libgit2 绑定 nodegit 已停维护且 Windows 本地编译困难；isomorphic-git 纯 JS 零原生依赖，Electron 内免编译 |

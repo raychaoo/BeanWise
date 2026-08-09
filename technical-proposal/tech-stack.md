@@ -25,7 +25,7 @@
 |---|---|
 | Ant Design + ProComponents | ProForm 承载 Beancount 录入表单 |
 | Ant Design Charts | 数据可视化图表 |
-| Monaco Editor | 账本编辑（自定义 beancount 语法高亮）+ git 冲突合并 UI（双向 DiffEditor 组合） |
+| Monaco Editor | 账本编辑 + git 冲突合并 UI（双向 DiffEditor 组合）；M5 定稿：裸 monaco-editor（0.56），worker 经 Vite `?worker` 本地打包（`monaco-editor/editor/editor.worker?worker`），自研 monarch beancount 语法高亮，CSS 经相对路径直入 node_modules |
 | Zustand | 状态管理 |
 
 ## AI 辅助

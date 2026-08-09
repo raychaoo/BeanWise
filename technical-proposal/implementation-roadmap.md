@@ -67,6 +67,8 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
   | `ledger:list-entries` | `{limit? 默认100上限1000, offset? 默认0}` | `{entries: [{id,type,date,flag,payee,narration,account,lineno}], total}` |
   | `ledger:add-entry`（M4） | `{date, flag?('*'\|'!'), payee?, narration?, postings: [{account, number: str(十进制金额), currency}]}`（2~20 行） | `{ok, message?, status, entryCount, errorCount}`（status 为索引重建后状态） |
   | `ledger:list-accounts`（M4） | 无 | `{accounts: string[]}`（postings 表 DISTINCT，上限 500） |
+  | `ledger:read-file`（M5） | 无（路径主进程持有） | `{ok, content?, fingerprint?, message?}`（ENOENT → ok:false + message；fingerprint 为打开基线 sha256，保存时比对） |
+  | `ledger:save-file`（M5） | `{content, expectedFingerprint}` | `{ok, conflict?, diskContent?, diskFingerprint?, fingerprint?, status?, entryCount?, errorCount?, message?}`（conflict = 外部修改冲突未落盘，disk* 为同一次读取快照） |
 
 ### 数据流铁律
 
@@ -77,7 +79,7 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
 
 - GitHub PAT / DeepSeek Key 只存主进程（safeStorage 加密），渲染进程不可见
 - 渲染进程不直连 Python / SQLite / git；AI 请求走主进程代理
-- CSP：生产 `default-src 'self'`，禁 remote / `unsafe-inline` / `unsafe-eval`；开发模式例外：`script-src` / `style-src` 放行 `unsafe-inline`（react-refresh / vite client 内联样式）+ `connect-src ws://localhost:*`（HMR），见 CLAUDE.md 约束 #8
+- CSP：生产 `default-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self'`（`style-src` 放宽因 antd CSS-in-JS；`worker-src` 因 Monaco worker 独立 chunk）；禁 remote 加载、`script-src` 禁 `unsafe-inline` / `unsafe-eval`；开发模式例外：`script-src` / `style-src` 放行 `unsafe-inline`（react-refresh / vite client 内联样式）+ `connect-src ws://localhost:*`（HMR），完整口径见 CLAUDE.md 约束 #8
 - electron-log 脱敏，禁止记录 PAT / API Key
 
 ### 平台与版本（2026-08 定稿：仅 Windows）
@@ -96,7 +98,7 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
 | M2 | Python service + JSON-RPC + 6 个方法 + pytest + PyInstaller | 增量解析策略（M3）；AI 解析（走主进程代理，不经 Python） |
 | M3 | 3 层 IPC 骨架、Drizzle 表结构、增量解析→索引重建、PythonSvc 生命周期 | 业务 UI；录入表单 |
 | M4 | ProForm 录入表单、校验错误展示、落文件→索引链路（金额一律十进制字符串 + 末行自动平衡；追加写 + 索引 error 时 truncate 回滚；首文件自动补账户 open 行——写失败策略见 data-consistency.md） | 编辑已有交易（M5）；AI 录入（M7） |
-| M5 | Monaco 编辑器 + beancount 语法高亮、保存/校验、DiffEditor 基础 | 三路合并 UI（M6） |
+| M5 | Monaco 编辑器 + 自研 monarch beancount 语法高亮、整文件覆盖保存（tmp 校验 + rename 原子替换，校验失败不落盘）、外部修改冲突检测（sha256 指纹比对 + DiffEditor 决策）、DiffEditor 基础；生产 CSP 补 `worker-src 'self'`（Monaco worker 独立 chunk） | 三路合并 UI（M6） |
 | M6 | isomorphic-git 推拉、PAT 录入（safeStorage）、三路合并冲突 UI | 自动定时同步（可后置） |
 | M7 | DeepSeek 代理、function calling tool schema、主进程 schema 校验 | 提示词工程打磨 |
 | M8 | Ant Charts 报表、electron-updater 升级链、代码签名、发布演练 | — |
