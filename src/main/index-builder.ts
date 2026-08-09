@@ -48,7 +48,8 @@ export interface ListEntriesResult {
   total: number
 }
 
-function sha256File(filename: string): string {
+// M5：编辑器保存链路复用（ledger:read-file 打开基线 / ledger:save-file 冲突比对）
+export function sha256File(filename: string): string {
   return createHash('sha256').update(readFileSync(filename)).digest('hex')
 }
 

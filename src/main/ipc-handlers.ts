@@ -1,11 +1,12 @@
-import { appendFileSync, closeSync, mkdirSync, openSync, readSync, statSync, truncateSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync, truncateSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { computeBalancingNumber } from '../shared/decimal'
-import type { AddEntryResult, ListAccountsResult, ListEntriesParams, RefreshResult } from '../shared/ipc'
+import type { AddEntryResult, ListAccountsResult, ListEntriesParams, ReadFileResult, RefreshResult, SaveFileParams, SaveFileResult } from '../shared/ipc'
 import type { DrizzleDb } from './db'
 import { postings } from './db/schema'
 import { serializeEntry, serializeFirstEntryBlock, validateEntryParams } from './entry-serializer'
-import { getLedgerStatus, listEntries, refreshIndex } from './index-builder'
+import { getLedgerStatus, listEntries, refreshIndex, sha256File } from './index-builder'
 import type { PythonSvc } from './python-svc'
 
 /** 可注入的 IPC 注册器（测试传 mock，主进程传 electron.ipcMain） */
@@ -48,6 +49,21 @@ function validateListParams(params: unknown): { limit: number; offset: number } 
     limit: raw.limit ?? DEFAULT_LIMIT,
     offset: raw.offset ?? 0
   }
+}
+
+const SHA256_RE = /^[a-f0-9]{64}$/
+const MAX_LEDGER_CONTENT_BYTES = 20 * 1024 * 1024
+
+function validateSaveParams(raw: unknown): SaveFileParams {
+  const p = (raw ?? {}) as Partial<SaveFileParams>
+  if (typeof p.content !== 'string') throw new Error('content 必须是字符串')
+  if (Buffer.byteLength(p.content, 'utf8') > MAX_LEDGER_CONTENT_BYTES) {
+    throw new Error('账本内容超过 20MB 上限')
+  }
+  if (typeof p.expectedFingerprint !== 'string' || !SHA256_RE.test(p.expectedFingerprint)) {
+    throw new Error('expectedFingerprint 必须是 64 位小写 sha256 hex')
+  }
+  return { content: p.content, expectedFingerprint: p.expectedFingerprint }
 }
 
 /** 注册 ledger 域 IPC 通道（roadmap「IPC 契约」：类型唯一来源 ipc.ts → preload 白名单 → main handler） */
@@ -121,5 +137,59 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
       .limit(500)
       .all()
     return { accounts: rows.map((r) => r.account) }
+  })
+
+  // M5：读账本全文（渲染端编辑基线；ENOENT → ok:false，编辑器 Empty 态）
+  ipc.handle('ledger:read-file', (): ReadFileResult => {
+    try {
+      const content = readFileSync(deps.ledgerPath, 'utf8')
+      return { ok: true, content, fingerprint: sha256File(deps.ledgerPath) }
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return { ok: false, message: '账本文件不存在，请先在录入视图录一笔创建' }
+      }
+      throw err
+    }
+  })
+
+  // M5：整文件覆盖保存——指纹比对（外部修改冲突检测）→ 写 tmp → parse 校验 → rename 原子替换
+  // → 索引重建。校验失败不落盘（tmp 删除、原文件不动），比 M4 append 的「写后 truncate 回滚」更干净
+  ipc.handle('ledger:save-file', async (_event: unknown, raw: unknown): Promise<SaveFileResult> => {
+    const { content, expectedFingerprint } = validateSaveParams(raw)
+
+    // 1. 外部修改冲突检测：同一次读取的快照（内容 + 指纹），无二次读取竞态
+    let diskContent: string
+    try {
+      diskContent = readFileSync(deps.ledgerPath, 'utf8')
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('账本文件不存在')
+      throw err
+    }
+    const diskFingerprint = createHash('sha256').update(diskContent).digest('hex')
+    if (diskFingerprint !== expectedFingerprint) {
+      return { ok: false, conflict: true, diskContent, diskFingerprint }
+    }
+
+    // 2. 写同目录临时文件 → parse 校验（引擎无状态，tmp 路径合法）
+    const tmpPath = `${deps.ledgerPath}.m5tmp`
+    rmSync(tmpPath, { force: true }) // 清理上次崩溃残留（best-effort）
+    writeFileSync(tmpPath, content, 'utf8')
+    const parsed = await deps.engine.parseEntries(tmpPath)
+    if (parsed.errors.length > 0) {
+      rmSync(tmpPath, { force: true })
+      return { ok: false, message: parsed.errors.map((e) => e.message).join('; ') }
+    }
+
+    // 3. rename 原子替换（Node on Windows：覆盖已存在文件）→ 索引重建（M3 管线）
+    renameSync(tmpPath, deps.ledgerPath)
+    const result = await refreshIndex(deps.db, deps.engine, deps.ledgerPath)
+    return {
+      ok: true,
+      fingerprint: sha256File(deps.ledgerPath),
+      status: result.status,
+      entryCount: result.entryCount,
+      errorCount: result.errorCount,
+      ...(result.status === 'error' ? { message: result.message } : {})
+    }
   })
 }

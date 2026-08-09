@@ -24,7 +24,39 @@ export type {
 }
 
 export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list-entries'
-  | 'ledger:add-entry' | 'ledger:list-accounts'
+  | 'ledger:add-entry' | 'ledger:list-accounts' | 'ledger:read-file' | 'ledger:save-file'
+
+/** ledger:read-file 结果（ENOENT → ok:false + message，编辑器 Empty 态） */
+export interface ReadFileResult {
+  ok: boolean
+  /** 文件全文（utf8） */
+  content?: string
+  /** 文件 sha256 hex（打开时基线，保存时比对） */
+  fingerprint?: string
+  message?: string
+}
+
+/** ledger:save-file 入参 */
+export interface SaveFileParams {
+  content: string
+  /** 打开时指纹（sha256 hex）：与磁盘现状不一致 → 外部修改冲突，拒绝落盘 */
+  expectedFingerprint: string
+}
+
+/** ledger:save-file 结果 */
+export interface SaveFileResult {
+  ok: boolean
+  /** true = 外部修改冲突，未落盘；diskContent/diskFingerprint 为同一次读取快照 */
+  conflict?: boolean
+  diskContent?: string
+  diskFingerprint?: string
+  /** 保存成功后新文件指纹（渲染端更新基线） */
+  fingerprint?: string
+  status?: LedgerIndexStatus
+  entryCount?: number
+  errorCount?: number
+  message?: string
+}
 
 /** 录入交易的 posting 行；金额一律十进制字符串（禁浮点，见 src/shared/decimal.ts） */
 export interface AddEntryPosting {
