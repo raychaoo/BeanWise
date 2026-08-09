@@ -11,9 +11,14 @@ describe('nextBalancingNumber（录入视图自动平衡决策）', () => {
     expect(nextBalancingNumber([{ number: '10' }, { number: '20' }, {}])).toBe('-30')
   })
 
-  it('始终写入（其余行和为 0 也写 0，避免空金额 posting）', () => {
+  it('其余行和为 0 也写 0（避免空金额 posting 导致解析失败回滚）', () => {
     expect(nextBalancingNumber([{ number: '0' }, {}])).toBe('0')
-    expect(nextBalancingNumber([{}, {}])).toBe('0')
+    expect(nextBalancingNumber([{ number: '100' }, { number: '-100' }, {}])).toBe('0')
+  })
+
+  it('前 n-1 行全空不写（避免挂载时写入的 0 被当成用户输入，挡住真实补差）', () => {
+    expect(nextBalancingNumber([{}, {}])).toBeUndefined()
+    expect(nextBalancingNumber([{ number: '' }, { number: null }])).toBeUndefined()
   })
 
   it('末行非空（用户输入中）不动', () => {

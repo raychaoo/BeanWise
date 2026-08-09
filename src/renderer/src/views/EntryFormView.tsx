@@ -23,7 +23,8 @@ interface PostingRow {
 }
 
 interface EntryFormValues {
-  date?: dayjs.Dayjs
+  /** ProFormDatePicker 设 format 后 onFinish 提交值为 YYYY-MM-DD 字符串 */
+  date?: string
   flag?: '*' | '!'
   payee?: string
   narration?: string
@@ -70,7 +71,10 @@ export default function EntryFormView() {
 
   const handleFinish = async (values: EntryFormValues) => {
     const params: AddEntryParams = {
-      date: (values.date ?? dayjs()).format('YYYY-MM-DD'),
+      date:
+        values.date !== undefined && values.date !== ''
+          ? values.date
+          : dayjs().format('YYYY-MM-DD'),
       ...(values.flag ? { flag: values.flag } : {}),
       ...(values.payee?.trim() ? { payee: values.payee.trim() } : {}),
       ...(values.narration?.trim() ? { narration: values.narration.trim() } : {}),
@@ -134,27 +138,32 @@ export default function EntryFormView() {
               <div key={field.key} style={{ display: 'flex', gap: 8 }}>
                 <Form.Item
                   name={[field.name, 'account']}
+                  label="账户"
                   style={{ flex: 3, marginBottom: 12 }}
                   rules={[
                     { required: true, message: '请输入账户' },
                     { pattern: /^[A-Z]\S*:\S*$/, message: '账户须大写字母开头、含冒号、无空格' }
                   ]}
                 >
-                  <AutoComplete options={accountOptions} placeholder="账户，如 Expenses:Food" />
+                  <AutoComplete options={accountOptions} placeholder="如 Expenses:Food" />
                 </Form.Item>
                 <Form.Item
                   name={[field.name, 'number']}
+                  label="金额"
                   style={{ flex: 2, marginBottom: 12 }}
                   rules={[numberRule(field.name)]}
                 >
-                  <InputNumber stringMode precision={4} placeholder="金额" style={{ width: '100%' }} />
+                  {/* stringMode 直取十进制字符串；不设 precision——antd 在 stringMode 下会重格式化
+                      数值（如 '0' → '0.0000'），破坏金额原样传递（校验以正则为准） */}
+                  <InputNumber stringMode placeholder="0.00" style={{ width: '100%' }} />
                 </Form.Item>
                 <Form.Item
                   name={[field.name, 'currency']}
+                  label="货币"
                   style={{ flex: 1, marginBottom: 12 }}
                   rules={[{ required: true, message: '请输入货币' }]}
                 >
-                  <AutoComplete options={currencyOptions} placeholder="货币，如 CNY" />
+                  <AutoComplete options={currencyOptions} placeholder="如 CNY" />
                 </Form.Item>
                 {fields.length > 2 && (
                   <Button
@@ -187,8 +196,10 @@ export default function EntryFormView() {
 
 /**
  * 自动平衡决策（纯函数，单测覆盖）：
- * 行数 ≥2 且末行金额为空 → 前 n-1 行非空金额之和取反（始终返回，含 '0'）；
- * 末行非空（用户正在输入/已填）或行数不足 → undefined（不动）。
+ * 行数 ≥2 且末行金额为空 → 前 n-1 行非空金额之和取反（和为 0 时也写入 '0'——
+ * 否则其余行和为零而末行留空，序列化会产出空金额 posting 导致解析失败回滚）；
+ * 前 n-1 行全部为空 → undefined（不写：避免挂载时写入的 '0' 被当成用户输入，
+ * 挡住后续真实补差）；末行非空（用户输入中）或行数不足 → undefined（不动）。
  */
 export function nextBalancingNumber(
   rows: Array<{ number?: string | null } | undefined> | undefined
@@ -202,6 +213,7 @@ export function nextBalancingNumber(
     .slice(0, lastIdx)
     .map((r) => r?.number?.trim())
     .filter((v): v is string => !!v)
+  if (amounts.length === 0) return undefined // 尚未输入任何金额：不写，等用户输入
   try {
     return computeBalancingNumber(amounts)
   } catch {
