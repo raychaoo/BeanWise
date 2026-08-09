@@ -9,8 +9,8 @@ test('应用启动并渲染主窗口', async () => {
 
   await expect(win).toHaveTitle('BeanWise')
   await expect(win.getByRole('heading', { name: 'BeanWise' })).toBeVisible()
-  // preload 白名单 API 已注入渲染进程（M3 面板渲染依赖 getLedgerStatus / listLedgerEntries 调用成功）
-  await expect(win.getByRole('button', { name: '刷新索引' })).toBeVisible()
+  // M4 应用壳：默认进入「录入」视图（ProForm 提交按钮可见即 preload 白名单链路可用）
+  await expect(win.getByRole('button', { name: '写入账本' })).toBeVisible()
 
   await app.close()
 })
