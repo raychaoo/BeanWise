@@ -1,5 +1,10 @@
-import type { ListEntriesParams, RefreshResult } from '../shared/ipc'
+import { appendFileSync, closeSync, mkdirSync, openSync, readSync, statSync, truncateSync } from 'node:fs'
+import { dirname } from 'node:path'
+import { computeBalancingNumber } from '../shared/decimal'
+import type { AddEntryResult, ListAccountsResult, ListEntriesParams, RefreshResult } from '../shared/ipc'
 import type { DrizzleDb } from './db'
+import { postings } from './db/schema'
+import { serializeEntry, validateEntryParams } from './entry-serializer'
 import { getLedgerStatus, listEntries, refreshIndex } from './index-builder'
 import type { PythonSvc } from './python-svc'
 
@@ -17,6 +22,19 @@ export interface LedgerDeps {
 
 const MAX_LIMIT = 1_000
 const DEFAULT_LIMIT = 100
+
+/** 文件末字节是否为换行；空文件视为「是」——追加首个文本块时避免前导空行 */
+function fileEndsWithLf(path: string, size: number): boolean {
+  if (size === 0) return true
+  const fd = openSync(path, 'r')
+  try {
+    const buf = Buffer.alloc(1)
+    readSync(fd, buf, 0, 1, size - 1)
+    return buf[0] === 0x0a
+  } finally {
+    closeSync(fd)
+  }
+}
 
 function validateListParams(params: unknown): { limit: number; offset: number } {
   const raw = (params ?? {}) as Partial<ListEntriesParams>
@@ -47,5 +65,61 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
   ipc.handle('ledger:list-entries', async (_event: unknown, params: unknown) => {
     const { limit, offset } = validateListParams(params)
     return listEntries(deps.db, limit, offset)
+  })
+
+  // M4：录入一笔交易。数据流铁律（先落文件 → 校验 → 重建索引）：
+  // validateEntryParams 前置校验 → 借贷平衡校验 → 追加写文件 → refreshIndex（M3 管线）
+  // → 索引 error（理论上仅前置校验漏网）truncate 回滚
+  ipc.handle('ledger:add-entry', async (_event: unknown, raw: unknown): Promise<AddEntryResult> => {
+    const params = validateEntryParams(raw)
+
+    // 借贷平衡校验（精确十进制加法，禁 parseFloat/Number）
+    const diff = computeBalancingNumber(params.postings.map((p) => p.number))
+    if (diff !== '0') {
+      throw new Error(`借贷不平衡：差额 ${diff}`)
+    }
+
+    // 追加写：末字节非换行则先补 \n；首文件（ENOENT）自动创建（目录一并创建）
+    let preLength = 0
+    let prefix = ''
+    try {
+      const stat = statSync(deps.ledgerPath)
+      const endsWithLf = fileEndsWithLf(deps.ledgerPath, stat.size)
+      preLength = stat.size + (endsWithLf ? 0 : 1)
+      prefix = endsWithLf ? '' : '\n'
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+      mkdirSync(dirname(deps.ledgerPath), { recursive: true })
+    }
+    appendFileSync(deps.ledgerPath, prefix + serializeEntry(params), 'utf8')
+
+    // 校验 + 索引重建；失败回滚文件（回滚失败记日志，留 M5 手工修复）
+    const result = await refreshIndex(deps.db, deps.engine, deps.ledgerPath)
+    if (result.status === 'error') {
+      try {
+        truncateSync(deps.ledgerPath, preLength)
+      } catch (rollbackErr) {
+        console.error('[BeanWise] 录入回滚失败（文件保留，待 M5 手工修复）:', rollbackErr)
+      }
+      return {
+        ok: false,
+        message: result.message,
+        status: result.status,
+        entryCount: result.entryCount,
+        errorCount: result.errorCount
+      }
+    }
+    return { ok: true, status: result.status, entryCount: result.entryCount, errorCount: result.errorCount }
+  })
+
+  // M4：账户列表（录入表单 AutoComplete 数据源，postings 表 DISTINCT）
+  ipc.handle('ledger:list-accounts', (): ListAccountsResult => {
+    const rows = deps.db
+      .selectDistinct({ account: postings.account })
+      .from(postings)
+      .orderBy(postings.account)
+      .limit(500)
+      .all()
+    return { accounts: rows.map((r) => r.account) }
   })
 }
