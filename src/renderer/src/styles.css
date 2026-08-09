@@ -1,18 +1,22 @@
+/* M4：布局与通用样式（细节样式走 antd 组件，此处只留应用级） */
 :root {
   font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
 }
 
 body {
   margin: 0;
-  padding: 16px;
 }
 
-.app { max-width: 900px; margin: 0 auto; padding: 24px; font-family: system-ui, sans-serif; }
-.status-list, .entry-list { list-style: none; padding: 0; }
-.status-list li { margin: 4px 0; }
-.entry-list li { display: flex; gap: 12px; padding: 4px 0; border-bottom: 1px solid #eee; }
-.entry-date { color: #666; }
-.entry-type { color: #888; }
-.entry-payee { font-weight: 600; }
-.entry-account { color: #666; }
-.error-text { color: #c00; }
+.app-logo {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+  color: #1677ff;
+}
+
+.error-text {
+  color: #cf1322;
+}

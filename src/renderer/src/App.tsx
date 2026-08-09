@@ -1,79 +1,86 @@
+/**
+ * 应用壳（M4）：Sider 导航（录入 / 明细，为 M5-M8 预留扩展位）+ Header（标题 + 索引状态 Tag）。
+ * M3 只读验收面板（#ledger-status / #ledger-entries）已下线，由正式视图取代。
+ */
+import { FormOutlined, UnorderedListOutlined } from '@ant-design/icons'
+import { Layout, Menu, Tag, Typography } from 'antd'
 import { useEffect, useState } from 'react'
-import type { LedgerEntryRow, LedgerStatus } from '../../shared/ipc'
+import { useLedgerStore } from './stores/ledger'
+import EntriesView from './views/EntriesView'
 
-// M3 验收面板：只读索引状态展示（非业务 UI，M4 起由正式界面取代）。
-// 不引入 antd（M4 依赖），保持 M3 依赖最小。
+const { Sider, Header, Content } = Layout
+
+const STATUS_COLOR: Record<string, string> = { ok: 'success', error: 'error', missing: 'default' }
+
+/** 录入视图占位（M4-T5 接入 ProForm） */
+function EntryPlaceholder() {
+  return (
+    <div style={{ paddingTop: 80, textAlign: 'center', color: '#999' }}>
+      录入视图（Task 5 接入 ProForm）
+    </div>
+  )
+}
+
 export default function App() {
-  const [status, setStatus] = useState<LedgerStatus | null>(null)
-  const [entries, setEntries] = useState<LedgerEntryRow[]>([])
-  const [message, setMessage] = useState<string | null>(null)
+  const [view, setView] = useState<'entry' | 'entries'>('entry')
+  const status = useLedgerStore((s) => s.status)
   const [refreshing, setRefreshing] = useState(false)
 
-  const load = async () => {
-    const [s, r] = await Promise.all([
-      window.beanwise.getLedgerStatus(),
-      window.beanwise.listLedgerEntries({ limit: 200 })
-    ])
-    setStatus(s)
-    setEntries(r.entries)
-  }
-
   useEffect(() => {
-    void load().catch((err: unknown) => setMessage(String(err)))
+    void useLedgerStore.getState().refresh()
   }, [])
 
-  const refresh = async () => {
+  /** Header Tag 点击：重建索引 → 重拉状态（与明细视图「重建索引」同链路） */
+  const handleRefreshIndex = async () => {
     setRefreshing(true)
-    setMessage(null)
     try {
-      const result = await window.beanwise.refreshLedgerIndex()
-      if (result.status === 'error') setMessage(result.message ?? '索引重建失败')
-      await load()
+      await window.beanwise.refreshLedgerIndex()
     } catch (err) {
-      setMessage(String(err))
-    } finally {
-      setRefreshing(false)
+      useLedgerStore.getState().setError(String(err))
     }
+    await useLedgerStore.getState().refresh()
+    setRefreshing(false)
   }
 
   return (
-    <main className="app">
-      <h1>{window.beanwise.appName}</h1>
-      <section id="ledger-status">
-        <h2>索引状态</h2>
-        {status ? (
-          <ul className="status-list">
-            <li>路径：<code id="ledger-path">{status.path}</code></li>
-            <li>标题：{status.title ?? '—'}</li>
-            <li>货币：{status.operatingCurrency.join(', ') || '—'}</li>
-            <li>条目数：<span id="entry-count">{status.entryCount}</span></li>
-            <li>错误数：<span id="error-count">{status.errorCount}</span></li>
-            <li>状态：<span id="index-status">{status.status}</span></li>
-            {status.lastError && <li className="error-text">错误：{status.lastError}</li>}
-            <li>更新时间：{status.updatedAt ? new Date(status.updatedAt).toLocaleString() : '—'}</li>
-          </ul>
-        ) : (
-          <p>尚未索引</p>
-        )}
-        {message && <p className="error-text" id="refresh-message">{message}</p>}
-        <button id="refresh-btn" onClick={() => void refresh()} disabled={refreshing}>
-          {refreshing ? '刷新中…' : '刷新索引'}
-        </button>
-      </section>
-      <section id="ledger-entries">
-        <h2>条目（{entries.length}）</h2>
-        <ul className="entry-list">
-          {entries.map((entry) => (
-            <li key={entry.id} data-type={entry.type}>
-              <span className="entry-date">{entry.date}</span>
-              <span className="entry-type">{entry.type}</span>
-              {entry.payee && <span className="entry-payee">{entry.payee}</span>}
-              {entry.narration && <span className="entry-narration">{entry.narration}</span>}
-              {entry.account && <span className="entry-account">{entry.account}</span>}
-            </li>
-          ))}
-        </ul>
-      </section>
-    </main>
+    <Layout style={{ minHeight: '100vh' }}>
+      <Sider width={200} theme="light">
+        <div className="app-logo">BeanWise</div>
+        <Menu
+          mode="inline"
+          selectedKeys={[view]}
+          onClick={({ key }) => setView(key as 'entry' | 'entries')}
+          items={[
+            { key: 'entry', icon: <FormOutlined />, label: '录入' },
+            { key: 'entries', icon: <UnorderedListOutlined />, label: '明细' }
+          ]}
+        />
+      </Sider>
+      <Layout>
+        <Header
+          style={{
+            background: '#fff',
+            padding: '0 24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderBottom: '1px solid #f0f0f0'
+          }}
+        >
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            {window.beanwise.appName}
+          </Typography.Title>
+          <Tag
+            color={STATUS_COLOR[status?.status ?? 'missing']}
+            style={{ cursor: refreshing ? 'wait' : 'pointer' }}
+            onClick={() => void handleRefreshIndex()}
+          >
+            索引：{status?.status ?? 'missing'}
+            {refreshing ? '…' : ''}
+          </Tag>
+        </Header>
+        <Content style={{ padding: 24 }}>{view === 'entry' ? <EntryPlaceholder /> : <EntriesView />}</Content>
+      </Layout>
+    </Layout>
   )
 }
