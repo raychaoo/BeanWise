@@ -7,19 +7,11 @@ import { Layout, Menu, Tag, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import { useLedgerStore } from './stores/ledger'
 import EntriesView from './views/EntriesView'
+import EntryFormView from './views/EntryFormView'
 
 const { Sider, Header, Content } = Layout
 
 const STATUS_COLOR: Record<string, string> = { ok: 'success', error: 'error', missing: 'default' }
-
-/** 录入视图占位（M4-T5 接入 ProForm） */
-function EntryPlaceholder() {
-  return (
-    <div style={{ paddingTop: 80, textAlign: 'center', color: '#999' }}>
-      录入视图（Task 5 接入 ProForm）
-    </div>
-  )
-}
 
 export default function App() {
   const [view, setView] = useState<'entry' | 'entries'>('entry')
@@ -79,7 +71,7 @@ export default function App() {
             {refreshing ? '…' : ''}
           </Tag>
         </Header>
-        <Content style={{ padding: 24 }}>{view === 'entry' ? <EntryPlaceholder /> : <EntriesView />}</Content>
+        <Content style={{ padding: 24 }}>{view === 'entry' ? <EntryFormView /> : <EntriesView />}</Content>
       </Layout>
     </Layout>
   )

@@ -1,0 +1,42 @@
+/**
+ * 录入视图接线冒烟：自动平衡决策纯函数 nextBalancingNumber（组件渲染由 E2E 覆盖——
+ * vitest 为 node 环境，antd 渲染依赖 DOM；computeBalancingNumber 本身已在 shared 单测覆盖）。
+ */
+import { describe, expect, it } from 'vitest'
+import { nextBalancingNumber } from './EntryFormView'
+
+describe('nextBalancingNumber（录入视图自动平衡决策）', () => {
+  it('末行留空 → 前 n-1 行之和取反（结果规范化去尾随零）', () => {
+    expect(nextBalancingNumber([{ number: '25.50' }, { number: undefined }])).toBe('-25.5')
+    expect(nextBalancingNumber([{ number: '10' }, { number: '20' }, {}])).toBe('-30')
+  })
+
+  it('始终写入（其余行和为 0 也写 0，避免空金额 posting）', () => {
+    expect(nextBalancingNumber([{ number: '0' }, {}])).toBe('0')
+    expect(nextBalancingNumber([{}, {}])).toBe('0')
+  })
+
+  it('末行非空（用户输入中）不动', () => {
+    expect(nextBalancingNumber([{ number: '25.50' }, { number: '-25.50' }])).toBeUndefined()
+  })
+
+  it('末行为空串同样补差（空串视为未输入）', () => {
+    expect(nextBalancingNumber([{ number: '1' }, { number: '' }])).toBe('-1')
+    expect(nextBalancingNumber([{ number: '1' }, { number: null }])).toBe('-1')
+  })
+
+  it('行数不足 2 不动', () => {
+    expect(nextBalancingNumber([])).toBeUndefined()
+    expect(nextBalancingNumber([{}])).toBeUndefined()
+    expect(nextBalancingNumber(undefined)).toBeUndefined()
+  })
+
+  it('中间行空值跳过（视为 0）', () => {
+    expect(nextBalancingNumber([{ number: '10' }, {}, { number: undefined }])).toBe('-10')
+  })
+
+  it('非法金额不抛错（交给表单校验提示）', () => {
+    expect(nextBalancingNumber([{ number: 'abc' }, {}])).toBeUndefined()
+    expect(() => nextBalancingNumber([{ number: '1..2' }, {}])).not.toThrow()
+  })
+})
