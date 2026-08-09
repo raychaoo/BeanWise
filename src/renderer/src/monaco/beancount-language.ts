@@ -13,10 +13,12 @@ export const BEANCOUNT_TOKENIZER: Monaco.languages.IMonarchLanguage = {
       [/;.*$/, 'comment'],
       [/^(?:option|plugin|include|pushtag|poptag|note|balance|open|close|event|query|custom|commodity|price)\b/, 'keyword'],
       [/\d{4}-\d{2}-\d{2}/, 'number.date'],
-      [/[*!#%&]/, 'type.flag'],
-      [/"(?:[^"\\]|\\.)*"/, 'string'],
+      // M5 终审：tag/link 必须先于 type.flag（monarch 首中即止，'#' 在 flag 字符类 [*!#%&] 内，
+      // flag 在前会先消费 '#tag' 的 '#'，tag 规则不可达；'^' 不在 flag 类中故 link 原可达）
       [/#[A-Za-z0-9\-_/.]+/, 'tag'],
       [/\^[A-Za-z0-9\-_/.]+/, 'link'],
+      [/[*!#%&]/, 'type.flag'],
+      [/"(?:[^"\\]|\\.)*"/, 'string'],
       [/\b[A-Z][A-Za-z0-9-]*(?::[A-Z][A-Za-z0-9-]*)+/, 'type.account'],
       [/-?\d+(?:\.\d+)?/, 'number'],
       [/\b[A-Z][A-Z0-9']{1,8}\b/, 'currency']

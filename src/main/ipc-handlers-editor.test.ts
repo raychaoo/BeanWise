@@ -90,6 +90,8 @@ describe('IPC handlers M5（read-file / save-file）', () => {
   it('ledger:save-file 非法入参拒绝', async () => {
     await expect(handlers['ledger:save-file']({}, { content: 123, expectedFingerprint: 'x' })).rejects.toThrow()
     await expect(handlers['ledger:save-file']({}, { content: 'ok', expectedFingerprint: 'not-hex' })).rejects.toThrow()
+    // 20MB 上限分支：校验是严格 >（恰好 20MB 允许），需超限 1 字节才触发拒绝
+    await expect(handlers['ledger:save-file']({}, { content: 'x'.repeat(20 * 1024 * 1024 + 1), expectedFingerprint: 'a'.repeat(64) })).rejects.toThrow()
   })
 
   it('ledger:read-file ENOENT → ok:false', async () => {

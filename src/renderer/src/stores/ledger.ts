@@ -54,9 +54,11 @@ export const useLedgerStore = create<LedgerState>((set, get) => {
         message.error(`保存失败：${r.message ?? '校验未通过'}`)
         return
       }
-      set((s) => ({
-        editorOriginal: s.editorContent,
-        editorFingerprint: r.fingerprint ?? s.editorFingerprint,
+      // M5 终审：基线取本次保存入参快照（勿用最新 editorContent——保存在途按键被吸收为
+      // 基线会致 dirty 清零而磁盘无此内容）；指纹同理以本次入参为兜底
+      set(() => ({
+        editorOriginal: content,
+        editorFingerprint: r.fingerprint ?? expectedFingerprint,
         editorConflict: null // forceSave 覆盖成功后冲突解除（brief 测试断言，Step 1 原码缺失）
       }))
       message.success('已保存并校验通过')
@@ -151,6 +153,7 @@ export const useLedgerStore = create<LedgerState>((set, get) => {
     setEditorContent: (content) => set({ editorContent: content }),
 
     saveEditorFile: async () => {
+      if (get().editorSaving) return // M5 终审：保存重入守卫（双击 / Ctrl+S 连按不并发双 save）
       const s = get()
       if (s.editorContent === null || s.editorFingerprint === null) return
       if (s.editorContent === s.editorOriginal) {
@@ -162,6 +165,7 @@ export const useLedgerStore = create<LedgerState>((set, get) => {
     },
 
     forceSaveEditorFile: async () => {
+      if (get().editorSaving) return // M5 终审：保存重入守卫（与 saveEditorFile 共用 editorSaving 互斥）
       const s = get()
       if (s.editorContent === null || !s.editorConflict) return
       set({ editorSaving: true })

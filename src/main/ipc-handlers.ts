@@ -6,7 +6,7 @@ import type { AddEntryResult, ListAccountsResult, ListEntriesParams, ReadFileRes
 import type { DrizzleDb } from './db'
 import { postings } from './db/schema'
 import { serializeEntry, serializeFirstEntryBlock, validateEntryParams } from './entry-serializer'
-import { getLedgerStatus, listEntries, refreshIndex, sha256File } from './index-builder'
+import { getLedgerStatus, listEntries, refreshIndex } from './index-builder'
 import type { PythonSvc } from './python-svc'
 
 /** 可注入的 IPC 注册器（测试传 mock，主进程传 electron.ipcMain） */
@@ -66,6 +66,19 @@ function validateSaveParams(raw: unknown): SaveFileParams {
   return { content: p.content, expectedFingerprint: p.expectedFingerprint }
 }
 
+/**
+ * M5 终审：add-entry 与 save-file 写通道串行化（任一时刻至多一个写者）。
+ * 防时序：save 指纹比对通过（磁盘=F1）→ 写 tmp → parse 校验（百毫秒）期间 add-entry 完成
+ * append（F1+E）→ save renameSync 原子覆盖 → 录入笔 E 从唯一事实源静默消失，两 UI 均报成功。
+ * 错误不污染队列：本次失败仅影响调用方，下一次任务照常排队。
+ */
+let writeQueue: Promise<unknown> = Promise.resolve()
+function withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+  const next = writeQueue.then(fn, fn)
+  writeQueue = next.catch(() => {})
+  return next
+}
+
 /** 注册 ledger 域 IPC 通道（roadmap「IPC 契约」：类型唯一来源 ipc.ts → preload 白名单 → main handler） */
 export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): void {
   ipc.handle('ledger:refresh-index', async (): Promise<RefreshResult> => {
@@ -86,7 +99,8 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
   // M4：录入一笔交易。数据流铁律（先落文件 → 校验 → 重建索引）：
   // validateEntryParams 前置校验 → 借贷平衡校验 → 追加写文件 → refreshIndex（M3 管线）
   // → 索引 error（理论上仅前置校验漏网）truncate 回滚
-  ipc.handle('ledger:add-entry', async (_event: unknown, raw: unknown): Promise<AddEntryResult> => {
+  ipc.handle('ledger:add-entry', (_event: unknown, raw: unknown): Promise<AddEntryResult> =>
+    withWriteLock(async () => {
     const params = validateEntryParams(raw)
 
     // 借贷平衡校验（精确十进制加法，禁 parseFloat/Number）
@@ -126,7 +140,7 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
       }
     }
     return { ok: true, status: result.status, entryCount: result.entryCount, errorCount: result.errorCount }
-  })
+  }))
 
   // M4：账户列表（录入表单 AutoComplete 数据源，postings 表 DISTINCT）
   ipc.handle('ledger:list-accounts', (): ListAccountsResult => {
@@ -142,8 +156,11 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
   // M5：读账本全文（渲染端编辑基线；ENOENT → ok:false，编辑器 Empty 态）
   ipc.handle('ledger:read-file', (): ReadFileResult => {
     try {
+      // M5 终审：同一 buffer 哈希——两次读取间文件被改写会返回自相矛盾快照
+      // （基线=旧内容、指纹=新文件 → 保存时本应报冲突的修改被静默覆盖）
       const content = readFileSync(deps.ledgerPath, 'utf8')
-      return { ok: true, content, fingerprint: sha256File(deps.ledgerPath) }
+      const fingerprint = createHash('sha256').update(content).digest('hex')
+      return { ok: true, content, fingerprint }
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
         return { ok: false, message: '账本文件不存在，请先在录入视图录一笔创建' }
@@ -154,7 +171,8 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
 
   // M5：整文件覆盖保存——指纹比对（外部修改冲突检测）→ 写 tmp → parse 校验 → rename 原子替换
   // → 索引重建。校验失败不落盘（tmp 删除、原文件不动），比 M4 append 的「写后 truncate 回滚」更干净
-  ipc.handle('ledger:save-file', async (_event: unknown, raw: unknown): Promise<SaveFileResult> => {
+  ipc.handle('ledger:save-file', (_event: unknown, raw: unknown): Promise<SaveFileResult> =>
+    withWriteLock(async () => {
     const { content, expectedFingerprint } = validateSaveParams(raw)
 
     // 1. 外部修改冲突检测：同一次读取的快照（内容 + 指纹），无二次读取竞态
@@ -185,11 +203,12 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
     const result = await refreshIndex(deps.db, deps.engine, deps.ledgerPath)
     return {
       ok: true,
-      fingerprint: sha256File(deps.ledgerPath),
+      // M5 终审：rename 后第三读改内存哈希——写入文件的正是 content，无需再读盘
+      fingerprint: createHash('sha256').update(content).digest('hex'),
       status: result.status,
       entryCount: result.entryCount,
       errorCount: result.errorCount,
       ...(result.status === 'error' ? { message: result.message } : {})
     }
-  })
+  }))
 }

@@ -88,6 +88,17 @@ it('saveEditorFile：成功 → 基线更新 + 成功提示 + refresh 联动', a
   expect(api.getLedgerStatus).toHaveBeenCalled() // refresh 联动
 })
 
+it('saveEditorFile：保存中重入 → 直接 return，不并发双 save（M5 终审）', async () => {
+  const api = stubBeanwise({
+    saveLedgerFile: vi.fn().mockResolvedValue({ ok: true, fingerprint: 'b'.repeat(64), status: 'ok', entryCount: 6, errorCount: 0 })
+  })
+  useLedgerStore.setState({ editorContent: 'new', editorOriginal: 'old', editorFingerprint: F })
+  const p1 = useLedgerStore.getState().saveEditorFile() // 不 await：模拟保存在途（editorSaving 已同步置 true）
+  await useLedgerStore.getState().saveEditorFile()      // 重入调用：应被守卫拦截
+  expect(api.saveLedgerFile).toHaveBeenCalledTimes(1)
+  await p1
+})
+
 it('saveEditorFile：冲突 → editorConflict 落 store，不发成功提示', async () => {
   stubBeanwise({
     saveLedgerFile: vi.fn().mockResolvedValue({ ok: false, conflict: true, diskContent: 'disk', diskFingerprint: 'c'.repeat(64) })

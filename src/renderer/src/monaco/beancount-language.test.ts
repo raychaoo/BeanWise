@@ -47,4 +47,14 @@ describe('beancount 语言注册（M5）', () => {
     }
     expect(names.indexOf('type.account')).toBeLessThan(names.indexOf('currency'))
   })
+
+  it('tokenizer 规则顺序：tag/link 均先于 type.flag，且 flag 前移后仍存在（M5 终审）', () => {
+    const root = BEANCOUNT_TOKENIZER.tokenizer.root as Array<[RegExp, string]>
+    const names = root.map(([, action]) => action)
+    // monarch 首中即止：'#' 在 flag 字符类 [*!#%&] 内，flag 必须先于 tag 才不吞 '#' 前缀；
+    // '^' 不在 flag 类，link 规则同样前移保持一致
+    expect(names.indexOf('tag')).toBeLessThan(names.indexOf('type.flag'))
+    expect(names.indexOf('link')).toBeLessThan(names.indexOf('type.flag'))
+    expect(names).toContain('type.flag') // 前移后 flag 规则未被移除（交易行 * 标记仍需高亮）
+  })
 })
