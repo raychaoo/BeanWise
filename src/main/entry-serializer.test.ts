@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AddEntryParams } from '../shared/ipc'
-import { serializeEntry, validateEntryParams } from './entry-serializer'
+import { serializeEntry, serializeFirstEntryBlock, validateEntryParams } from './entry-serializer'
 
 const valid: AddEntryParams = {
   date: '2026-08-09',
@@ -48,6 +48,33 @@ describe('serializeEntry', () => {
   it('金额原样输出（不做对齐美化）', () => {
     expect(serializeEntry({ ...valid, postings: [{ account: 'Assets:Cash', number: '-100', currency: 'CNY' }] }))
       .toContain('  Assets:Cash  -100 CNY\n')
+  })
+})
+
+describe('serializeFirstEntryBlock（首文件：open 行 + 交易块）', () => {
+  it('输出快照：open 行按 posting 顺序 + 交易块', () => {
+    expect(serializeFirstEntryBlock(valid)).toBe(
+      '2026-08-09 open Expenses:Food\n' +
+        '2026-08-09 open Assets:Cash\n' +
+        '2026-08-09 * "测试午饭" "M4 E2E"\n' +
+        '  Expenses:Food  25.50 CNY\n' +
+        '  Assets:Cash  -25.50 CNY\n'
+    )
+  })
+
+  it('重复账户去重', () => {
+    const params: AddEntryParams = {
+      date: '2026-08-09',
+      postings: [
+        { account: 'Expenses:Food', number: '10', currency: 'CNY' },
+        { account: 'Expenses:Food', number: '5', currency: 'CNY' },
+        { account: 'Assets:Cash', number: '-15', currency: 'CNY' }
+      ]
+    }
+    const block = serializeFirstEntryBlock(params)
+    expect(block.match(/open /g)).toHaveLength(2)
+    expect(block).toContain('2026-08-09 open Expenses:Food')
+    expect(block).toContain('2026-08-09 open Assets:Cash')
   })
 })
 

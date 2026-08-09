@@ -71,13 +71,19 @@ describe('IPC handlers ledger:add-entry / list-accounts（M4）', () => {
     expect(readFileSync(ledgerPath, 'utf8')).toContain(SERIALIZED)
   })
 
-  it('首文件：目录不存在自动创建，文件内容恰为 entry 块（无前导空行）', async () => {
+  it('首文件：目录不存在自动创建，文件 = 账户 open 行 + entry 块（beancount 未 open 账户报错）', async () => {
     const ledgerPath = join(dir, 'nested', 'deep', 'ledger.beancount')
     const handlers = makeHandlers(ledgerPath)
 
     const result = (await handlers['ledger:add-entry']({}, validParams)) as AddEntryResult
     expect(result.ok).toBe(true)
-    expect(readFileSync(ledgerPath, 'utf8')).toBe(SERIALIZED)
+    expect(readFileSync(ledgerPath, 'utf8')).toBe(
+      '2026-08-09 open Expenses:Food\n' +
+        '2026-08-09 open Assets:Cash\n' +
+        '2026-08-09 * "测试午饭" "M4 单测"\n' +
+        '  Expenses:Food  25.50 CNY\n' +
+        '  Assets:Cash  -25.50 CNY\n'
+    )
   })
 
   it('余额不平 → throw「借贷不平衡」，文件未创建/未改动', async () => {

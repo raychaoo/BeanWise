@@ -4,7 +4,7 @@ import { computeBalancingNumber } from '../shared/decimal'
 import type { AddEntryResult, ListAccountsResult, ListEntriesParams, RefreshResult } from '../shared/ipc'
 import type { DrizzleDb } from './db'
 import { postings } from './db/schema'
-import { serializeEntry, validateEntryParams } from './entry-serializer'
+import { serializeEntry, serializeFirstEntryBlock, validateEntryParams } from './entry-serializer'
 import { getLedgerStatus, listEntries, refreshIndex } from './index-builder'
 import type { PythonSvc } from './python-svc'
 
@@ -79,19 +79,19 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
       throw new Error(`借贷不平衡：差额 ${diff}`)
     }
 
-    // 追加写：末字节非换行则先补 \n；首文件（ENOENT）自动创建（目录一并创建）
+    // 追加写：末字节非换行则先补 \n；首文件（ENOENT）自动创建（目录一并创建，
+    // 并补交易账户 open 行——beancount 未 open 账户报 ValidationError，2026-08-09 实测）
     let preLength = 0
-    let prefix = ''
     try {
       const stat = statSync(deps.ledgerPath)
       const endsWithLf = fileEndsWithLf(deps.ledgerPath, stat.size)
       preLength = stat.size + (endsWithLf ? 0 : 1)
-      prefix = endsWithLf ? '' : '\n'
+      appendFileSync(deps.ledgerPath, (endsWithLf ? '' : '\n') + serializeEntry(params), 'utf8')
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
       mkdirSync(dirname(deps.ledgerPath), { recursive: true })
+      appendFileSync(deps.ledgerPath, serializeFirstEntryBlock(params), 'utf8')
     }
-    appendFileSync(deps.ledgerPath, prefix + serializeEntry(params), 'utf8')
 
     // 校验 + 索引重建；失败回滚文件（回滚失败记日志，留 M5 手工修复）
     const result = await refreshIndex(deps.db, deps.engine, deps.ledgerPath)
