@@ -5,6 +5,7 @@ describe('CSP 策略（M2 交接钩子，CLAUDE.md 约束 #8）', () => {
   it('生产 CSP：default-src 仅 self；style-src 放行 unsafe-inline（antd CSS-in-JS），script-src 严格禁 inline/eval，无 remote 源', () => {
     expect(CSP_PROD).toContain("default-src 'self'")
     expect(CSP_PROD).toContain("style-src 'self' 'unsafe-inline'")
+    expect(CSP_PROD).toContain("worker-src 'self'")
     expect(CSP_PROD).not.toMatch(/script-src/)
     expect(CSP_PROD).not.toMatch(/unsafe-eval/)
     expect(CSP_PROD).not.toMatch(/https?:\/\//)
@@ -14,5 +15,6 @@ describe('CSP 策略（M2 交接钩子，CLAUDE.md 约束 #8）', () => {
     expect(CSP_DEV).toMatch(/script-src 'self' 'unsafe-inline'/)
     expect(CSP_DEV).toMatch(/style-src 'self' 'unsafe-inline'/)
     expect(CSP_DEV).toMatch(/connect-src 'self' ws:\/\/localhost:\*/)
+    expect(CSP_DEV).toContain("worker-src 'self'")
   })
 })
