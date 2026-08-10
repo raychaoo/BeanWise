@@ -3,9 +3,12 @@ import { join, resolve } from 'path'
 import { APP_NAME } from '../shared/app'
 import { applyCsp } from './csp'
 import { createDrizzle, openDatabase } from './db'
+import { GitSync } from './git-sync'
 import { refreshIndex } from './index-builder'
 import { registerLedgerHandlers } from './ipc-handlers'
+import { registerSyncHandlers } from './ipc-handlers-sync'
 import { PythonSvc } from './python-svc'
+import { ElectronConfigStore, ElectronTokenStore } from './token-store'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -55,6 +58,23 @@ app.whenReady().then(() => {
   pythonSvc = new PythonSvc({ command: resolveEngineCommand() })
   const db = createDrizzle(openDatabase(join(app.getPath('userData'), 'beanwise.db')))
   registerLedgerHandlers(ipcMain, { db, engine: pythonSvc, ledgerPath: resolveLedgerPath() })
+
+  // M6：同步六通道组装。PAT / 同步配置经 electron-store 持久化（PAT safeStorage 加密），
+  // auth 在 GitSync 构造时注入（handler 内只判空 requirePat，渲染进程不经手 PAT）
+  const tokens = new ElectronTokenStore()
+  const syncConfig = new ElectronConfigStore()
+  const gitSync = new GitSync({
+    ledgerPath: resolveLedgerPath(),
+    auth: () => ({ username: 'x-access-token', password: tokens.load() ?? '' })
+  })
+  registerSyncHandlers(ipcMain, {
+    db,
+    engine: pythonSvc,
+    ledgerPath: resolveLedgerPath(),
+    tokens,
+    config: syncConfig,
+    git: gitSync
+  })
 
   // 启动初始刷新（fire-and-forget：失败不影响窗口创建，状态由 ledger:status 暴露）
   void pythonSvc

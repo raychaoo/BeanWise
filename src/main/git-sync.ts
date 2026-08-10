@@ -105,8 +105,13 @@ export class GitSync {
     await git.add({ fs, dir: this.dir, filepath: this.file })
   }
 
-  async commit(message: string): Promise<string> {
-    return git.commit({ fs, dir: this.dir, message, author: GIT_AUTHOR })
+  /**
+   * commit。parent 可选：合并提交须带双亲（默认仅 HEAD）——push 的客户端快进检查要求
+   * 远端 ref 是 push 提交的祖先，单亲合并提交在真实 git 服务器与 isomorphic-git 客户端
+   * 均被拒（PushRejectedError），M6-T3 实测后补充。
+   */
+  async commit(message: string, parent?: string[]): Promise<string> {
+    return git.commit({ fs, dir: this.dir, message, author: GIT_AUTHOR, parent })
   }
 
   async addRemote(url: string): Promise<void> {
@@ -163,6 +168,11 @@ export class GitSync {
       fs, http, dir: this.dir, remote: SYNC_REMOTE, ref: SYNC_BRANCH, force,
       onAuth: this.onAuth(), onAuthFailure: this.onAuthFailure()
     }))
+  }
+
+  /** fetch 后远端分支 oid（合并提交的第二父；push 快进检查需要） */
+  async remoteHeadOid(): Promise<string> {
+    return git.resolveRef({ fs, dir: this.dir, ref: `refs/remotes/${SYNC_REMOTE}/${SYNC_BRANCH}` })
   }
 
   async clone(url: string): Promise<void> {
