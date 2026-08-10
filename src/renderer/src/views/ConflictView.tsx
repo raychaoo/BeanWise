@@ -69,28 +69,32 @@ export default function ConflictView() {
     editor.setValue(merged)
   }, [merged])
 
-  if (!conflict) {
-    return <Alert type="info" showIcon message="暂无冲突待处理" />
-  }
-
   return (
     <div className="conflict-view">
-      <Alert
-        type="warning"
-        showIcon
-        message="同步冲突：本地与远端均修改了账本"
-        description="上方左侧为本地内容、右侧为远端内容；在下方案例区编辑合并结果，然后「完成合并」校验并推送。"
-      />
-      <div className="conflict-buttons">
-        <Space>
-          <Button onClick={() => setMerged(conflict.ours)}>采用本地</Button>
-          <Button onClick={() => setMerged(conflict.theirs)}>采用远端</Button>
-          <Button type="primary" loading={syncing} onClick={() => void resolveConflict(merged)}>
-            完成合并
-          </Button>
-        </Space>
-      </div>
-      <div ref={diffRef} className="conflict-diff" />
+      {conflict ? (
+        <>
+          <Alert
+            type="warning"
+            showIcon
+            message="同步冲突：本地与远端均修改了账本"
+            description="上方左侧为本地内容、右侧为远端内容；在下方案例区编辑合并结果，然后「完成合并」校验并推送。"
+          />
+          <div className="conflict-buttons">
+            <Space>
+              <Button onClick={() => setMerged(conflict.ours)}>采用本地</Button>
+              <Button onClick={() => setMerged(conflict.theirs)}>采用远端</Button>
+              <Button type="primary" loading={syncing} onClick={() => void resolveConflict(merged)}>
+                完成合并
+              </Button>
+            </Space>
+          </div>
+          <div ref={diffRef} className="conflict-diff" />
+        </>
+      ) : (
+        <Alert type="info" showIcon message="暂无冲突待处理" />
+      )}
+      {/* 无条件渲染（对齐 M5 editor-main 模式）：merged 编辑器挂载即创建，
+          不受 conflict 早退影响——否则创建 effect 依赖 [] 时 bail 后永不重跑 */}
       <div ref={editorRef} className="conflict-merged" />
     </div>
   )
