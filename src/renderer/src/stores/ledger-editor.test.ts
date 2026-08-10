@@ -8,6 +8,7 @@ const { message } = vi.hoisted(() => ({
 vi.mock('antd', () => ({ message }))
 
 import { useLedgerStore } from './ledger'
+import { useSyncStore } from './sync' // M6 审查 I-1：自动 push 依赖 sync 状态，测试间需重置
 
 type StubApi = {
   readLedgerFile: ReturnType<typeof vi.fn>
@@ -40,6 +41,9 @@ const F = 'f'.repeat(64)
 
 beforeEach(() => {
   vi.unstubAllGlobals()
+  // M6 审查 I-1：前置保存用例的自动 push → loadStatus 会把 sync status 置为
+  // 未配置（stub 默认），导致后置用例被「未配置静默跳过」守卫拦截——逐用例重置
+  useSyncStore.setState({ status: null, conflict: null, syncing: false })
   useLedgerStore.setState({
     status: null, entries: [], total: 0, accounts: [], loading: false, error: null,
     editorContent: null, editorOriginal: null, editorFingerprint: null,
@@ -147,6 +151,8 @@ it('saveEditorFile 成功 → 自动触发 syncStore.push', async () => {
     saveLedgerFile: vi.fn().mockResolvedValue({ ok: true, fingerprint: 'b'.repeat(64), status: 'ok', entryCount: 6, errorCount: 0 }),
     pushLedger: vi.fn().mockResolvedValue({ ok: true })
   })
+  // M6 审查 I-1：显式已配置，确保不被「未配置静默跳过」守卫拦截（用例意图 = 已配置用户保存后自动 push）
+  useSyncStore.setState({ status: { configured: true, repoUrl: 'https://github.com/a/b', branch: 'main', lastSyncAt: 1, lastError: null, syncing: false } })
   useLedgerStore.setState({ editorContent: 'new', editorOriginal: 'old', editorFingerprint: F })
   await useLedgerStore.getState().saveEditorFile()
   expect(api.saveLedgerFile).toHaveBeenCalled()

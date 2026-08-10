@@ -100,6 +100,23 @@ it('push 冲突 → conflict 落 store + 警告提示', async () => {
   expect(message.success).not.toHaveBeenCalled()
 })
 
+it('push：未配置（status.configured=false）→ 静默跳过，不发 IPC 不弹提示', async () => {
+  const api = stubBeanwise({ pushLedger: vi.fn().mockResolvedValue({ ok: true }) })
+  useSyncStore.setState({ status: { configured: false, repoUrl: 'https://github.com/a/b', branch: 'main', lastSyncAt: null, lastError: null, syncing: false } })
+  await useSyncStore.getState().push()
+  expect(api.pushLedger).not.toHaveBeenCalled()
+  expect(message.warning).not.toHaveBeenCalled()
+  expect(message.success).not.toHaveBeenCalled()
+})
+
+it('push：已配置（status.configured=true）→ 行为不变', async () => {
+  const api = stubBeanwise()
+  useSyncStore.setState({ status: { configured: true, repoUrl: 'https://github.com/a/b', branch: 'main', lastSyncAt: 1, lastError: null, syncing: false } })
+  await useSyncStore.getState().push()
+  expect(api.pushLedger).toHaveBeenCalled()
+  expect(message.success).toHaveBeenCalledWith('已同步到远端')
+})
+
 it('push 失败（网络）→ 警告提示 + lastError 状态刷新', async () => {
   stubBeanwise({ pushLedger: vi.fn().mockResolvedValue({ ok: false, message: '连接超时' }) })
   await useSyncStore.getState().push()

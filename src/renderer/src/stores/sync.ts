@@ -67,6 +67,10 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   },
 
   push: async () => {
+    // M6 终审（审查 I-1）：未配置同步时自动 push 静默跳过——未配置是默认态，每次保存
+    // 都弹「同步失败」warning 会打扰且与「已保存并校验通过」矛盾；手动 pull 未配置仍报错（用户主动请求）
+    const status = get().status
+    if (status && !status.configured) return
     if (get().syncing) return
     set({ syncing: true })
     try {
