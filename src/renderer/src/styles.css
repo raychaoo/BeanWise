@@ -30,3 +30,6 @@ body {
 .editor-conflict { margin-bottom: 8px; }
 .editor-diff { height: 320px; border: 1px solid #f0f0f0; }
 .editor-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+
+/* M6：Header 同步状态区（索引 Tag + 同步状态条，antd Tag 间留 8px 间距） */
+.sync-status-bar { display: inline-flex; align-items: center; gap: 8px; }

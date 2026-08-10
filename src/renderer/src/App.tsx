@@ -6,9 +6,12 @@ import { FileTextOutlined, FormOutlined, UnorderedListOutlined } from '@ant-desi
 import { Layout, Menu, Tag, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import { useLedgerStore } from './stores/ledger'
+import { useSyncStore } from './stores/sync'
 import EditorView from './views/EditorView'
 import EntriesView from './views/EntriesView'
 import EntryFormView from './views/EntryFormView'
+import SyncSettingsModal from './views/SyncSettingsModal'
+import SyncStatusBar from './views/SyncStatusBar'
 
 const { Sider, Header, Content } = Layout
 
@@ -18,9 +21,11 @@ export default function App() {
   const [view, setView] = useState<'entry' | 'entries' | 'editor'>('entry')
   const status = useLedgerStore((s) => s.status)
   const [refreshing, setRefreshing] = useState(false)
+  const [syncOpen, setSyncOpen] = useState(false)
 
   useEffect(() => {
     void useLedgerStore.getState().refresh()
+    void useSyncStore.getState().loadStatus()
   }, [])
 
   /** Header Tag 点击：重建索引 → 重拉状态（与明细视图「重建索引」同链路） */
@@ -64,14 +69,17 @@ export default function App() {
           <Typography.Title level={4} style={{ margin: 0 }}>
             {window.beanwise.appName}
           </Typography.Title>
-          <Tag
-            color={STATUS_COLOR[status?.status ?? 'missing']}
-            style={{ cursor: refreshing ? 'wait' : 'pointer' }}
-            onClick={() => void handleRefreshIndex()}
-          >
-            索引：{status?.status ?? 'missing'}
-            {refreshing ? '…' : ''}
-          </Tag>
+          <div className="sync-status-bar">
+            <Tag
+              color={STATUS_COLOR[status?.status ?? 'missing']}
+              style={{ cursor: refreshing ? 'wait' : 'pointer' }}
+              onClick={() => void handleRefreshIndex()}
+            >
+              索引：{status?.status ?? 'missing'}
+              {refreshing ? '…' : ''}
+            </Tag>
+            <SyncStatusBar onOpenConflict={() => {}} onOpenSettings={() => setSyncOpen(true)} />
+          </div>
         </Header>
         <Content style={{ padding: 24 }}>
           <div style={{ display: view === 'entry' ? 'block' : 'none' }}><EntryFormView /></div>
@@ -81,6 +89,7 @@ export default function App() {
           </div>
         </Content>
       </Layout>
+      <SyncSettingsModal open={syncOpen} onClose={() => setSyncOpen(false)} />
     </Layout>
   )
 }
