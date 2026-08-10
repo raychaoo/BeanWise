@@ -25,6 +25,8 @@ export type {
 
 export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list-entries'
   | 'ledger:add-entry' | 'ledger:list-accounts' | 'ledger:read-file' | 'ledger:save-file'
+  | 'sync:get-status' | 'sync:configure' | 'sync:push' | 'sync:pull'
+  | 'sync:resolve-conflict' | 'sync:clear'
 
 /** ledger:read-file 结果（ENOENT → ok:false + message，编辑器 Empty 态） */
 export interface ReadFileResult {
@@ -91,4 +93,67 @@ export interface AddEntryResult {
 /** ledger:list-accounts 结果（postings 表 DISTINCT） */
 export interface ListAccountsResult {
   accounts: string[]
+}
+
+/** git 同步配置（不含 PAT——PAT 只存主进程 safeStorage） */
+export interface SyncConfig {
+  repoUrl: string
+  /** 固定 'main'（GitHub 默认分支） */
+  branch: string
+  /** 场景 C 接管（unrelated histories）→ resolve/push 需 force */
+  adopted?: boolean
+  lastSyncAt?: number | null
+  lastError?: string | null
+}
+
+/** sync:get-status 结果（未配置 → configured:false） */
+export interface SyncStatus {
+  configured: boolean
+  repoUrl?: string
+  branch?: string
+  lastSyncAt?: number | null
+  lastError?: string | null
+  /** 同步进行中（push/pull/configure 互斥标志） */
+  syncing: boolean
+}
+
+/** sync:configure 入参（PAT 仅经此通道上传，渲染端不落 state） */
+export interface ConfigureSyncParams {
+  repoUrl: string
+  pat: string
+}
+
+/** sync:configure 结果（conflict = 场景 C 两端内容不一致的三路快照，base 为空串） */
+export interface ConfigureSyncResult {
+  ok: boolean
+  error?: string
+  status?: SyncStatus
+  conflict?: boolean
+  base?: string
+  ours?: string
+  theirs?: string
+}
+
+/** sync:push / sync:pull 结果（conflict 时三路快照，工作区未动） */
+export interface SyncResult {
+  ok: boolean
+  conflict?: boolean
+  base?: string
+  ours?: string
+  theirs?: string
+  message?: string
+}
+
+/** sync:resolve-conflict 入参（merged 内容，复用 20MB 上限） */
+export interface ResolveConflictParams {
+  content: string
+}
+
+/** sync:resolve-conflict 结果（status 为落盘后索引状态） */
+export interface ResolveConflictResult {
+  ok: boolean
+  status?: LedgerIndexStatus
+  entryCount?: number
+  errorCount?: number
+  message?: string
 }

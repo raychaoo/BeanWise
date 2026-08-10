@@ -55,7 +55,7 @@ describe('IPC handlers M5（read-file / save-file）', () => {
     expect(result.entryCount).toBe(6)
     expect(result.fingerprint).toMatch(/^[a-f0-9]{64}$/)
     expect(readFileSync(workFile, 'utf8')).toBe(content) // 文件被替换为保存内容
-    expect(existsSync(`${workFile}.m5tmp`)).toBe(false)  // 无残留 tmp
+    expect(existsSync(`${workFile}.tmp`)).toBe(false)  // 无残留 tmp
   }, 30_000)
 
   it('ledger:save-file 冲突：外部修改 → conflict + 快照，不落盘', async () => {
@@ -84,7 +84,7 @@ describe('IPC handlers M5（read-file / save-file）', () => {
     expect(result.conflict).toBeUndefined()
     expect(result.message).toBeTruthy() // beancount 引擎错误文案（英文，勿断言具体词）
     expect(readFileSync(workFile, 'utf8')).toBe(before) // 原文件字节不变
-    expect(existsSync(`${workFile}.m5tmp`)).toBe(false) // tmp 已清理
+    expect(existsSync(`${workFile}.tmp`)).toBe(false) // tmp 已清理
   }, 30_000)
 
   it('ledger:save-file 非法入参拒绝', async () => {

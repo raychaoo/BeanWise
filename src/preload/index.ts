@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { APP_NAME } from '../shared/app'
 import type { BeanWiseApi } from '../shared/api'
-import type { AddEntryParams, ListEntriesParams, SaveFileParams } from '../shared/ipc'
+import type { AddEntryParams, ConfigureSyncParams, ListEntriesParams, ResolveConflictParams, SaveFileParams } from '../shared/ipc'
 
 const api: BeanWiseApi = {
   appName: APP_NAME,
@@ -11,7 +11,13 @@ const api: BeanWiseApi = {
   addLedgerEntry: (params: AddEntryParams) => ipcRenderer.invoke('ledger:add-entry', params),
   listLedgerAccounts: () => ipcRenderer.invoke('ledger:list-accounts'),
   readLedgerFile: () => ipcRenderer.invoke('ledger:read-file'),
-  saveLedgerFile: (params: SaveFileParams) => ipcRenderer.invoke('ledger:save-file', params)
+  saveLedgerFile: (params: SaveFileParams) => ipcRenderer.invoke('ledger:save-file', params),
+  getSyncStatus: () => ipcRenderer.invoke('sync:get-status'),
+  configureSync: (params: ConfigureSyncParams) => ipcRenderer.invoke('sync:configure', params),
+  pushLedger: () => ipcRenderer.invoke('sync:push'),
+  pullLedger: () => ipcRenderer.invoke('sync:pull'),
+  resolveSyncConflict: (params: ResolveConflictParams) => ipcRenderer.invoke('sync:resolve-conflict', params),
+  clearSync: () => ipcRenderer.invoke('sync:clear')
 }
 
 contextBridge.exposeInMainWorld('beanwise', api)

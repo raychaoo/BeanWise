@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync, truncateSync, writeFileSync } from 'node:fs'
+import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, truncateSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { computeBalancingNumber } from '../shared/decimal'
 import type { AddEntryResult, ListAccountsResult, ListEntriesParams, ReadFileResult, RefreshResult, SaveFileParams, SaveFileResult } from '../shared/ipc'
@@ -7,7 +7,9 @@ import type { DrizzleDb } from './db'
 import { postings } from './db/schema'
 import { serializeEntry, serializeFirstEntryBlock, validateEntryParams } from './entry-serializer'
 import { getLedgerStatus, listEntries, refreshIndex } from './index-builder'
+import { writeLedgerChecked } from './ledger-writer'
 import type { PythonSvc } from './python-svc'
+import { withWriteLock } from './write-lock'
 
 /** 可注入的 IPC 注册器（测试传 mock，主进程传 electron.ipcMain） */
 export interface IpcRegistrar {
@@ -67,17 +69,12 @@ function validateSaveParams(raw: unknown): SaveFileParams {
 }
 
 /**
- * M5 终审：add-entry 与 save-file 写通道串行化（任一时刻至多一个写者）。
+ * 双写互斥说明（M5 终审，实现抽取至 write-lock.ts）：
+ * add-entry 与 save-file 写通道串行化（任一时刻至多一个写者，sync 域复用同一把锁）。
  * 防时序：save 指纹比对通过（磁盘=F1）→ 写 tmp → parse 校验（百毫秒）期间 add-entry 完成
  * append（F1+E）→ save renameSync 原子覆盖 → 录入笔 E 从唯一事实源静默消失，两 UI 均报成功。
  * 错误不污染队列：本次失败仅影响调用方，下一次任务照常排队。
  */
-let writeQueue: Promise<unknown> = Promise.resolve()
-function withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
-  const next = writeQueue.then(fn, fn)
-  writeQueue = next.catch(() => {})
-  return next
-}
 
 /** 注册 ledger 域 IPC 通道（roadmap「IPC 契约」：类型唯一来源 ipc.ts → preload 白名单 → main handler） */
 export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): void {
@@ -169,8 +166,9 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
     }
   })
 
-  // M5：整文件覆盖保存——指纹比对（外部修改冲突检测）→ 写 tmp → parse 校验 → rename 原子替换
-  // → 索引重建。校验失败不落盘（tmp 删除、原文件不动），比 M4 append 的「写后 truncate 回滚」更干净
+  // M5：整文件覆盖保存——指纹比对（外部修改冲突检测）→ 共享落盘管线（writeLedgerChecked：
+  // 写 .tmp → parse 校验 → rename 原子替换）→ 索引重建。校验失败不落盘（tmp 删除、原文件不动），
+  // 比 M4 append 的「写后 truncate 回滚」更干净
   ipc.handle('ledger:save-file', (_event: unknown, raw: unknown): Promise<SaveFileResult> =>
     withWriteLock(async () => {
     const { content, expectedFingerprint } = validateSaveParams(raw)
@@ -188,18 +186,11 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
       return { ok: false, conflict: true, diskContent, diskFingerprint }
     }
 
-    // 2. 写同目录临时文件 → parse 校验（引擎无状态，tmp 路径合法）
-    const tmpPath = `${deps.ledgerPath}.m5tmp`
-    rmSync(tmpPath, { force: true }) // 清理上次崩溃残留（best-effort）
-    writeFileSync(tmpPath, content, 'utf8')
-    const parsed = await deps.engine.parseEntries(tmpPath)
-    if (parsed.errors.length > 0) {
-      rmSync(tmpPath, { force: true })
-      return { ok: false, message: parsed.errors.map((e) => e.message).join('; ') }
-    }
+    // 2. 共享落盘管线（M6 抽取，合并/接管复用）：校验失败不落盘、返回错误文案
+    const written = await writeLedgerChecked(deps, content)
+    if (!written.ok) return { ok: false, message: written.message }
 
-    // 3. rename 原子替换（Node on Windows：覆盖已存在文件）→ 索引重建（M3 管线）
-    renameSync(tmpPath, deps.ledgerPath)
+    // 3. 索引重建（M3 管线）
     const result = await refreshIndex(deps.db, deps.engine, deps.ledgerPath)
     return {
       ok: true,

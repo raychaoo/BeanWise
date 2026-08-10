@@ -1,14 +1,20 @@
 import type {
   AddEntryParams,
   AddEntryResult,
+  ConfigureSyncParams,
+  ConfigureSyncResult,
   LedgerStatus,
   ListAccountsResult,
   ListEntriesParams,
   ListEntriesResult,
   ReadFileResult,
   RefreshResult,
+  ResolveConflictParams,
+  ResolveConflictResult,
   SaveFileParams,
-  SaveFileResult
+  SaveFileResult,
+  SyncResult,
+  SyncStatus
 } from './ipc'
 
 /** Preload 暴露给渲染进程的白名单 API 形状（M3 ledger 域三方法 + M4 录入链路两方法） */
@@ -26,4 +32,16 @@ export interface BeanWiseApi {
   readLedgerFile(): Promise<ReadFileResult>
   /** 整文件覆盖保存：指纹比对 → tmp 校验 → rename 原子替换 → 索引重建 */
   saveLedgerFile(params: SaveFileParams): Promise<SaveFileResult>
+  /** git 同步状态（未配置 → configured:false） */
+  getSyncStatus(): Promise<SyncStatus>
+  /** 配置同步：测试连接 → 首同步（场景 A/B/C）→ 返回状态；场景 C 不一致 → conflict 三路快照 */
+  configureSync(params: ConfigureSyncParams): Promise<ConfigureSyncResult>
+  /** 保存后自动触发（渲染端 fire-and-forget）：commit → fetch → diff3 合并 → push */
+  pushLedger(): Promise<SyncResult>
+  /** 手动拉取：fetch → diff3 合并 → 工作区更新 + 索引重建 */
+  pullLedger(): Promise<SyncResult>
+  /** 三路合并结果提交：校验落盘 → commit → push → 索引重建 */
+  resolveSyncConflict(params: ResolveConflictParams): Promise<ResolveConflictResult>
+  /** 清除同步配置与 PAT */
+  clearSync(): Promise<{ ok: boolean }>
 }
