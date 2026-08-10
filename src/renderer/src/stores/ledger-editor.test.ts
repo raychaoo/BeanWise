@@ -16,6 +16,8 @@ type StubApi = {
   listLedgerEntries: ReturnType<typeof vi.fn>
   listLedgerAccounts: ReturnType<typeof vi.fn>
   refreshLedgerIndex: ReturnType<typeof vi.fn>
+  getSyncStatus: ReturnType<typeof vi.fn>
+  pushLedger: ReturnType<typeof vi.fn>
 }
 
 function stubBeanwise(overrides: Partial<StubApi> = {}): StubApi {
@@ -26,6 +28,8 @@ function stubBeanwise(overrides: Partial<StubApi> = {}): StubApi {
     listLedgerEntries: vi.fn().mockResolvedValue({ entries: [], total: 0 }),
     listLedgerAccounts: vi.fn().mockResolvedValue({ accounts: [] }),
     refreshLedgerIndex: vi.fn().mockResolvedValue({ changed: false, status: 'ok', entryCount: 0, errorCount: 0 }),
+    getSyncStatus: vi.fn().mockResolvedValue({ configured: false, lastSyncAt: null, lastError: null, syncing: false }),
+    pushLedger: vi.fn().mockResolvedValue({ ok: true }),
     ...overrides
   }
   vi.stubGlobal('window', { beanwise: api })
@@ -136,4 +140,15 @@ it('reloadEditorFile：清冲突 + 重读文件', async () => {
   await useLedgerStore.getState().reloadEditorFile()
   expect(useLedgerStore.getState().editorConflict).toBeNull()
   expect(useLedgerStore.getState().editorContent).toBe('disk-now')
+})
+
+it('saveEditorFile 成功 → 自动触发 syncStore.push', async () => {
+  const api = stubBeanwise({
+    saveLedgerFile: vi.fn().mockResolvedValue({ ok: true, fingerprint: 'b'.repeat(64), status: 'ok', entryCount: 6, errorCount: 0 }),
+    pushLedger: vi.fn().mockResolvedValue({ ok: true })
+  })
+  useLedgerStore.setState({ editorContent: 'new', editorOriginal: 'old', editorFingerprint: F })
+  await useLedgerStore.getState().saveEditorFile()
+  expect(api.saveLedgerFile).toHaveBeenCalled()
+  expect(api.pushLedger).toHaveBeenCalled()
 })

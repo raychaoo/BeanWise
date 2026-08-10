@@ -8,6 +8,7 @@
 import { message } from 'antd'
 import { create } from 'zustand'
 import type { LedgerEntryRow, LedgerStatus } from '../../../shared/ipc'
+import { useSyncStore } from './sync' // M6：与 sync.ts → ledger.ts 构成运行时安全的循环引用（双方仅 action 体内引用）
 
 export interface EditorConflict {
   diskContent: string
@@ -63,6 +64,7 @@ export const useLedgerStore = create<LedgerState>((set, get) => {
       }))
       message.success('已保存并校验通过')
       void get().refresh() // 索引联动：Header Tag / 明细视图
+      void useSyncStore.getState().push() // M6：保存后自动 git 同步（fire-and-forget，失败不阻塞保存）
     } catch (err) {
       message.error(`保存失败：${String(err)}`)
     } finally {
