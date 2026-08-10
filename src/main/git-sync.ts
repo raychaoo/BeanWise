@@ -106,9 +106,10 @@ export class GitSync {
   }
 
   /**
-   * commit。parent 可选：合并提交须带双亲（默认仅 HEAD）——push 的客户端快进检查要求
-   * 远端 ref 是 push 提交的祖先，单亲合并提交在真实 git 服务器与 isomorphic-git 客户端
-   * 均被拒（PushRejectedError），M6-T3 实测后补充。
+   * commit。parent 可选：isomorphic-git 的显式 parent 数组会**整体替换**默认 [HEAD]（不前置，
+   * 源码 1.41.3 _commit「if (!parent) parent = refOid ? [refOid] : []」），合并提交须由调用方
+   * 显式传 [HEAD_oid, ...extraParents]（见 ipc-handlers-sync 的 mergeCommit）；普通快照提交
+   * （save: ...）不传 parent，保持单亲 [HEAD]。
    */
   async commit(message: string, parent?: string[]): Promise<string> {
     return git.commit({ fs, dir: this.dir, message, author: GIT_AUTHOR, parent })
@@ -168,6 +169,11 @@ export class GitSync {
       fs, http, dir: this.dir, remote: SYNC_REMOTE, ref: SYNC_BRANCH, force,
       onAuth: this.onAuth(), onAuthFailure: this.onAuthFailure()
     }))
+  }
+
+  /** HEAD oid（合并提交的第一父——显式 parent 时默认 [HEAD] 被整体替换，需调用方自取补齐） */
+  async headOid(): Promise<string> {
+    return git.resolveRef({ fs, dir: this.dir, ref: 'HEAD' })
   }
 
   /** fetch 后远端分支 oid（合并提交的第二父；push 快进检查需要） */

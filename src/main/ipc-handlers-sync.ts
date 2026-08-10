@@ -70,14 +70,19 @@ function acquireSync(): void {
   SYNCING.current = true
 }
 
-function toStatus(config: SyncConfig | null): SyncStatus {
+/**
+ * sync:get-status 用默认（读 SYNCING.current）；configure 响应内嵌的 status 须传显式 syncing
+ * ——返回时 finally 尚未执行、SYNCING.current 仍为 true，直接默认取值会让响应携带瞬时的
+ * syncing:true（T3 审查修复：响应描述同步完成后的状态 → 传 false）。
+ */
+function toStatus(config: SyncConfig | null, syncing: boolean = SYNCING.current): SyncStatus {
   return {
     configured: config !== null,
     repoUrl: config?.repoUrl,
     branch: config?.branch,
     lastSyncAt: config?.lastSyncAt ?? null,
     lastError: config?.lastError ?? null,
-    syncing: SYNCING.current
+    syncing
   }
 }
 
@@ -111,11 +116,20 @@ async function snapshotLocal(deps: SyncDeps): Promise<void> {
 type MergeableStatus = Extract<MergeStatus, { kind: 'fast-forward' } | { kind: 'clean-merge' }>
 
 /**
- * push/pull 共用合并分支（DRY，从 brief 两个 handler 的重复代码提取）：
- * 合并/接管内容落盘（校验失败不落盘）→ 双亲合并提交（[HEAD, origin/main]，否则 push 非快进被拒）
- * → push（adopted=场景 C 接管 → force）→ 索引重建。
+ * 合并提交（双亲 [HEAD, 远端]——真实 git 合并语义，第一父=本地）。
+ * isomorphic-git 的显式 parent 整体替换默认 [HEAD]，只传远端会让本地历史游离（T3 审查修复）；
+ * 单亲提交还会被 push 客户端快进检查拒绝（远端 ref 非祖先）。fetch 已保证远端 ref 存在。
  */
-async function applyRemoteMerge(deps: SyncDeps, config: SyncConfig, status: MergeableStatus): Promise<SyncResult> {
+async function mergeCommit(deps: SyncDeps, message: string): Promise<string> {
+  return deps.git.commit(message, [await deps.git.headOid(), await deps.git.remoteHeadOid()])
+}
+
+/**
+ * push/pull 共用合并分支（DRY，从 brief 两个 handler 的重复代码提取）：
+ * 合并/接管内容落盘（校验失败不落盘）→ 双亲合并提交 →（doPush 时）push（adopted=场景 C 接管 → force）
+ * → 索引重建。pull 只拉不推（doPush=false）：只读 PAT 不失败、不静默发布本地改动（T3 审查修复）。
+ */
+async function applyRemoteMerge(deps: SyncDeps, config: SyncConfig, status: MergeableStatus, doPush: boolean): Promise<SyncResult> {
   const content = status.kind === 'fast-forward' ? status.theirsContent : status.content
   const wrote = await writeLedgerChecked(deps, content)
   if (!wrote.ok) {
@@ -123,9 +137,8 @@ async function applyRemoteMerge(deps: SyncDeps, config: SyncConfig, status: Merg
     return { ok: false, message: wrote.message }
   }
   await deps.git.addLedgerFile()
-  // 双亲合并提交：GitSync.commit 第二参数为额外父 oid（fetch 已保证远端 ref 存在）
-  await deps.git.commit(status.kind === 'fast-forward' ? 'merge: 快进合并' : 'merge: 自动合并', [await deps.git.remoteHeadOid()])
-  await deps.git.push(config.adopted ?? false)
+  await mergeCommit(deps, status.kind === 'fast-forward' ? 'merge: 快进合并' : 'merge: 自动合并')
+  if (doPush) await deps.git.push(config.adopted ?? false)
   await refreshIndex(deps.db, deps.engine, deps.ledgerPath)
   markSynced(deps, config)
   return { ok: true }
@@ -181,13 +194,14 @@ export function registerSyncHandlers(ipc: IpcRegistrar, deps: SyncDeps): void {
           const status = await deps.git.analyzeMerge()
           if (status.kind === 'conflict') {
             markFailed(deps, config, '接管冲突：本地与远端账本内容不一致')
-            return { ok: false, conflict: true, base: status.base, ours: status.ours, theirs: status.theirs, status: toStatus(deps.config.load()) }
+            // 内嵌 status 传 syncing=false（返回时 finally 未执行，SYNCING.current 仍为 true——T3 审查修复）
+            return { ok: false, conflict: true, base: status.base, ours: status.ours, theirs: status.theirs, status: toStatus(config, false) }
           }
           // local-ahead（内容一致）→ force push 接管（unrelated histories 非快进会被远端拒绝）
           await deps.git.push(true)
         }
         markSynced(deps, config)
-        return { ok: true, status: toStatus(deps.config.load()) }
+        return { ok: true, status: toStatus(config, false) }
       } catch (err) {
         const config = deps.config.load()
         if (config) markFailed(deps, config, String(err))
@@ -213,7 +227,7 @@ export function registerSyncHandlers(ipc: IpcRegistrar, deps: SyncDeps): void {
           return { ok: true }
         }
         if (status.kind === 'fast-forward' || status.kind === 'clean-merge') {
-          return applyRemoteMerge(deps, config, status)
+          return applyRemoteMerge(deps, config, status, true)
         }
         markFailed(deps, config, '同步冲突：需要人工合并')
         return conflictResult(status)
@@ -237,7 +251,7 @@ export function registerSyncHandlers(ipc: IpcRegistrar, deps: SyncDeps): void {
         const status = await deps.git.analyzeMerge()
         if (status.kind === 'up-to-date' || status.kind === 'local-ahead') { markSynced(deps, config); return { ok: true } }
         if (status.kind === 'fast-forward' || status.kind === 'clean-merge') {
-          return applyRemoteMerge(deps, config, status)
+          return applyRemoteMerge(deps, config, status, false)
         }
         markFailed(deps, config, '同步冲突：需要人工合并')
         return conflictResult(status)
@@ -259,10 +273,12 @@ export function registerSyncHandlers(ipc: IpcRegistrar, deps: SyncDeps): void {
         const config = requireConfig(deps)
         requirePat(deps)
         const wrote = await writeLedgerChecked(deps, content)
-        if (!wrote.ok) return { ok: false, message: wrote.message }
+        if (!wrote.ok) {
+          markFailed(deps, config, wrote.message ?? '合并结果校验失败') // 与 push/pull 分支一致（T3 审查修复）
+          return { ok: false, message: wrote.message }
+        }
         await deps.git.addLedgerFile()
-        // 双亲合并提交（同 applyRemoteMerge：单亲提交 push 非快进被拒）
-        await deps.git.commit('merge: 手动解决冲突', [await deps.git.remoteHeadOid()])
+        await mergeCommit(deps, 'merge: 手动解决冲突')
         await deps.git.push(config.adopted ?? false)
         const result = await refreshIndex(deps.db, deps.engine, deps.ledgerPath)
         markSynced(deps, config)

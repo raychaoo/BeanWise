@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { createDrizzle, openDatabase } from './db'
 import { GitSync, GIT_AUTHOR, SYNC_BRANCH } from './git-sync'
-import { startGitServer } from './git-sync.test'
+import { createBareRepo, readRemoteFile, seedRemote, seedRemoteInit, startGitServer } from './git-test-server'
 import { registerSyncHandlers } from './ipc-handlers-sync'
 import type { IpcRegistrar } from './ipc-handlers'
 import type { ConfigureSyncResult, SyncConfig, SyncResult } from '../shared/ipc'
@@ -33,44 +33,6 @@ class InMemoryConfigStore implements SyncConfigStore {
   load() { return this.cfg }
   save(c: SyncConfig) { this.cfg = c }
   clear() { this.cfg = null }
-}
-
-// ==================== 本地裸仓 + 进程内 smart-HTTP 服务器（isomorphic-git 1.41.3 无 file:// 传输，
-// 服务器实现见 git-sync.test.ts 的 startGitServer；此处仅用其 HTTP 用法） ====================
-
-async function createBareRepo(): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), 'beanwise-bare-'))
-  await git.init({ fs, dir, bare: true, defaultBranch: SYNC_BRANCH })
-  return dir
-}
-/** 空仓 → 初始内容（空仓不可 clone——场景 B/C 前置；content 为文件全文） */
-async function seedRemoteInit(remoteUrl: string, content: string): Promise<void> {
-  const workDir = mkdtempSync(join(tmpdir(), 'beanwise-seed-'))
-  try {
-    await git.init({ fs, dir: workDir, defaultBranch: SYNC_BRANCH })
-    writeFileSync(join(workDir, 'main.beancount'), content)
-    await git.add({ fs, dir: workDir, filepath: 'main.beancount' })
-    await git.commit({ fs, dir: workDir, message: 'init', author: GIT_AUTHOR, ref: SYNC_BRANCH })
-    await git.addRemote({ fs, dir: workDir, remote: 'origin', url: remoteUrl })
-    await git.push({ fs, http, dir: workDir, remote: 'origin', ref: SYNC_BRANCH })
-  } finally { rmSync(workDir, { recursive: true, force: true }) }
-}
-/** 非空裸仓 → 追加一笔（模拟远端他人修改；依赖已有历史） */
-async function seedRemote(remoteUrl: string, contentPatch: string): Promise<void> {
-  const workDir = mkdtempSync(join(tmpdir(), 'beanwise-seed-'))
-  try {
-    await git.clone({ fs, http, dir: workDir, url: remoteUrl, ref: SYNC_BRANCH, singleBranch: true })
-    appendFileSync(join(workDir, 'main.beancount'), contentPatch)
-    await git.add({ fs, dir: workDir, filepath: 'main.beancount' })
-    await git.commit({ fs, dir: workDir, message: 'seed', author: GIT_AUTHOR, ref: SYNC_BRANCH })
-    await git.push({ fs, http, dir: workDir, remote: 'origin', ref: SYNC_BRANCH })
-  } finally { rmSync(workDir, { recursive: true, force: true }) }
-}
-/** 裸仓的 gitdir 即 dir 本身（无 .git 子目录），需显式传 gitdir；HEAD 指向 commit，须带 filepath 走树遍历 */
-async function readRemoteFile(bareDir: string): Promise<string> {
-  const oid = await git.resolveRef({ fs, dir: bareDir, gitdir: bareDir, ref: 'HEAD' })
-  const { blob } = await git.readBlob({ fs, dir: bareDir, gitdir: bareDir, oid, filepath: 'main.beancount' })
-  return Buffer.from(blob).toString('utf8')
 }
 
 describe('sync handlers（M6）', () => {
