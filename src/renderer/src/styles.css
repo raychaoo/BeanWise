@@ -33,3 +33,9 @@ body {
 
 /* M6：Header 同步状态区（索引 Tag + 同步状态条，antd Tag 间留 8px 间距） */
 .sync-status-bar { display: inline-flex; align-items: center; gap: 8px; }
+
+/* M6：三路合并冲突视图（上双 Diff + 下 merged 编辑） */
+.conflict-view { display: flex; flex-direction: column; height: 100%; gap: 8px; }
+.conflict-buttons { display: flex; justify-content: flex-end; }
+.conflict-diff { height: 40%; min-height: 240px; border: 1px solid #f0f0f0; }
+.conflict-merged { flex: 1; min-height: 0; border: 1px solid #f0f0f0; }
