@@ -31,6 +31,7 @@ pytest python/tests  # Python Beancount 引擎测试
 - **UI**：Ant Design（antd 5.x，**禁 v6**：@ant-design/pro-components 2.8.x peer 仅 `^4 || ^5`，v6 迁移评估留 M8；必须配 @ant-design/v5-patch-for-react-19，main.tsx 首行导入）+ ProComponents（ProForm 录入）· Ant Charts · Monaco Editor（裸 monaco-editor，worker 经 Vite `?worker` 本地打包，自研 monarch beancount 语言——M5 定稿，集成细节见「常见坑」）· Zustand 5
 - **数据**：better-sqlite3 + Drizzle ORM · electron-log · electron-store · Electron safeStorage
 - **同步**：isomorphic-git（1.41.3 纯 JS，GitSync 封装——账本目录即 git 工作区、只追踪账本文件、分支固定 main；仅 http/https 传输，不支持 file:// 本地传输，测试/E2E 走进程内 smart-HTTP 服务器 `src/main/git-test-server.ts`）+ electron-store（同步配置 repoUrl/branch/adopted/lastSyncAt/lastError 与 PAT 密文）+ Electron safeStorage（PAT 加密，仅主进程持有）
+- **AI 辅助**：DeepSeek API（deepseek-v4-flash，主进程代理）+ zod 4（tool schema 单源三用：`z.toJSONSchema` → function calling parameters、`zod.parse` 本地校验、`z.infer` TS 类型）——M7 定稿，集成细节见「常见坑」
 - **引擎**：Python 3.11 + Beancount v3 · PyInstaller · stdio JSON-RPC
 - **工程化**：Vitest · pytest · Playwright · electron-builder · electron-updater · GitHub Actions
 
@@ -41,7 +42,7 @@ pytest python/tests  # Python Beancount 引擎测试
                                                      ├─ PythonSvc（stdio JSON-RPC）
                                                      ├─ GitSync（isomorphic-git）
                                                      ├─ SQLite（Drizzle ORM）
-                                                     └─ DeepSeek API 代理
+                                                     └─ DeepSeek 代理（zod 4 tool 校验）
 ```
 
 - **Node ↔ Python 通信**：stdio JSON-RPC 2.0，JSONL 逐行（`\n` 分隔），方法：`ping` / `parse_file` / `parse_entries` / `validate` / `query` / `render_report` / `shutdown`（AI 解析走主进程代理，不经 Python）
@@ -79,6 +80,9 @@ pytest python/tests  # Python Beancount 引擎测试
 - 金额一律十进制字符串（`src/shared/decimal.ts` 精确运算，禁 `parseFloat` / `Number`）：渲染端 InputNumber 用 `stringMode` 直取字符串，主进程余额校验用 `addDecimalStrings`；antd InputNumber 的 `precision` 在 stringMode 下不生效（仅做显示约束，数值校验以正则为准）
 - antd 锁定 5.x：pro-components 2.8.x 不支持 antd v6（peer 仅 `^4 || ^5`），升级需连带 pro-components 3.x beta，M8 图表期再评估
 - VS Code 集成终端会泄漏 `ELECTRON_RUN_AS_NODE=1`，导致 `npm run dev` / E2E 报 "module 'electron' does not provide an export named 'BrowserWindow'"；运行前 `env -u ELECTRON_RUN_AS_NODE`
+- DeepSeek 结构化输出：`json_schema` 模式在 deepseek-v4-flash 不稳定（实测 400，ADR 12），一律用 Function Calling（`tool_choice` 强制单 tool `add_entries`）+ 主进程 zod 校验兜底；JSON number 金额允许 coerce 为十进制字符串（宽容分界），日期/账户/货币等语义字段严格拒绝
+- AI 测试隔离：`BEANWISE_AI_BASE_URL` 环境变量注入 mock 端点（默认官方端点），E2E/单测走 `src/main/ai-test-server.ts` 进程内 mock（git-test-server 同策略），零网络零计费
+- 请求超时用 `AbortSignal.timeout(60s)`；捕获分支按 `err.name === 'AbortError'` 判定（勿依赖 DOMException 实例）
 
 ## 文档索引
 

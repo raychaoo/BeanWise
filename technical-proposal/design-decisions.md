@@ -13,8 +13,8 @@
 | 9 | git 冲突 UX | 未定义 | **自研三路合并 UI（基于 Monaco 双向 DiffEditor 组合）** | 否则同步功能体验断裂；Monaco 无内置三路合并器（VS Code 合并编辑器为闭源，不在 Monaco 中）。**M6 落地（2026-08-10）**：布局 = 上双 DiffEditor（base vs ours / base vs theirs）+ 下 merged 可编辑；冲突三路快照（base/ours/theirs）经 IPC 内存传递，不写冲突标记文件；merged 内容走「tmp 校验 + rename」管线（`writeLedgerChecked`），校验失败不落盘；resolve 成功 → 双亲合并提交 → push → refreshIndex |
 | 10 | 安全边界 | 未定义 | **CSP + Key 只存主进程** | Token / API Key 不落渲染进程 |
 | 11 | git 同步引擎 | AutoGit v2.2 + libgit2 | **isomorphic-git** | 原方案在 npm 查无此库；唯一 libgit2 绑定 nodegit 已停维护且 Windows 本地编译困难；isomorphic-git 纯 JS 零原生依赖，Electron 内免编译。**M6 落地（2026-08-10）**：1.41.3 实测——仅 http/https 传输（file:// 本地传输已在 1.x 移除，测试/E2E 用进程内 smart-HTTP 服务器 `src/main/git-test-server.ts` 替代）；封装 GitSync 薄层（init/commit/fetch/analyzeMerge/mergeFile diff3 合并，`git.mergeFile` 在 1.x 未导出故用同款 diff3 算法本地实现）；合并提交为双亲提交（parents=[HEAD, 远端]），保证 push 客户端快进检查通过 |
-| 12 | AI 结构化输出 | response_format JSON Schema | **Function Calling + 主进程按 schema 校验** | V4 API 已宣称支持 `json_schema`（deepseek-go SDK 已对齐），但 Agno / LangChain 实测 deepseek-v4-flash 仍报 400，支持状态不稳定；`json_object` 模式要求 prompt 含 "json" 且不保证 schema 合规；Function Calling（v4-flash 支持，reasoner 不支持）的 tool schema 即结构约束，输出仍须客户端校验 |
-| 13 | AI 请求通道 | 二选一（主进程代理 / Python 转发） | **主进程代理** | 延续既有安全边界（Key 不落渲染进程）；Python 转发多一跳且需把 Key 传入子进程 |
+| 12 | AI 结构化输出 | response_format JSON Schema | **Function Calling + 主进程按 schema 校验** | V4 API 已宣称支持 `json_schema`（deepseek-go SDK 已对齐），但 Agno / LangChain 实测 deepseek-v4-flash 仍报 400，支持状态不稳定；`json_object` 模式要求 prompt 含 "json" 且不保证 schema 合规；Function Calling（v4-flash 支持，reasoner 不支持）的 tool schema 即结构约束，输出仍须客户端校验。**M7 落地（2026-08-11）**：单 tool `add_entries` + `tool_choice` 强制；zod 4 单源（tool JSON Schema / 本地校验 / TS 类型一份定义）；JSON number 金额 coerce 为十进制字符串（宽容分界），语义字段严格拒绝（「schema 校验拒绝非法输出」绿灯） |
+| 13 | AI 请求通道 | 二选一（主进程代理 / Python 转发） | **主进程代理** | 延续既有安全边界（Key 不落渲染进程）；Python 转发多一跳且需把 Key 传入子进程。**M7 落地（2026-08-11）**：`src/main/ai-proxy.ts` DeepSeekProxy（fetch + `AbortSignal.timeout(60s)`）；Key 独立 store（`ai-tokens`，safeStorage）；`BEANWISE_AI_BASE_URL` 测试注入 |
 
 ## 待评审 / 待定事项
 
