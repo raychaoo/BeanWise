@@ -148,6 +148,20 @@ describe('DeepSeekProxy.parse', () => {
     expect(body.messages[0].content).toContain('Assets:Bank:CNB')
     expect(body.messages[1].content).toBe('hi')
   })
+
+  it('缺省 now 用本地日期（0-8 点不因 UTC 差一天）', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date(2026, 7, 11, 0, 30, 0)) // 本地 2026-08-11 00:30
+      const fetchImpl = vi.fn().mockResolvedValue({ status: 200, json: async () => chatCompletion(validArgs) })
+      const p = new DeepSeekProxy({ baseUrl: 'http://mock.local', fetchImpl: fetchImpl as typeof fetch })
+      await p.parse('sk-test', 'x', [])
+      const body = JSON.parse((fetchImpl.mock.calls[0] as [string, { body: string }])[1].body)
+      expect(body.messages[0].content).toContain('今天是 2026-08-11')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('mapHttpStatus / buildSystemPrompt', () => {

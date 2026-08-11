@@ -53,12 +53,15 @@ describe('addEntriesToolSchema（AI 输出校验）', () => {
     expect(r.success).toBe(false)
   })
 
-  it('账户含空格 / 小写开头拒绝', () => {
+  it('账户含空格 / 小写开头 / 缺冒号拒绝', () => {
     expect(addEntriesToolSchema.safeParse({
       entries: [{ ...validEntry, postings: [{ account: 'Expenses Food', number: '1', currency: 'CNY' }, { account: 'Assets:Bank:CNB', number: '-1', currency: 'CNY' }] }]
     }).success).toBe(false)
     expect(addEntriesToolSchema.safeParse({
       entries: [{ ...validEntry, postings: [{ account: 'expenses:food', number: '1', currency: 'CNY' }, { account: 'Assets:Bank:CNB', number: '-1', currency: 'CNY' }] }]
+    }).success).toBe(false)
+    expect(addEntriesToolSchema.safeParse({
+      entries: [{ ...validEntry, postings: [{ account: 'Expenses', number: '1', currency: 'CNY' }, { account: 'Assets:Bank:CNB', number: '-1', currency: 'CNY' }] }]
     }).success).toBe(false)
   })
 

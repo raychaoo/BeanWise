@@ -51,6 +51,7 @@ export default function AiEntryPanel({ onOpenSettings, onFillForm }: Props) {
       }
     } catch (err) {
       setError(String(err))
+      setDrafts(null)
     } finally {
       setLoading(false)
     }

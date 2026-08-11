@@ -46,7 +46,7 @@ export class DeepSeekProxy {
     this.baseUrl = deps.baseUrl ?? DEFAULT_BASE_URL
     this.fetchImpl = deps.fetchImpl ?? fetch
     this.timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS
-    this.now = deps.now ?? (() => new Date().toISOString().slice(0, 10))
+    this.now = deps.now ?? (() => { const d = new Date(); const pad = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` })
   }
 
   async parse(apiKey: string, text: string, accounts: string[]): Promise<AiParseResult> {
