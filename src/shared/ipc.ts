@@ -238,7 +238,7 @@ export interface ReportIncomeExpenseParams {
   year?: number
 }
 
-/** 收支对比点（income/expense 均为正显示：income=-ΣIncome:*，expense=-ΣExpenses:*） */
+/** 收支对比点（income/expense 均为正显示：income=-ΣIncome:*，expense = ΣExpenses:*（索引行支出记正数，正显示）） */
 export interface IncomeExpensePoint {
   period: string
   income: string

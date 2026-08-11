@@ -107,7 +107,7 @@ export function buildAccountTree(rows: PostingRow[]): AccountBalance[] {
 /**
  * 收支对比：income = -ΣIncome:*（正显示），expense = ΣExpenses:*（正显示——索引行支出为正，
  * 见 brief 测试数据与 ai-entry-panel 惯例；2026-08-11 TDD 修正，简报 Step 3 的 expense 取反会显示负值）。
- * month 粒度 year 必传（handler 缺省解析最近年份），补满 12 个月（无数据月为 0）；
+ * month 粒度 year 必传（handler 缺省解析最近年份；缺省直接 throw 函数级防御），补满 12 个月（无数据月为 0）；
  * year 粒度按全历史年份分组。
  */
 export function computeIncomeExpense(
@@ -126,6 +126,7 @@ export function computeIncomeExpense(
     else if (r.account.startsWith('Expenses:')) expenseMap.set(period, addDecimalStrings(expenseMap.get(period) ?? '0', r.number))
   }
   if (granularity === 'month') {
+    if (year === undefined) throw new Error('computeIncomeExpense: month 粒度必须传 year（handler 必解析，函数级防御）')
     const points: IncomeExpensePoint[] = []
     for (let m = 1; m <= 12; m++) {
       const period = `${year}-${String(m).padStart(2, '0')}`

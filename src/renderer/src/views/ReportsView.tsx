@@ -54,7 +54,7 @@ export default function ReportsView() {
       <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
         <Segmented
           value={granularity}
-          onChange={(v) => setGranularity(v as 'month' | 'year')}
+          onChange={(v) => { if (typeof v === 'string') setGranularity(v as 'month' | 'year') }}
           options={[
             { label: '月', value: 'month' },
             { label: '年', value: 'year' }

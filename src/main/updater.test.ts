@@ -53,13 +53,17 @@ describe('createUpdaterService', () => {
     expect(changes).toEqual(['checking', 'available', 'downloading', 'downloaded'])
   })
 
-  it('update-not-available → 回到 idle，无 availableVersion', () => {
+  it('update-not-available → 回到 idle，无 availableVersion，error 一并清理', () => {
     const { fake, service } = setup()
     void service.check()
     fake.emit('update-available', { version: '9.9.9' })
+    fake.emit('error', new Error('network down'))
+    expect(service.state().status).toBe('error')
+    expect(service.state().error).toBe('network down')
     fake.emit('update-not-available')
     expect(service.state().status).toBe('idle')
     expect(service.state().availableVersion).toBeUndefined()
+    expect(service.state().error).toBeUndefined()
   })
 
   it('error 事件 → error 状态 + 中文信息', () => {

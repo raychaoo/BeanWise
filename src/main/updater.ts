@@ -48,7 +48,7 @@ export function createUpdaterService(deps: {
   updater.on('update-available', (info: { version?: string }) => {
     setStatus('available', { availableVersion: info?.version })
   })
-  updater.on('update-not-available', () => setStatus('idle', { availableVersion: undefined, progress: undefined }))
+  updater.on('update-not-available', () => setStatus('idle', { availableVersion: undefined, progress: undefined, error: undefined }))
   updater.on('download-progress', (p: { percent?: number }) => {
     setStatus('downloading', { progress: Math.round(p?.percent ?? 0) })
   })

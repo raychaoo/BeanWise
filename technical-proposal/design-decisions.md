@@ -8,7 +8,7 @@
 | 4 | Beancount 版本 | 未约束 | **锁定 v3** | v2/v3 语法与 API 差异大，避免兼容性灾难 |
 | 5 | CI/CD | 无 | **GitHub Actions Windows 单平台构建** | 与 GitHub 仓库、electron-updater 形成闭环 |
 | 6 | E2E 测试 | 仅单测 | **补 Playwright** | 录入→校验→同步链路单测覆盖不到 |
-| 7 | 签名 | 无 | **electron-builder Authenticode 代码签名** | 自动更新的硬性前置条件 |
+| 7 | 签名 | 无 | **electron-builder Authenticode 代码签名** | 自动更新的硬性前置条件（已被 ADR 15 取代——无签名发布，2026-08-11） |
 | 8 | Monaco | 仅架构图提及 | **正式纳入技术栈（M5 落地）** | 承担编辑、beancount 语法高亮、git diff 三职责；M5 定稿：裸 monaco-editor（0.56）+ Vite `?worker` 本地打包 worker（`monaco-editor/editor/editor.worker?worker`——0.56 exports map 下带 `esm/vs` 前缀会双写报错）、自研 monarch beancount 语言、生产 CSP 补 `worker-src 'self'`；编辑器保存走整文件覆盖（tmp 校验 + rename 原子替换，校验失败不落盘） |
 | 9 | git 冲突 UX | 未定义 | **自研三路合并 UI（基于 Monaco 双向 DiffEditor 组合）** | 否则同步功能体验断裂；Monaco 无内置三路合并器（VS Code 合并编辑器为闭源，不在 Monaco 中）。**M6 落地（2026-08-10）**：布局 = 上双 DiffEditor（base vs ours / base vs theirs）+ 下 merged 可编辑；冲突三路快照（base/ours/theirs）经 IPC 内存传递，不写冲突标记文件；merged 内容走「tmp 校验 + rename」管线（`writeLedgerChecked`），校验失败不落盘；resolve 成功 → 双亲合并提交 → push → refreshIndex |
 | 10 | 安全边界 | 未定义 | **CSP + Key 只存主进程** | Token / API Key 不落渲染进程 |

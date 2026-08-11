@@ -48,16 +48,20 @@ export const useReportsStore = create<ReportsState>((set, get) => ({
   },
 
   reloadAll: async () => {
+    const g = get().granularity
     set({ loading: true, error: null })
     try {
-      const r = await loadAll(get().granularity)
+      const r = await loadAll(g)
+      if (get().granularity !== g) return // 粒度已切换：丢弃过期结果（新 reloadAll 在途）
       set({ netWorth: r.netWorth, balances: r.balances, incomeExpense: r.incomeExpense, currency: r.currency })
     } catch (err) {
       const msg = String(err)
+      if (get().granularity !== g) return // 过期请求的失败同样丢弃
       set({ error: msg })
       message.error(`报表加载失败：${msg}`)
     } finally {
-      set({ loading: false })
+      // 仅粒度未变时复位 loading（粒度已变则新 reloadAll 在途，loading 归它管）
+      if (get().granularity === g) set({ loading: false })
     }
   }
 }))

@@ -114,7 +114,7 @@ export default function App() {
           <div style={{ display: view === 'editor' ? 'block' : 'none', height: 'calc(100vh - 112px)' }}>
             <EditorView />
           </div>
-          <div style={{ display: view === 'reports' ? 'block' : 'none' }}><ReportsView /></div>
+          {view === 'reports' && <ReportsView />}
           <div style={{ display: view === 'conflict' ? 'block' : 'none', height: 'calc(100vh - 112px)' }}>
             <ConflictView />
           </div>

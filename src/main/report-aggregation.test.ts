@@ -102,7 +102,7 @@ describe('buildAccountTree（叶子余额 + 子树 rollup + 多币种分行）',
 })
 
 describe('computeIncomeExpense（正显示 + 月视图补满 12 个月 + 年过滤）', () => {
-  it('month + year=2026：12 个月全量，income = -ΣIncome:*，expense = -ΣExpenses:*', () => {
+  it('month + year=2026：12 个月全量，income = -ΣIncome:*，expense = ΣExpenses:*（索引行支出记正数，正显示）', () => {
     const pts = computeIncomeExpense(rows, 'month', 'CNY', 2026)
     expect(pts).toHaveLength(12)
     const jan = pts.find((p) => p.period === '2026-01')!
@@ -123,5 +123,9 @@ describe('computeIncomeExpense（正显示 + 月视图补满 12 个月 + 年过�
     const pts = computeIncomeExpense(rows, 'year', 'CNY', 2025)
     expect(pts.map((p) => p.period)).toEqual(['2025'])
     expect(pts[0].expense).toBe('40')
+  })
+
+  it('month 粒度缺省 year：直接 throw（函数级防御，handler 必解析）', () => {
+    expect(() => computeIncomeExpense(rows, 'month', 'CNY')).toThrow('year')
   })
 })
