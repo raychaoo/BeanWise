@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { APP_NAME } from '../shared/app'
 import type { BeanWiseApi } from '../shared/api'
-import type { AddEntryParams, AiParseParams, ConfigureSyncParams, ListEntriesParams, ResolveConflictParams, SaveAiConfigParams, SaveFileParams } from '../shared/ipc'
+import { UPDATE_STATUS_CHANNEL } from '../shared/ipc'
+import type { AddEntryParams, AiParseParams, ConfigureSyncParams, ListEntriesParams, ReportIncomeExpenseParams, ReportNetWorthParams, ResolveConflictParams, SaveAiConfigParams, SaveFileParams, UpdateState } from '../shared/ipc'
 
 const api: BeanWiseApi = {
   appName: APP_NAME,
@@ -21,7 +22,18 @@ const api: BeanWiseApi = {
   getAiStatus: () => ipcRenderer.invoke('ai:get-status'),
   saveAiConfig: (params: SaveAiConfigParams) => ipcRenderer.invoke('ai:save-config', params),
   clearAiConfig: () => ipcRenderer.invoke('ai:clear-config'),
-  parseAiEntry: (text: string) => ipcRenderer.invoke('ai:parse', { text } satisfies AiParseParams)
+  parseAiEntry: (text: string) => ipcRenderer.invoke('ai:parse', { text } satisfies AiParseParams),
+  getNetWorthReport: (params: ReportNetWorthParams) => ipcRenderer.invoke('report:net-worth', params),
+  getBalancesReport: () => ipcRenderer.invoke('report:balances'),
+  getIncomeExpenseReport: (params: ReportIncomeExpenseParams) => ipcRenderer.invoke('report:income-expense', params),
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  getUpdateStatus: () => ipcRenderer.invoke('update:status'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdateStatusChanged: (cb: (state: UpdateState) => void) => {
+    const listener = (_e: unknown, state: UpdateState) => cb(state)
+    ipcRenderer.on(UPDATE_STATUS_CHANNEL, listener)
+    return () => { ipcRenderer.removeListener(UPDATE_STATUS_CHANNEL, listener) }
+  }
 }
 
 contextBridge.exposeInMainWorld('beanwise', api)

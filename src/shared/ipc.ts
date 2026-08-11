@@ -28,6 +28,8 @@ export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list
   | 'sync:get-status' | 'sync:configure' | 'sync:push' | 'sync:pull'
   | 'sync:resolve-conflict' | 'sync:clear'
   | 'ai:get-status' | 'ai:save-config' | 'ai:clear-config' | 'ai:parse'
+  | 'report:net-worth' | 'report:balances' | 'report:income-expense'
+  | 'update:check' | 'update:status' | 'update:install'
 
 /** ledger:read-file 结果（ENOENT → ok:false + message，编辑器 Empty 态） */
 export interface ReadFileResult {
@@ -191,3 +193,90 @@ export interface AiParseResult {
   /** 失败原因（API 层 / schema 校验，中文） */
   error?: string
 }
+
+/** M8：报表域（数据源 = SQLite 索引行 → 主进程 decimal.ts 精确聚合，SQL 不 SUM） */
+
+/** 报表粒度（月 YYYY-MM / 年 YYYY） */
+export type ReportGranularity = 'month' | 'year'
+
+/** report:net-worth 入参 */
+export interface ReportNetWorthParams {
+  granularity: ReportGranularity
+}
+
+/** 净资产趋势点（decimal 字符串） */
+export interface NetWorthPoint {
+  period: string // 'YYYY-MM' 或 'YYYY'
+  assets: string
+  liabilities: string
+  netWorth: string // = assets + liabilities（Beancount 负债为负）
+}
+
+/** report:net-worth 结果（currency 为运营货币，其他币种已排除） */
+export interface ReportNetWorthResult {
+  series: NetWorthPoint[]
+  currency: string
+  message?: string
+}
+
+/** 账户余额树节点：balances = 子树各币种合计（rollup），children 按名称字典序 */
+export interface AccountBalance {
+  name: string
+  balances: Array<{ currency: string; number: string }>
+  children?: AccountBalance[]
+}
+
+/** report:balances 结果（全部币种分行） */
+export interface ReportBalancesResult {
+  accounts: AccountBalance[]
+  message?: string
+}
+
+/** report:income-expense 入参（year 仅月视图有意义，缺省 = 最近有数据的年份） */
+export interface ReportIncomeExpenseParams {
+  granularity: ReportGranularity
+  year?: number
+}
+
+/** 收支对比点（income/expense 均为正显示：income=-ΣIncome:*，expense=-ΣExpenses:*） */
+export interface IncomeExpensePoint {
+  period: string
+  income: string
+  expense: string
+}
+
+/** report:income-expense 结果 */
+export interface ReportIncomeExpenseResult {
+  series: IncomeExpensePoint[]
+  currency: string
+  message?: string
+}
+
+/** M8：更新域（electron-updater 状态机，主进程持有） */
+
+export type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error'
+
+/** update:status 结果 / update:status-changed 事件载荷 */
+export interface UpdateState {
+  status: UpdateStatus
+  currentVersion: string
+  availableVersion?: string
+  /** 下载进度 0~100 */
+  progress?: number
+  error?: string
+}
+
+/** update:check 结果 */
+export interface UpdateCheckResult {
+  ok: boolean
+  message?: string
+}
+
+/** update:install 结果 */
+export interface UpdateInstallResult {
+  ok: boolean
+  message?: string
+}
+
+/** main → renderer 事件通道（更新状态推送，白名单常量） */
+export const UPDATE_STATUS_CHANNEL = 'update:status-changed'

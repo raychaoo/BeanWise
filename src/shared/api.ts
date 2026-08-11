@@ -11,6 +11,11 @@ import type {
   ListEntriesResult,
   ReadFileResult,
   RefreshResult,
+  ReportBalancesResult,
+  ReportIncomeExpenseParams,
+  ReportIncomeExpenseResult,
+  ReportNetWorthParams,
+  ReportNetWorthResult,
   ResolveConflictParams,
   ResolveConflictResult,
   SaveAiConfigParams,
@@ -18,7 +23,10 @@ import type {
   SaveFileParams,
   SaveFileResult,
   SyncResult,
-  SyncStatus
+  SyncStatus,
+  UpdateCheckResult,
+  UpdateInstallResult,
+  UpdateState
 } from './ipc'
 
 /** Preload 暴露给渲染进程的白名单 API 形状（M3 ledger 域三方法 + M4 录入链路两方法） */
@@ -56,4 +64,18 @@ export interface BeanWiseApi {
   clearAiConfig(): Promise<{ ok: boolean }>
   /** 自然语言 → 结构化草稿（主进程代理 + 本地 schema 校验，非法输出拒绝） */
   parseAiEntry(text: string): Promise<AiParseResult>
+  /** 净资产趋势（SQLite 精确聚合，运营货币） */
+  getNetWorthReport(params: ReportNetWorthParams): Promise<ReportNetWorthResult>
+  /** 账户余额树（全部币种分行） */
+  getBalancesReport(): Promise<ReportBalancesResult>
+  /** 收支对比（income/expense 正显示） */
+  getIncomeExpenseReport(params: ReportIncomeExpenseParams): Promise<ReportIncomeExpenseResult>
+  /** 检查更新（触发 updater 状态机） */
+  checkForUpdates(): Promise<UpdateCheckResult>
+  /** 当前更新状态（idle/checking/available/downloading/downloaded/error） */
+  getUpdateStatus(): Promise<UpdateState>
+  /** 下载完成后安装并重启 */
+  installUpdate(): Promise<UpdateInstallResult>
+  /** 订阅更新状态推送（main → renderer 事件），返回取消订阅函数 */
+  onUpdateStatusChanged(cb: (state: UpdateState) => void): () => void
 }

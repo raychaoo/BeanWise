@@ -20,6 +20,7 @@
     "postinstall": "node scripts/postinstall.mjs"
   },
   "dependencies": {
+    "@ant-design/charts": "^2.6.7",
     "@ant-design/icons": "^6.3.2",
     "@ant-design/pro-components": "^2.8.10",
     "@ant-design/v5-patch-for-react-19": "^1.0.3",
@@ -28,6 +29,7 @@
     "diff3": "^0.0.4",
     "drizzle-orm": "^0.45.2",
     "electron-store": "^11.0.2",
+    "electron-updater": "^6.8.9",
     "isomorphic-git": "^1.41.3",
     "monaco-editor": "^0.56.0",
     "react": "^19.2.8",
