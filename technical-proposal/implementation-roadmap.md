@@ -24,7 +24,7 @@
 | M5 | Monaco 编辑器 | M3 | 打开账本 → beancount 高亮 → 编辑保存 → 校验提示 |
 | M6 | Git 同步 | M3 | 推拉到 GitHub 私有仓库；人为冲突 → 三路合并 UI 完成合并 |
 | M7 | AI 辅助录入 | M3 | 自然语言 → 交易指令 → 落盘全链路；schema 校验拒绝非法输出 ✅（2026-08-11） |
-| M8 | 图表报表 + 发布加固 | M4, M5, M6, M7 | 图表渲染真实数据；升级演练；完整发布演练（tag → Release → 更新） |
+| M8 | 图表报表 + 发布加固 | M4, M5, M6, M7 | 图表渲染真实数据；升级演练；完整发布演练（tag → Release → 更新） ✅ 计划（2026-08-11） |
 
 ```plain
 M1 ──┬──▶ M3 ──┬──▶ M4 ──┬──▶ M8
@@ -75,6 +75,12 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
   | `sync:pull`（M6） | 无 | `{ok, conflict?, base?, ours?, theirs?, message?}`（fetch → 自动合并 → 落盘 + refreshIndex） |
   | `sync:resolve-conflict`（M6） | `{content}` | `{ok, status?, entryCount?, errorCount?, message?}`（tmp 校验落盘 → commit → push → refreshIndex） |
   | `sync:clear`（M6） | 无 | `{ok}` |
+  | `report:net-worth`（M8） | `{granularity: 'month'\|'year'}` | `{series: [{period, assets, liabilities, netWorth}], currency, message?}`（期间累计，仅运营货币；金额 decimal 字符串） |
+  | `report:balances`（M8） | 无 | `{accounts: [{name, balances: [{currency, number}], children?}], message?}`（账户树 + 子树 rollup，多币种分行） |
+  | `report:income-expense`（M8） | `{granularity, year?}` | `{series: [{period, income, expense}], currency, message?}`（income/expense 正显示；月视图 12 个月补满，year 缺省最近年份） |
+  | `update:check`（M8） | 无 | `{ok, message?}`（触发 updater 状态机） |
+  | `update:status`（M8） | 无 | `UpdateState`（idle/checking/available/downloading/downloaded/error + currentVersion/progress/error） |
+  | `update:install`（M8） | 无 | `{ok, message?}`（quitAndInstall）；事件 `update:status-changed` main→renderer |
 
 ### 数据流铁律
 
@@ -107,7 +113,7 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
 | M5 | Monaco 编辑器 + 自研 monarch beancount 语法高亮、整文件覆盖保存（tmp 校验 + rename 原子替换，校验失败不落盘）、外部修改冲突检测（sha256 指纹比对 + DiffEditor 决策）、DiffEditor 基础；生产 CSP 补 `worker-src 'self'`（Monaco worker 独立 chunk） | 三路合并 UI（M6） |
 | M6 | isomorphic-git 推拉（账本目录即 git 工作区，只追踪账本文件；分支固定 main/remote 固定 origin）、PAT 录入（safeStorage 加密，仅主进程持有）、保存后自动 push + 手动 pull、diff3 自动合并（干净合并 → 双亲合并提交落盘；冲突才弹三路 UI：base/ours/theirs + merged 编辑）、force push 仅场景 C 接管（unrelated histories）、sync 域 syncing 互斥（push/pull/configure/resolve 任一进行中其余拒绝） | 自动定时同步（可后置，sync:push/pull 即定时器执行体）；自动 push 仅挂编辑器保存（saveEditorFile），add-entry / AI 录入不触发（M7 交接）；多账本文件追踪（目前单文件） |
 | M7 | DeepSeek 代理、function calling tool schema、主进程 schema 校验 → 落地：ai 域四通道 + DeepSeekProxy（tool_choice 强制）+ zod 4 单源校验 + AiEntryPanel（生成草稿→填入表单，写路径唯一）+ AI 设置 Modal（Key safeStorage）；单次生成 + 草稿确认，多笔数组（≤10），账户列表注入 system prompt | 提示词工程打磨 |
-| M8 | Ant Charts 报表、electron-updater 升级链、代码签名、发布演练 | — |
+| M8 | Ant Charts 报表、electron-updater 升级链、发布加固（无签名口径）、发布演练 | — |
 
 ## 排序理由与风险
 

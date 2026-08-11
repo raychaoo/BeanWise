@@ -32,6 +32,7 @@ pytest python/tests  # Python Beancount 引擎测试
 - **数据**：better-sqlite3 + Drizzle ORM · electron-log · electron-store · Electron safeStorage
 - **同步**：isomorphic-git（1.41.3 纯 JS，GitSync 封装——账本目录即 git 工作区、只追踪账本文件、分支固定 main；仅 http/https 传输，不支持 file:// 本地传输，测试/E2E 走进程内 smart-HTTP 服务器 `src/main/git-test-server.ts`）+ electron-store（同步配置 repoUrl/branch/adopted/lastSyncAt/lastError 与 PAT 密文）+ Electron safeStorage（PAT 加密，仅主进程持有）
 - **AI 辅助**：DeepSeek API（deepseek-v4-flash，主进程代理）+ zod 4（tool schema 单源三用：`z.toJSONSchema` → function calling parameters、`zod.parse` 本地校验、`z.infer` TS 类型）——M7 定稿，集成细节见「常见坑」
+- **报表**：@ant-design/charts（Ant Charts 2.6.x，peer `react >=16.8.4` 兼容 React 19）+ electron-updater（主进程状态机封装，`update:status-changed` 事件推送）——M8 定稿；报表数据源 = SQLite 索引聚合（不经 Python），金额累计走 decimal.ts 精确字符串运算（SQLite SUM 转 REAL 丢精度禁用）
 - **引擎**：Python 3.11 + Beancount v3 · PyInstaller · stdio JSON-RPC
 - **工程化**：Vitest · pytest · Playwright · electron-builder · electron-updater · GitHub Actions
 
@@ -83,6 +84,8 @@ pytest python/tests  # Python Beancount 引擎测试
 - DeepSeek 结构化输出：`json_schema` 模式在 deepseek-v4-flash 不稳定（实测 400，ADR 12），一律用 Function Calling（`tool_choice` 强制单 tool `add_entries`）+ 主进程 zod 校验兜底；JSON number 金额允许 coerce 为十进制字符串（宽容分界），日期/账户/货币等语义字段严格拒绝
 - AI 测试隔离：`BEANWISE_AI_BASE_URL` 环境变量注入 mock 端点（默认官方端点），E2E/单测走 `src/main/ai-test-server.ts` 进程内 mock（git-test-server 同策略），零网络零计费
 - 请求超时用 `AbortSignal.timeout(60s)`；捕获分支按 `err.name === 'AbortError'` 判定（勿依赖 DOMException 实例）
+- 报表聚合禁 SQL `SUM()`（TEXT→REAL 丢精度）：SQL 只做行筛选排序，金额累计一律 `addDecimalStrings`；图表 y 值 `Number()` 仅显示层
+- electron-updater E2E 注入：`BEANWISE_UPDATE_FEED_URL` → `setFeedURL` + `forceDevUpdateConfig`（dev 无 app-update.yml）；latest.yml 须同时声明 `.exe` 与 `.AppImage` 条目（CI ubuntu 走 AppImageUpdater）
 
 ## 文档索引
 
