@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, expect, it, vi } from 'vitest'
 
 // vi.mock 工厂在 import 求值期（本文件模块体执行前）解析，直接引用顶层 const 会 TDZ
 // ReferenceError（vitest 4.1.10 实测，同 ledger-editor.test.ts）；vi.hoisted 提前初始化。
