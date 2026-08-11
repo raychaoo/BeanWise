@@ -90,7 +90,7 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
 
 ### 平台与版本（2026-08 定稿：仅 Windows）
 
-- 平台：Windows-only（NSIS）；`latest.yml` 随产物发布；Authenticode 签名（CSC_LINK）
+- 平台：Windows-only（NSIS）；`latest.yml` 随产物发布；无签名发布（M8 裁决：放弃签名，`CSC_IDENTITY_AUTO_DISCOVERY=false`，SmartScreen 风险接受，见 release-pipeline.md）
 - 版本：Electron 最新稳定 · Node 22（CI）· Python 3.11 · Beancount v3（锁定，禁止 v2）
 - 原生模块：better-sqlite3 13.x 自带 in-tarball N-API prebuild（Electron 43 实测），`asarUnpack` + `npmRebuild: false` + CI fail-loud postinstall（M3 定稿，见 CLAUDE.md 约束 #7）
 - PyInstaller：`--onefile` → `dist-python/`（spec 配 distpath）；`--collect-all beancount` + 显式收集 `beanquery`

@@ -128,16 +128,12 @@ jobs:
         if: hashFiles('python/requirements.txt') != ''
         run: npm run build:python
 
-      # 签名策略：
-      # - PR（无 secrets）：禁用证书自动发现，产物不签名
-      # - tag（有 secrets）：CSC_LINK Authenticode 签名
-      # - 统一 --publish never：发布交给 release job 汇总，避免重复发布
+      # 签名策略（M8 裁决：放弃签名——无 CSC_* secrets；electron-builder 无证书自动跳过签名，
+      # CSC_IDENTITY_AUTO_DISCOVERY=false 防止误扫本机证书库。SmartScreen 风险见 release-pipeline.md）
       - name: Build installer
         run: npm run dist:win -- --publish never
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"        # 只认 CSC_LINK，不扫系统证书库
-          CSC_LINK: ${{ secrets.CSC_LINK }}           # Authenticode 签名证书（p12 base64）
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
