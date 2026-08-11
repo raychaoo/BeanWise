@@ -3,10 +3,12 @@
  * M3 只读验收面板（#ledger-status / #ledger-entries）已下线，由正式视图取代。
  */
 import { CloudOutlined, FileTextOutlined, FormOutlined, UnorderedListOutlined } from '@ant-design/icons'
-import { Layout, Menu, Tag, Typography } from 'antd'
+import { Button, Layout, Menu, Space, Tag, Typography } from 'antd'
 import { useEffect, useState } from 'react'
+import { useAiStore } from './stores/ai'
 import { useLedgerStore } from './stores/ledger'
 import { useSyncStore } from './stores/sync'
+import AiSettingsModal from './views/AiSettingsModal'
 import ConflictView from './views/ConflictView'
 import EditorView from './views/EditorView'
 import EntriesView from './views/EntriesView'
@@ -24,10 +26,13 @@ export default function App() {
   const conflict = useSyncStore((s) => s.conflict)
   const [refreshing, setRefreshing] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
+  const [aiOpen, setAiOpen] = useState(false)
+  const aiStatus = useAiStore((s) => s.status)
 
   useEffect(() => {
     void useLedgerStore.getState().refresh()
     void useSyncStore.getState().loadStatus()
+    void useAiStore.getState().loadStatus()
   }, [])
 
   /** Header Tag 点击：重建索引 → 重拉状态（与明细视图「重建索引」同链路） */
@@ -74,6 +79,12 @@ export default function App() {
           <Typography.Title level={4} style={{ margin: 0 }}>
             {window.beanwise.appName}
           </Typography.Title>
+          <Space style={{ marginRight: 12 }}>
+            <Tag color={aiStatus?.configured ? 'success' : 'default'}>
+              AI：{aiStatus?.configured ? '已配置' : '未配置'}
+            </Tag>
+            <Button onClick={() => setAiOpen(true)}>AI 设置</Button>
+          </Space>
           <div className="sync-status-bar">
             <Tag
               color={STATUS_COLOR[status?.status ?? 'missing']}
@@ -87,7 +98,9 @@ export default function App() {
           </div>
         </Header>
         <Content style={{ padding: 24 }}>
-          <div style={{ display: view === 'entry' ? 'block' : 'none' }}><EntryFormView /></div>
+          <div style={{ display: view === 'entry' ? 'block' : 'none' }}>
+            <EntryFormView onOpenAiSettings={() => setAiOpen(true)} />
+          </div>
           <div style={{ display: view === 'entries' ? 'block' : 'none' }}><EntriesView /></div>
           <div style={{ display: view === 'editor' ? 'block' : 'none', height: 'calc(100vh - 112px)' }}>
             <EditorView />
@@ -98,6 +111,7 @@ export default function App() {
         </Content>
       </Layout>
       <SyncSettingsModal open={syncOpen} onClose={() => setSyncOpen(false)} />
+      <AiSettingsModal open={aiOpen} onClose={() => setAiOpen(false)} />
     </Layout>
   )
 }

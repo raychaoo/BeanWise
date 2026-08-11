@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react'
 import type { AddEntryParams } from '../../../shared/ipc'
 import { computeBalancingNumber } from '../../../shared/decimal'
 import { useLedgerStore } from '../stores/ledger'
+import AiEntryPanel from './AiEntryPanel'
 
 const MAX_POSTINGS = 20
 const DECIMAL_RE = /^-?\d+(\.\d+)?$/
@@ -22,16 +23,21 @@ interface PostingRow {
   currency?: string
 }
 
+interface Props {
+  /** AI 区块「去设置」/未配置引导 → 打开 AI 设置 Modal（App.tsx 持有状态） */
+  onOpenAiSettings: () => void
+}
+
 interface EntryFormValues {
-  /** ProFormDatePicker 设 format 后 onFinish 提交值为 YYYY-MM-DD 字符串 */
-  date?: string
+  /** ProFormDatePicker 设 format 后 onFinish 提交值为 YYYY-MM-DD 字符串；填表路径可能为 dayjs */
+  date?: string | dayjs.Dayjs
   flag?: '*' | '!'
   payee?: string
   narration?: string
   postings: PostingRow[]
 }
 
-export default function EntryFormView() {
+export default function EntryFormView({ onOpenAiSettings }: Props) {
   const [form] = Form.useForm<EntryFormValues>()
   const status = useLedgerStore((s) => s.status)
   const accounts = useLedgerStore((s) => s.accounts)
@@ -73,7 +79,7 @@ export default function EntryFormView() {
     const params: AddEntryParams = {
       date:
         values.date !== undefined && values.date !== ''
-          ? values.date
+          ? (typeof values.date === 'string' ? values.date : values.date.format('YYYY-MM-DD'))
           : dayjs().format('YYYY-MM-DD'),
       ...(values.flag ? { flag: values.flag } : {}),
       ...(values.payee?.trim() ? { payee: values.payee.trim() } : {}),
@@ -99,98 +105,107 @@ export default function EntryFormView() {
     }
   }
 
-  return (
-    <ProForm<EntryFormValues>
-      form={form}
-      onFinish={handleFinish}
-      initialValues={{ date: dayjs(), flag: '*', postings: [{}, {}] }}
-      submitter={{
-        searchConfig: { submitText: '写入账本' },
-        submitButtonProps: { loading: submitting }
-      }}
-      style={{ maxWidth: 720 }}
-    >
-      <ProFormDatePicker name="date" label="日期" fieldProps={{ format: 'YYYY-MM-DD' }} />
-      <ProFormRadio.Group
-        name="flag"
-        label="标志"
-        options={[
-          { label: '* 已确认', value: '*' },
-          { label: '! 未确认', value: '!' }
-        ]}
-      />
-      <ProFormText name="payee" label="Payee" fieldProps={{ maxLength: 200 }} />
-      <ProFormText name="narration" label="Narration" fieldProps={{ maxLength: 200 }} />
+  /** 草稿 → 表单回填（写路径唯一：确认仍走本表单的「写入账本」提交） */
+  const handleFillForm = (draft: AddEntryParams) => {
+    form.setFieldsValue(draftToFormValues(draft))
+    message.success('已填入表单，请确认后提交')
+  }
 
-      <Form.List
-        name="postings"
-        rules={[
-          {
-            validator: async (_rule, rows: PostingRow[] | undefined) => {
-              if (!rows || rows.length < 2) throw new Error('至少需要 2 行记账行')
-            }
-          }
-        ]}
+  return (
+    <>
+      <AiEntryPanel onOpenSettings={onOpenAiSettings} onFillForm={handleFillForm} />
+      <ProForm<EntryFormValues>
+        form={form}
+        onFinish={handleFinish}
+        initialValues={{ date: dayjs(), flag: '*', postings: [{}, {}] }}
+        submitter={{
+          searchConfig: { submitText: '写入账本' },
+          submitButtonProps: { loading: submitting }
+        }}
+        style={{ maxWidth: 720 }}
       >
-        {(fields, { add, remove }) => (
-          <>
-            {fields.map((field) => (
-              <div key={field.key} style={{ display: 'flex', gap: 8 }}>
-                <Form.Item
-                  name={[field.name, 'account']}
-                  label="账户"
-                  style={{ flex: 3, marginBottom: 12 }}
-                  rules={[
-                    { required: true, message: '请输入账户' },
-                    { pattern: /^[A-Z]\S*:\S*$/, message: '账户须大写字母开头、含冒号、无空格' }
-                  ]}
+        <ProFormDatePicker name="date" label="日期" fieldProps={{ format: 'YYYY-MM-DD' }} />
+        <ProFormRadio.Group
+          name="flag"
+          label="标志"
+          options={[
+            { label: '* 已确认', value: '*' },
+            { label: '! 未确认', value: '!' }
+          ]}
+        />
+        <ProFormText name="payee" label="Payee" fieldProps={{ maxLength: 200 }} />
+        <ProFormText name="narration" label="Narration" fieldProps={{ maxLength: 200 }} />
+
+        <Form.List
+          name="postings"
+          rules={[
+            {
+              validator: async (_rule, rows: PostingRow[] | undefined) => {
+                if (!rows || rows.length < 2) throw new Error('至少需要 2 行记账行')
+              }
+            }
+          ]}
+        >
+          {(fields, { add, remove }) => (
+            <>
+              {fields.map((field) => (
+                <div key={field.key} style={{ display: 'flex', gap: 8 }}>
+                  <Form.Item
+                    name={[field.name, 'account']}
+                    label="账户"
+                    style={{ flex: 3, marginBottom: 12 }}
+                    rules={[
+                      { required: true, message: '请输入账户' },
+                      { pattern: /^[A-Z]\S*:\S*$/, message: '账户须大写字母开头、含冒号、无空格' }
+                    ]}
+                  >
+                    <AutoComplete options={accountOptions} placeholder="如 Expenses:Food" />
+                  </Form.Item>
+                  <Form.Item
+                    name={[field.name, 'number']}
+                    label="金额"
+                    style={{ flex: 2, marginBottom: 12 }}
+                    rules={[numberRule(field.name)]}
+                  >
+                    {/* stringMode 直取十进制字符串；不设 precision——antd 在 stringMode 下会重格式化
+                        数值（如 '0' → '0.0000'），破坏金额原样传递（校验以正则为准） */}
+                    <InputNumber stringMode placeholder="0.00" style={{ width: '100%' }} />
+                  </Form.Item>
+                  <Form.Item
+                    name={[field.name, 'currency']}
+                    label="货币"
+                    style={{ flex: 1, marginBottom: 12 }}
+                    rules={[{ required: true, message: '请输入货币' }]}
+                  >
+                    <AutoComplete options={currencyOptions} placeholder="如 CNY" />
+                  </Form.Item>
+                  {fields.length > 2 && (
+                    <Button
+                      type="text"
+                      danger
+                      icon={<MinusCircleOutlined />}
+                      onClick={() => remove(field.name)}
+                      aria-label="删除记账行"
+                    />
+                  )}
+                </div>
+              ))}
+              <Form.Item style={{ marginBottom: 12 }}>
+                <Button
+                  type="dashed"
+                  block
+                  icon={<PlusOutlined />}
+                  onClick={() => add({})}
+                  disabled={fields.length >= MAX_POSTINGS}
                 >
-                  <AutoComplete options={accountOptions} placeholder="如 Expenses:Food" />
-                </Form.Item>
-                <Form.Item
-                  name={[field.name, 'number']}
-                  label="金额"
-                  style={{ flex: 2, marginBottom: 12 }}
-                  rules={[numberRule(field.name)]}
-                >
-                  {/* stringMode 直取十进制字符串；不设 precision——antd 在 stringMode 下会重格式化
-                      数值（如 '0' → '0.0000'），破坏金额原样传递（校验以正则为准） */}
-                  <InputNumber stringMode placeholder="0.00" style={{ width: '100%' }} />
-                </Form.Item>
-                <Form.Item
-                  name={[field.name, 'currency']}
-                  label="货币"
-                  style={{ flex: 1, marginBottom: 12 }}
-                  rules={[{ required: true, message: '请输入货币' }]}
-                >
-                  <AutoComplete options={currencyOptions} placeholder="如 CNY" />
-                </Form.Item>
-                {fields.length > 2 && (
-                  <Button
-                    type="text"
-                    danger
-                    icon={<MinusCircleOutlined />}
-                    onClick={() => remove(field.name)}
-                    aria-label="删除记账行"
-                  />
-                )}
-              </div>
-            ))}
-            <Form.Item style={{ marginBottom: 12 }}>
-              <Button
-                type="dashed"
-                block
-                icon={<PlusOutlined />}
-                onClick={() => add({})}
-                disabled={fields.length >= MAX_POSTINGS}
-              >
-                添加记账行
-              </Button>
-            </Form.Item>
-          </>
-        )}
-      </Form.List>
-    </ProForm>
+                  添加记账行
+                </Button>
+              </Form.Item>
+            </>
+          )}
+        </Form.List>
+      </ProForm>
+    </>
   )
 }
 
@@ -218,5 +233,22 @@ export function nextBalancingNumber(
     return computeBalancingNumber(amounts)
   } catch {
     return undefined // 非法输入：交给表单校验提示，不在输入时抛错
+  }
+}
+
+/** draftToFormValues 返回类型：date 恒为 dayjs（填表初值类型）；其余字段同 EntryFormValues。
+ * 注意：返回类型收窄为 date: dayjs.Dayjs（而非 EntryFormValues.date 的 string | Dayjs 宽类型）——
+ * 简报测试 draftToFormValues 用例以 v.date?.isSame(...) 断言 dayjs 语义，宽类型在 strict 下编译不过；
+ * 收窄后仍可赋值给 Partial<EntryFormValues>，handleFinish 提交路径不受影响。 */
+type DraftFormValues = Omit<EntryFormValues, 'date'> & { date: dayjs.Dayjs }
+
+/** 草稿 → 表单值（date 转 dayjs 匹配 ProFormDatePicker 初值类型；M7-T5 导出供 node 单测） */
+export function draftToFormValues(draft: AddEntryParams): DraftFormValues {
+  return {
+    date: dayjs(draft.date),
+    flag: draft.flag ?? '*',
+    payee: draft.payee,
+    narration: draft.narration,
+    postings: draft.postings.map((p) => ({ account: p.account, number: p.number, currency: p.currency }))
   }
 }
