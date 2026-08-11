@@ -27,6 +27,7 @@ export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list
   | 'ledger:add-entry' | 'ledger:list-accounts' | 'ledger:read-file' | 'ledger:save-file'
   | 'sync:get-status' | 'sync:configure' | 'sync:push' | 'sync:pull'
   | 'sync:resolve-conflict' | 'sync:clear'
+  | 'ai:get-status' | 'ai:save-config' | 'ai:clear-config' | 'ai:parse'
 
 /** ledger:read-file 结果（ENOENT → ok:false + message，编辑器 Empty 态） */
 export interface ReadFileResult {
@@ -156,4 +157,37 @@ export interface ResolveConflictResult {
   entryCount?: number
   errorCount?: number
   message?: string
+}
+
+/** ai:get-status 结果（不含 Key——渲染端永不接触密钥） */
+export interface AiStatus {
+  configured: boolean
+  /** 当前模型名（常量，暂无 UI 配置） */
+  model: string
+}
+
+/** ai:save-config 入参（Key 仅经此通道上传，渲染端不落 state——同 sync:configure PAT 口径） */
+export interface SaveAiConfigParams {
+  apiKey: string
+}
+
+/** ai:save-config 结果 */
+export interface SaveAiConfigResult {
+  ok: boolean
+  error?: string
+}
+
+/** ai:parse 入参（text ≤2000 字符，handler 校验） */
+export interface AiParseParams {
+  text: string
+}
+
+/** ai:parse 结果（drafts 复用 AddEntryParams[]——草稿回填 ProForm 零转换） */
+export interface AiParseResult {
+  ok: boolean
+  drafts?: AddEntryParams[]
+  /** 模型可选附带说明 */
+  message?: string
+  /** 失败原因（API 层 / schema 校验，中文） */
+  error?: string
 }
