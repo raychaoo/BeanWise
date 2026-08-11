@@ -1,0 +1,28 @@
+option "title" "Reports Test Ledger"
+option "operating_currency" "CNY"
+
+2025-01-01 open Assets:Bank:CNB
+2025-01-01 open Liabilities:CreditCard
+2025-01-01 open Income:Salary
+2025-01-01 open Expenses:Food
+2025-01-01 open Expenses:Transport
+
+2025-03-01 * "Salary"
+  Assets:Bank:CNB  10000.00 CNY
+  Income:Salary  -10000.00 CNY
+
+2025-03-05 * "Ramen"
+  Expenses:Food  35.00 CNY
+  Assets:Bank:CNB  -35.00 CNY
+
+2025-06-10 * "Metro"
+  Expenses:Transport  5.00 CNY
+  Assets:Bank:CNB  -5.00 CNY
+
+2026-01-05 * "Coffee"
+  Expenses:Food  20.00 CNY
+  Liabilities:CreditCard  -20.00 CNY
+
+2026-02-01 * "Salary"
+  Assets:Bank:CNB  10000.00 CNY
+  Income:Salary  -10000.00 CNY
