@@ -2,12 +2,13 @@
  * 应用壳（M4）：Sider 导航（录入 / 明细，为 M5-M8 预留扩展位）+ Header（标题 + 索引状态 Tag）。
  * M3 只读验收面板（#ledger-status / #ledger-entries）已下线，由正式视图取代。
  */
-import { BarChartOutlined, CloudOutlined, FileTextOutlined, FormOutlined, UnorderedListOutlined } from '@ant-design/icons'
+import { BarChartOutlined, CloudDownloadOutlined, CloudOutlined, FileTextOutlined, FormOutlined, UnorderedListOutlined } from '@ant-design/icons'
 import { Button, Layout, Menu, Space, Tag, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import { useAiStore } from './stores/ai'
 import { useLedgerStore } from './stores/ledger'
 import { useSyncStore } from './stores/sync'
+import { useUpdateStore } from './stores/update'
 import AiSettingsModal from './views/AiSettingsModal'
 import ConflictView from './views/ConflictView'
 import EditorView from './views/EditorView'
@@ -16,6 +17,7 @@ import EntryFormView from './views/EntryFormView'
 import ReportsView from './views/ReportsView'
 import SyncSettingsModal from './views/SyncSettingsModal'
 import SyncStatusBar from './views/SyncStatusBar'
+import UpdateModal from './views/UpdateModal'
 
 const { Sider, Header, Content } = Layout
 
@@ -28,12 +30,16 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
+  const [updateOpen, setUpdateOpen] = useState(false)
   const aiStatus = useAiStore((s) => s.status)
 
   useEffect(() => {
     void useLedgerStore.getState().refresh()
     void useSyncStore.getState().loadStatus()
     void useAiStore.getState().loadStatus()
+  }, [])
+  useEffect(() => {
+    void useUpdateStore.getState().init()
   }, [])
 
   /** Header Tag 点击：重建索引 → 重拉状态（与明细视图「重建索引」同链路） */
@@ -86,6 +92,7 @@ export default function App() {
               AI：{aiStatus?.configured ? '已配置' : '未配置'}
             </Tag>
             <Button onClick={() => setAiOpen(true)}>AI 设置</Button>
+            <Button icon={<CloudDownloadOutlined />} onClick={() => setUpdateOpen(true)}>更新</Button>
           </Space>
           <div className="sync-status-bar">
             <Tag
@@ -115,6 +122,7 @@ export default function App() {
       </Layout>
       <SyncSettingsModal open={syncOpen} onClose={() => setSyncOpen(false)} />
       <AiSettingsModal open={aiOpen} onClose={() => setAiOpen(false)} />
+      <UpdateModal open={updateOpen} onClose={() => setUpdateOpen(false)} />
     </Layout>
   )
 }

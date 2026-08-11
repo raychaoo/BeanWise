@@ -1,6 +1,8 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join, resolve } from 'path'
+import { autoUpdater } from 'electron-updater'
 import { APP_NAME } from '../shared/app'
+import { UPDATE_STATUS_CHANNEL, type UpdateState } from '../shared/ipc'
 import { applyCsp } from './csp'
 import { createDrizzle, openDatabase } from './db'
 import { GitSync } from './git-sync'
@@ -9,8 +11,10 @@ import { registerAiHandlers } from './ipc-handlers-ai'
 import { registerLedgerHandlers } from './ipc-handlers'
 import { registerReportHandlers } from './ipc-handlers-report'
 import { registerSyncHandlers } from './ipc-handlers-sync'
+import { registerUpdateHandlers } from './ipc-handlers-update'
 import { PythonSvc } from './python-svc'
 import { ElectronAiTokenStore, ElectronConfigStore, ElectronTokenStore } from './token-store'
+import { createUpdaterService } from './updater'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -85,6 +89,20 @@ app.whenReady().then(() => {
     db,
     tokens: aiTokens,
     baseUrl: process.env['BEANWISE_AI_BASE_URL']
+  })
+
+  // M8：update 域三通道。autoUpdater 注入（状态机封装）；BEANWISE_UPDATE_FEED_URL
+  // 为测试/E2E 注入 mock 更新源（setFeedURL + forceDevUpdateConfig）；生产走 app-update.yml
+  const updater = createUpdaterService({
+    updater: autoUpdater,
+    currentVersion: app.getVersion(),
+    feedUrl: process.env['BEANWISE_UPDATE_FEED_URL']
+  })
+  registerUpdateHandlers(ipcMain, {
+    updater,
+    broadcast: (s: UpdateState) => {
+      BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(UPDATE_STATUS_CHANNEL, s))
+    }
   })
 
   // M8：report 域三通道（报表只读聚合，复用 M3 索引）
