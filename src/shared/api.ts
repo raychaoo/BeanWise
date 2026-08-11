@@ -1,6 +1,8 @@
 import type {
   AddEntryParams,
   AddEntryResult,
+  AiParseResult,
+  AiStatus,
   ConfigureSyncParams,
   ConfigureSyncResult,
   LedgerStatus,
@@ -11,6 +13,8 @@ import type {
   RefreshResult,
   ResolveConflictParams,
   ResolveConflictResult,
+  SaveAiConfigParams,
+  SaveAiConfigResult,
   SaveFileParams,
   SaveFileResult,
   SyncResult,
@@ -44,4 +48,12 @@ export interface BeanWiseApi {
   resolveSyncConflict(params: ResolveConflictParams): Promise<ResolveConflictResult>
   /** 清除同步配置与 PAT */
   clearSync(): Promise<{ ok: boolean }>
+  /** AI 配置状态（不含 Key——渲染端永不接触密钥） */
+  getAiStatus(): Promise<AiStatus>
+  /** 配置 DeepSeek API Key（safeStorage 加密，仅主进程持有） */
+  saveAiConfig(params: SaveAiConfigParams): Promise<SaveAiConfigResult>
+  /** 清除 AI 配置与 Key */
+  clearAiConfig(): Promise<{ ok: boolean }>
+  /** 自然语言 → 结构化草稿（主进程代理 + 本地 schema 校验，非法输出拒绝） */
+  parseAiEntry(text: string): Promise<AiParseResult>
 }

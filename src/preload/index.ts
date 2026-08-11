@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { APP_NAME } from '../shared/app'
 import type { BeanWiseApi } from '../shared/api'
-import type { AddEntryParams, ConfigureSyncParams, ListEntriesParams, ResolveConflictParams, SaveFileParams } from '../shared/ipc'
+import type { AddEntryParams, AiParseParams, ConfigureSyncParams, ListEntriesParams, ResolveConflictParams, SaveAiConfigParams, SaveFileParams } from '../shared/ipc'
 
 const api: BeanWiseApi = {
   appName: APP_NAME,
@@ -17,7 +17,11 @@ const api: BeanWiseApi = {
   pushLedger: () => ipcRenderer.invoke('sync:push'),
   pullLedger: () => ipcRenderer.invoke('sync:pull'),
   resolveSyncConflict: (params: ResolveConflictParams) => ipcRenderer.invoke('sync:resolve-conflict', params),
-  clearSync: () => ipcRenderer.invoke('sync:clear')
+  clearSync: () => ipcRenderer.invoke('sync:clear'),
+  getAiStatus: () => ipcRenderer.invoke('ai:get-status'),
+  saveAiConfig: (params: SaveAiConfigParams) => ipcRenderer.invoke('ai:save-config', params),
+  clearAiConfig: () => ipcRenderer.invoke('ai:clear-config'),
+  parseAiEntry: (text: string) => ipcRenderer.invoke('ai:parse', { text } satisfies AiParseParams)
 }
 
 contextBridge.exposeInMainWorld('beanwise', api)

@@ -5,10 +5,11 @@ import { applyCsp } from './csp'
 import { createDrizzle, openDatabase } from './db'
 import { GitSync } from './git-sync'
 import { refreshIndex } from './index-builder'
+import { registerAiHandlers } from './ipc-handlers-ai'
 import { registerLedgerHandlers } from './ipc-handlers'
 import { registerSyncHandlers } from './ipc-handlers-sync'
 import { PythonSvc } from './python-svc'
-import { ElectronConfigStore, ElectronTokenStore } from './token-store'
+import { ElectronAiTokenStore, ElectronConfigStore, ElectronTokenStore } from './token-store'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -74,6 +75,15 @@ app.whenReady().then(() => {
     tokens,
     config: syncConfig,
     git: gitSync
+  })
+
+  // M7：ai 域四通道。DeepSeek Key 独立 store（ai-tokens，safeStorage 加密）；
+  // BEANWISE_AI_BASE_URL 为测试/E2E 注入 mock 端点（默认官方端点，CSP 零改动——fetch 在主进程）
+  const aiTokens = new ElectronAiTokenStore()
+  registerAiHandlers(ipcMain, {
+    db,
+    tokens: aiTokens,
+    baseUrl: process.env['BEANWISE_AI_BASE_URL']
   })
 
   // 启动初始刷新（fire-and-forget：失败不影响窗口创建，状态由 ledger:status 暴露）

@@ -76,6 +76,17 @@ function validateSaveParams(raw: unknown): SaveFileParams {
  * 错误不污染队列：本次失败仅影响调用方，下一次任务照常排队。
  */
 
+/** 账户列表（postings 表 DISTINCT，上限 500）——ledger:list-accounts 与 ai:parse 共享（M7-T3 抽取） */
+export function listAccounts(db: DrizzleDb): string[] {
+  return db
+    .selectDistinct({ account: postings.account })
+    .from(postings)
+    .orderBy(postings.account)
+    .limit(500)
+    .all()
+    .map((r) => r.account)
+}
+
 /** 注册 ledger 域 IPC 通道（roadmap「IPC 契约」：类型唯一来源 ipc.ts → preload 白名单 → main handler） */
 export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): void {
   ipc.handle('ledger:refresh-index', async (): Promise<RefreshResult> => {
@@ -140,15 +151,9 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
   }))
 
   // M4：账户列表（录入表单 AutoComplete 数据源，postings 表 DISTINCT）
-  ipc.handle('ledger:list-accounts', (): ListAccountsResult => {
-    const rows = deps.db
-      .selectDistinct({ account: postings.account })
-      .from(postings)
-      .orderBy(postings.account)
-      .limit(500)
-      .all()
-    return { accounts: rows.map((r) => r.account) }
-  })
+  ipc.handle('ledger:list-accounts', (): ListAccountsResult => ({
+    accounts: listAccounts(deps.db)
+  }))
 
   // M5：读账本全文（渲染端编辑基线；ENOENT → ok:false，编辑器 Empty 态）
   ipc.handle('ledger:read-file', (): ReadFileResult => {

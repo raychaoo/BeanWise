@@ -39,3 +39,18 @@ export class ElectronConfigStore implements SyncConfigStore {
   save(config: SyncConfig): void { this.store.set('sync', config) }
   clear(): void { this.store.delete('sync') }
 }
+
+/** M7：DeepSeek API Key 存储（复刻 PAT 模式：safeStorage 加密 → base64 → electron-store） */
+export class ElectronAiTokenStore implements TokenStore {
+  private readonly store = new Store<{ apiKey?: string }>({ name: 'ai-tokens', defaults: {} })
+  load(): string | null {
+    const enc = this.store.get('apiKey')
+    if (!enc || !safeStorage.isEncryptionAvailable()) return null
+    return safeStorage.decryptString(Buffer.from(enc, 'base64'))
+  }
+  save(apiKey: string): void {
+    if (!safeStorage.isEncryptionAvailable()) throw new Error('系统加密不可用，无法安全存储 API Key')
+    this.store.set('apiKey', safeStorage.encryptString(apiKey).toString('base64'))
+  }
+  clear(): void { this.store.delete('apiKey') }
+}
