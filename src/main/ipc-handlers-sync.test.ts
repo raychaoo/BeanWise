@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { createDrizzle, openDatabase } from './db'
 import { GitSync, GIT_AUTHOR, SYNC_BRANCH } from './git-sync'
 import { createBareRepo, readRemoteFile, seedRemote, seedRemoteInit, startGitServer } from './git-test-server'
+import { getLedgerStatus } from './index-builder'
 import { registerSyncHandlers } from './ipc-handlers-sync'
 import type { IpcRegistrar } from './ipc-handlers'
 import type { ConfigureSyncResult, SyncConfig, SyncResult } from '../shared/ipc'
@@ -109,6 +110,10 @@ describe('sync handlers（M6）', () => {
     const r = await handlers['sync:configure']({}, { repoUrl: url, pat: 'p' })
     expect(r).toMatchObject({ ok: true })
     expect(readFileSync(ledgerPath, 'utf8')).toContain('配置测试')
+    // M6 终审修复 I-1：clone 后索引已重建（首同步用户立即可见明细，非 missing）
+    const index = getLedgerStatus(db)
+    expect(index?.status).toBe('ok')
+    expect(index?.entryCount).toBeGreaterThan(0)
   }, 30_000)
 
   it('sync:configure 场景 C 一致：直接接管', async () => {
@@ -251,6 +256,40 @@ describe('sync handlers（M6）', () => {
     expect(r.ok).toBe(false)
     expect(r.message).toBeTruthy()
     expect(readFileSync(ledgerPath, 'utf8')).toBe(before)
+  }, 30_000)
+
+  it('sync:resolve-conflict 远端推进：快照过期 → 拒绝，不写盘不推送', async () => {
+    const url = await newRepo()
+    await setup()
+    await handlers['sync:configure']({}, { repoUrl: url, pat: 'p' })
+    const seedDir = mkdtempSync(join(tmpdir(), 'beanwise-seed-'))
+    try {
+      // phase 1：远端改同一行制造冲突（同 resolve 用例）
+      await git.clone({ fs, http, dir: seedDir, url, ref: SYNC_BRANCH, singleBranch: true })
+      const p = join(seedDir, 'main.beancount')
+      writeFileSync(p, readFileSync(p, 'utf8').replace('* "Breakfast"', '* "Breakfast-Remote"'))
+      await git.add({ fs, dir: seedDir, filepath: 'main.beancount' })
+      await git.commit({ fs, dir: seedDir, message: 'seed', author: GIT_AUTHOR, ref: SYNC_BRANCH })
+      await git.push({ fs, http, dir: seedDir, remote: 'origin', ref: SYNC_BRANCH })
+      // 本地也改同一行 → push 得冲突快照（fetch 时远端仍为 Breakfast-Remote）
+      writeFileSync(ledgerPath, readFileSync(ledgerPath, 'utf8').replace('* "Breakfast"', '* "Breakfast-Local"'))
+      const pushR = (await handlers['sync:push']()) as SyncResult
+      expect(pushR.ok).toBe(false)
+      expect(pushR.conflict).toBe(true)
+      // phase 2：远端在冲突 fetch 之后再推进一笔（冲突快照过期）
+      writeFileSync(p, readFileSync(p, 'utf8') + '\n2026-08-09 * "远端推进" "冲突后"\n  Expenses:Food  1.00 CNY\n  Assets:Bank:CNB  -1.00 CNY\n')
+      await git.add({ fs, dir: seedDir, filepath: 'main.beancount' })
+      await git.commit({ fs, dir: seedDir, message: 'advance', author: GIT_AUTHOR, ref: SYNC_BRANCH })
+      await git.push({ fs, http, dir: seedDir, remote: 'origin', ref: SYNC_BRANCH })
+    } finally { rmSync(seedDir, { recursive: true, force: true }) }
+    // resolve：re-fetch 发现远端已推进 → ok:false，文件不动、远端不被 force push 覆盖
+    const before = readFileSync(ledgerPath, 'utf8')
+    const merged = before + '\n2026-08-09 * "解决" "内容"\n  Expenses:Food  5.00 CNY\n  Assets:Bank:CNB  -5.00 CNY\n'
+    const r = (await handlers['sync:resolve-conflict']({}, { content: merged })) as SyncResult
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('远端已有新变更')
+    expect(readFileSync(ledgerPath, 'utf8')).toBe(before)
+    expect(await readRemoteFile(bareDir)).not.toContain('解决')
   }, 30_000)
 
   it('sync:clear → 配置与 PAT 清空', async () => {

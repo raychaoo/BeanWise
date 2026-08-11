@@ -182,6 +182,8 @@ export function registerSyncHandlers(ipc: IpcRegistrar, deps: SyncDeps): void {
         } else if (!hasLocal) {
           // 场景 B：本地无账本 → clone 到账本目录
           await deps.git.clone(repoUrl)
+          // clone 只落文件、索引仍 missing——首同步用户须立即可见明细（M6 终审修复 I-1）
+          await refreshIndex(deps.db, deps.engine, deps.ledgerPath)
         } else {
           // 场景 C：两端都有 → init + commit + remote + fetch → analyzeMerge 判别
           //（unrelated：内容一致 → local-ahead 接管；不一致 → conflict(base='')）
@@ -272,6 +274,16 @@ export function registerSyncHandlers(ipc: IpcRegistrar, deps: SyncDeps): void {
       try {
         const config = requireConfig(deps)
         requirePat(deps)
+        // M6 终审修复 I-2a：冲突快照过期防护——resolve 前置 re-fetch，远端在冲突 fetch 后推进
+        // → 拒绝（不写盘不 commit 不 push，工作区不动），避免 adopted force push 静默丢弃远端新提交
+        let snapshotOid: string | null = null
+        try { snapshotOid = await deps.git.remoteHeadOid() } catch { snapshotOid = null } // 远端无 ref（极端）
+        await deps.git.fetch()
+        const latestOid = await deps.git.remoteHeadOid()
+        if (snapshotOid !== latestOid) {
+          markFailed(deps, config, '远端已有新变更，冲突快照已过期，请重新处理冲突')
+          return { ok: false, message: '远端已有新变更，冲突快照已过期，请重新处理冲突' }
+        }
         const wrote = await writeLedgerChecked(deps, content)
         if (!wrote.ok) {
           markFailed(deps, config, wrote.message ?? '合并结果校验失败') // 与 push/pull 分支一致（T3 审查修复）

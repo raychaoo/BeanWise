@@ -86,6 +86,7 @@ it('configure 失败（连接错误）→ 错误提示 + 无冲突状态', async
 
 it('push 成功 → 成功提示 + ledgerStore.refresh 联动', async () => {
   const api = stubBeanwise()
+  useSyncStore.setState({ status: { configured: true, repoUrl: 'https://github.com/a/b', branch: 'main', lastSyncAt: 1, lastError: null, syncing: false } })
   await useSyncStore.getState().push()
   expect(api.pushLedger).toHaveBeenCalled()
   expect(message.success).toHaveBeenCalledWith('已同步到远端')
@@ -94,6 +95,7 @@ it('push 成功 → 成功提示 + ledgerStore.refresh 联动', async () => {
 
 it('push 冲突 → conflict 落 store + 警告提示', async () => {
   stubBeanwise({ pushLedger: vi.fn().mockResolvedValue({ ok: false, conflict: true, base: 'b', ours: 'o', theirs: 't' }) })
+  useSyncStore.setState({ status: { configured: true, repoUrl: 'https://github.com/a/b', branch: 'main', lastSyncAt: 1, lastError: null, syncing: false } })
   await useSyncStore.getState().push()
   expect(useSyncStore.getState().conflict).toEqual({ base: 'b', ours: 'o', theirs: 't' })
   expect(message.warning).toHaveBeenCalled()
@@ -109,6 +111,33 @@ it('push：未配置（status.configured=false）→ 静默跳过，不发 IPC �
   expect(message.success).not.toHaveBeenCalled()
 })
 
+it('push：status null（clear 后 / loadStatus 前）→ 静默跳过，不发 IPC 不弹提示', async () => {
+  // M6 终审修复 I-3：旧守卫 `status && !status.configured` 对 null 穿透 → 每次保存弹「同步失败」
+  const api = stubBeanwise({ pushLedger: vi.fn().mockResolvedValue({ ok: true }) })
+  useSyncStore.setState({ status: null })
+  await useSyncStore.getState().push()
+  expect(api.pushLedger).not.toHaveBeenCalled()
+  expect(message.warning).not.toHaveBeenCalled()
+  expect(message.success).not.toHaveBeenCalled()
+})
+
+it('push 成功（先置冲突）→ conflict 清空', async () => {
+  // M6 终审修复 I-2b：自动合并落盘后清陈旧快照，防其再覆写刚合并内容
+  stubBeanwise()
+  useSyncStore.setState({ status: { configured: true, repoUrl: 'https://github.com/a/b', branch: 'main', lastSyncAt: 1, lastError: null, syncing: false }, conflict: { base: 'b', ours: 'o', theirs: 't' } })
+  await useSyncStore.getState().push()
+  expect(useSyncStore.getState().conflict).toBeNull()
+  expect(message.success).toHaveBeenCalledWith('已同步到远端')
+})
+
+it('pull 成功（先置冲突）→ conflict 清空', async () => {
+  stubBeanwise()
+  useSyncStore.setState({ conflict: { base: 'b', ours: 'o', theirs: 't' } })
+  await useSyncStore.getState().pull()
+  expect(useSyncStore.getState().conflict).toBeNull()
+  expect(message.success).toHaveBeenCalledWith('已拉取远端更新')
+})
+
 it('push：已配置（status.configured=true）→ 行为不变', async () => {
   const api = stubBeanwise()
   useSyncStore.setState({ status: { configured: true, repoUrl: 'https://github.com/a/b', branch: 'main', lastSyncAt: 1, lastError: null, syncing: false } })
@@ -119,6 +148,7 @@ it('push：已配置（status.configured=true）→ 行为不变', async () => {
 
 it('push 失败（网络）→ 警告提示 + lastError 状态刷新', async () => {
   stubBeanwise({ pushLedger: vi.fn().mockResolvedValue({ ok: false, message: '连接超时' }) })
+  useSyncStore.setState({ status: { configured: true, repoUrl: 'https://github.com/a/b', branch: 'main', lastSyncAt: 1, lastError: null, syncing: false } })
   await useSyncStore.getState().push()
   expect(message.warning).toHaveBeenCalledWith('同步失败：连接超时')
   expect(useSyncStore.getState().conflict).toBeNull()
