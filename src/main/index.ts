@@ -7,6 +7,7 @@ import { GitSync } from './git-sync'
 import { refreshIndex } from './index-builder'
 import { registerAiHandlers } from './ipc-handlers-ai'
 import { registerLedgerHandlers } from './ipc-handlers'
+import { registerReportHandlers } from './ipc-handlers-report'
 import { registerSyncHandlers } from './ipc-handlers-sync'
 import { PythonSvc } from './python-svc'
 import { ElectronAiTokenStore, ElectronConfigStore, ElectronTokenStore } from './token-store'
@@ -85,6 +86,9 @@ app.whenReady().then(() => {
     tokens: aiTokens,
     baseUrl: process.env['BEANWISE_AI_BASE_URL']
   })
+
+  // M8：report 域三通道（报表只读聚合，复用 M3 索引）
+  registerReportHandlers(ipcMain, { db })
 
   // 启动初始刷新（fire-and-forget：失败不影响窗口创建，状态由 ledger:status 暴露）
   void pythonSvc
