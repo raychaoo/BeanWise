@@ -1,0 +1,8 @@
+# electron-builder 开发模式约定文件：electron-updater 在未打包 dev 模式读取 <appPath>/dev-app-update.yml。
+# E2E（M8-T7）走 BEANWISE_UPDATE_FEED_URL 注入 generic 源（setFeedURL 优先），本文件仅被
+# getOrCreateDownloadHelper 消费 updaterCacheDirName（下载缓存目录）；无 feedUrl 时 forceDevUpdateConfig=false，
+# checkForUpdates 直接跳过，本文件不生效。字段与 electron-builder 生成的 app-update.yml 保持一致。
+owner: raychaoo
+repo: BeanWise
+provider: github
+updaterCacheDirName: beanwise-updater

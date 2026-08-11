@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join, resolve } from 'path'
-import { autoUpdater } from 'electron-updater'
+import electronUpdater from 'electron-updater' // CJS（autoUpdater 为 getter 重导出，ESM 命名导入会 SyntaxError）
 import { APP_NAME } from '../shared/app'
 import { UPDATE_STATUS_CHANNEL, type UpdateState } from '../shared/ipc'
 import { applyCsp } from './csp'
@@ -94,7 +94,7 @@ app.whenReady().then(() => {
   // M8：update 域三通道。autoUpdater 注入（状态机封装）；BEANWISE_UPDATE_FEED_URL
   // 为测试/E2E 注入 mock 更新源（setFeedURL + forceDevUpdateConfig）；生产走 app-update.yml
   const updater = createUpdaterService({
-    updater: autoUpdater,
+    updater: electronUpdater.autoUpdater,
     currentVersion: app.getVersion(),
     feedUrl: process.env['BEANWISE_UPDATE_FEED_URL']
   })
