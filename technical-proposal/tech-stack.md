@@ -17,7 +17,7 @@
 | PyInstaller | 将 Python 引擎打包为独立二进制，随 Electron 分发（`extraResources`） | 推荐 `--collect-all beancount`（动态导入多）+ 显式收集 `beanquery`（v3 拆包）；`--onefile` 启动有解压延迟，引擎常驻可接受 |
 | stdio JSON-RPC | Node ↔ Python 通信协议，JSONL 逐行 | 无端口冲突，生命周期随主进程 |
 | better-sqlite3 + Drizzle ORM | SQLite 索引层 | 原生模块；13.x 自带 in-tarball N-API prebuild，`asarUnpack` + `npmRebuild: false` 即可（M3 实测，无需 electron-rebuild） |
-| isomorphic-git | git 同步引擎（纯 JS 实现 git 协议，无原生依赖），对接 GitHub 私有仓库 | 替代已停维护的 libgit2 绑定（nodegit） |
+| isomorphic-git | git 同步引擎（纯 JS 实现 git 协议，无原生依赖），对接 GitHub 私有仓库；M6 封装为 GitSync（账本目录即 git 工作区，只追踪账本文件，分支固定 main）；合并提交双亲语义（[HEAD, 远端]） | 1.41.3（仅 http/https 传输，**不支持 file:// 本地传输**——测试/E2E 用进程内 smart-HTTP 服务器 `src/main/git-test-server.ts`）；替代已停维护的 libgit2 绑定（nodegit） |
 
 ## UI 层
 
@@ -54,7 +54,7 @@
 | 技术 | 说明 |
 |---|---|
 | electron-log | 日志 |
-| electron-store | 配置管理 |
+| electron-store | 配置管理（M6 起承载 git 同步配置 repoUrl/branch/adopted/lastSyncAt/lastError 与 PAT 密文——PAT 经 safeStorage 加密后 base64 存入，不落明文） |
 | Vitest + pytest + Playwright | 前端单测 / Python 引擎测试 / Electron E2E |
 | electron-builder | 打包 + Windows Authenticode 签名 |
 | electron-updater | 自动更新，对接 GitHub Releases |

@@ -33,9 +33,14 @@ Beancount 文件 ──唯一事实源──▶ 变更后增量解析 ──▶ 
 - 解析结果缓存（文件 mtime + hash 判空跳过）
 - 增量解析失败时回退全量解析，并记录日志
 
-## git 同步与冲突处理
+## git 同步与冲突处理（M6 定稿，2026-08-10）
 
-- 同步引擎：isomorphic-git（纯 JS 实现 git 协议，无原生依赖），目标 GitHub 私有仓库
-- PAT：用户使用时输入，safeStorage 加密本地化存储，不落盘明文
-- 冲突：三路合并 UI（base / ours / theirs，基于 Monaco DiffEditor 自研）人工合并
-- 推送失败（网络 / 权限）：本地保留变更，状态栏提示重试
+- 同步引擎：isomorphic-git（1.41.3，纯 JS 实现 git 协议，无原生依赖），封装为 GitSync（init/commit/fetch/analyzeMerge/mergeFile）；账本目录即 git 工作区（唯一事实源铁律），只追踪账本文件，分支固定 `main`、remote 固定 `origin`；远端操作统一 30s 超时
+- 传输：**isomorphic-git 1.x 不支持 file:// 本地传输**（1.x 已移除），测试/E2E 用进程内 smart-HTTP 服务器（`src/main/git-test-server.ts`）替代；URL 校验放行测试通道 `http://127.0.0.1:<port>` / `http://localhost:<port>`（仅回环）+ 生产通道 `https://github.com/owner/repo`
+- PAT：用户使用时输入，safeStorage 加密后 base64 落 electron-store（`sync-tokens`），不落盘明文、渲染进程 state 无 PAT；同步配置（repoUrl/branch/adopted/lastSyncAt/lastError）独立 electron-store（`sync-config`）
+- 首同步三场景：A 空仓（init + commit + push -u）；B 本地无账本（clone 到账本目录）；C 两端都有内容（init + commit + fetch + analyzeMerge 接管：内容一致 → force push；不一致 → 三路快照，base 空串）
+- 自动同步：**保存后自动 push 仅挂编辑器保存链路**（`saveEditorFile` 成功 → fire-and-forget push，失败不阻塞保存；未配置同步时静默跳过）；add-entry / AI 录入不触发（M7 交接）；手动 pull 独立通道；自动定时同步可后置（sync:push/pull 即定时器执行体）
+- 合并：push/pull 前置快照提交（工作区脏 → commit）→ fetch → analyzeMerge 五分支（up-to-date / local-ahead→push / fast-forward / clean-merge / conflict）；**fast-forward 与 clean-merge 用 diff3 自动合并**（`GitSync.mergeFile`，同 isomorphic-git 内置算法，无冲突返回合并文本）→ 合并结果走「tmp 校验 + rename」管线（`writeLedgerChecked`，与 M5 保存同管线，校验失败不落盘）→ **双亲合并提交**（parents = [HEAD, 远端]，真实 git 合并语义，保证 push 客户端快进检查通过）→（push 时）push → `refreshIndex` 重建索引
+- 冲突：仅冲突才弹三路合并 UI（base / ours / theirs 快照**内存传递**，不写冲突标记文件；三路 UI = 上双 DiffEditor（base vs ours / base vs theirs）+ 下 merged 可编辑，基于 Monaco 自研）；resolve 提交 merged 内容 → tmp 校验落盘 → 双亲合并提交 → push（adopted 场景 force）→ refreshIndex
+- 推送失败（网络 / 权限 / 校验失败）：本地提交/文件保留，lastError 落状态条提示重试；**pull 只拉不推**（只读 PAT 不失败、不静默发布本地改动）
+- syncing 互斥：push / pull / configure / resolve 任一进行中，其余触发即拒绝（writeLock 之外的第二道闸）

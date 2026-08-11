@@ -30,6 +30,7 @@ pytest python/tests  # Python Beancount 引擎测试
 - **桌面框架**：Electron · Vite · React + TypeScript（strict）
 - **UI**：Ant Design（antd 5.x，**禁 v6**：@ant-design/pro-components 2.8.x peer 仅 `^4 || ^5`，v6 迁移评估留 M8；必须配 @ant-design/v5-patch-for-react-19，main.tsx 首行导入）+ ProComponents（ProForm 录入）· Ant Charts · Monaco Editor（裸 monaco-editor，worker 经 Vite `?worker` 本地打包，自研 monarch beancount 语言——M5 定稿，集成细节见「常见坑」）· Zustand 5
 - **数据**：better-sqlite3 + Drizzle ORM · electron-log · electron-store · Electron safeStorage
+- **同步**：isomorphic-git（1.41.3 纯 JS，GitSync 封装——账本目录即 git 工作区、只追踪账本文件、分支固定 main；仅 http/https 传输，不支持 file:// 本地传输，测试/E2E 走进程内 smart-HTTP 服务器 `src/main/git-test-server.ts`）+ electron-store（同步配置 repoUrl/branch/adopted/lastSyncAt/lastError 与 PAT 密文）+ Electron safeStorage（PAT 加密，仅主进程持有）
 - **引擎**：Python 3.11 + Beancount v3 · PyInstaller · stdio JSON-RPC
 - **工程化**：Vitest · pytest · Playwright · electron-builder · electron-updater · GitHub Actions
 

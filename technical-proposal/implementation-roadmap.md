@@ -58,7 +58,7 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
 - 类型定义唯一来源：`src/shared/ipc.ts` → preload 白名单 → main handler 注册，禁止旁路
 - 通道命名：`{domain}:{action}` 小写 kebab，如 `ledger:validate`、`sync:push`、`ai:parse`
 - 主进程对所有入参做类型与路径校验（防目录穿越）
-- M3 定稿通道（类型唯一来源 `src/shared/ipc.ts`，M4-M8 复用）：
+- M3 定稿 ledger 通道 + M6 追加 sync 六通道（类型唯一来源 `src/shared/ipc.ts`，M4-M8 复用）：
 
   | 通道 | params | result 要点 |
   |---|---|---|
@@ -69,6 +69,12 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
   | `ledger:list-accounts`（M4） | 无 | `{accounts: string[]}`（postings 表 DISTINCT，上限 500） |
   | `ledger:read-file`（M5） | 无（路径主进程持有） | `{ok, content?, fingerprint?, message?}`（ENOENT → ok:false + message；fingerprint 为打开基线 sha256，保存时比对） |
   | `ledger:save-file`（M5） | `{content, expectedFingerprint}` | `{ok, conflict?, diskContent?, diskFingerprint?, fingerprint?, status?, entryCount?, errorCount?, message?}`（conflict = 外部修改冲突未落盘，disk* 为同一次读取快照） |
+  | `sync:get-status`（M6） | 无 | `SyncStatus`（configured/repoUrl?/branch?/lastSyncAt?/lastError?/syncing） |
+  | `sync:configure`（M6） | `{repoUrl, pat}` | `{ok, error?, status?, conflict?, base?, ours?, theirs?}`（测试连接 + 首同步场景 A/B/C；conflict = 场景 C 接管冲突，base 空串） |
+  | `sync:push`（M6） | 无 | `{ok, conflict?, base?, ours?, theirs?, message?}`（commit 快照 → fetch → diff3 自动合并 → push） |
+  | `sync:pull`（M6） | 无 | `{ok, conflict?, base?, ours?, theirs?, message?}`（fetch → 自动合并 → 落盘 + refreshIndex） |
+  | `sync:resolve-conflict`（M6） | `{content}` | `{ok, status?, entryCount?, errorCount?, message?}`（tmp 校验落盘 → commit → push → refreshIndex） |
+  | `sync:clear`（M6） | 无 | `{ok}` |
 
 ### 数据流铁律
 
@@ -99,7 +105,7 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
 | M3 | 3 层 IPC 骨架、Drizzle 表结构、增量解析→索引重建、PythonSvc 生命周期 | 业务 UI；录入表单 |
 | M4 | ProForm 录入表单、校验错误展示、落文件→索引链路（金额一律十进制字符串 + 末行自动平衡；追加写 + 索引 error 时 truncate 回滚；首文件自动补账户 open 行——写失败策略见 data-consistency.md） | 编辑已有交易（M5）；AI 录入（M7） |
 | M5 | Monaco 编辑器 + 自研 monarch beancount 语法高亮、整文件覆盖保存（tmp 校验 + rename 原子替换，校验失败不落盘）、外部修改冲突检测（sha256 指纹比对 + DiffEditor 决策）、DiffEditor 基础；生产 CSP 补 `worker-src 'self'`（Monaco worker 独立 chunk） | 三路合并 UI（M6） |
-| M6 | isomorphic-git 推拉、PAT 录入（safeStorage）、三路合并冲突 UI | 自动定时同步（可后置） |
+| M6 | isomorphic-git 推拉（账本目录即 git 工作区，只追踪账本文件；分支固定 main/remote 固定 origin）、PAT 录入（safeStorage 加密，仅主进程持有）、保存后自动 push + 手动 pull、diff3 自动合并（干净合并 → 双亲合并提交落盘；冲突才弹三路 UI：base/ours/theirs + merged 编辑）、force push 仅场景 C 接管（unrelated histories）、sync 域 syncing 互斥（push/pull/configure/resolve 任一进行中其余拒绝） | 自动定时同步（可后置，sync:push/pull 即定时器执行体）；自动 push 仅挂编辑器保存（saveEditorFile），add-entry / AI 录入不触发（M7 交接）；多账本文件追踪（目前单文件） |
 | M7 | DeepSeek 代理、function calling tool schema、主进程 schema 校验 | 提示词工程打磨 |
 | M8 | Ant Charts 报表、electron-updater 升级链、代码签名、发布演练 | — |
 
