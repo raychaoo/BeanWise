@@ -118,6 +118,26 @@ describe('IPC handlers ledger:add-entry / list-accounts（M4）', () => {
     expect(existsSync(freshPath)).toBe(false)
   })
 
+  it('两行都是收支账户 → 前置语义校验拒绝，文件不变', async () => {
+    const ledgerPath = join(dir, 'ledger.beancount')
+    appendFileSync(ledgerPath, '2026-01-01 open Assets:Cash\n', 'utf8')
+    const before = readFileSync(ledgerPath, 'utf8')
+    const handlers = makeHandlers(ledgerPath)
+
+    await expect(
+      handlers['ledger:add-entry']({}, {
+        ...validParams,
+        postings: [
+          { account: 'Expenses:Food', number: '25.50', currency: 'CNY' },
+          { account: 'Expenses:Shopping', number: '-25.50', currency: 'CNY' }
+        ]
+      })
+    ).rejects.toThrow('交易不能全部为收支账户')
+
+    expect(mocks.refreshIndex).not.toHaveBeenCalled()
+    expect(readFileSync(ledgerPath, 'utf8')).toBe(before)
+  })
+
   it('索引 error → truncate 回滚到原长度 + ok:false', async () => {
     const ledgerPath = join(dir, 'ledger.beancount')
     const original = '2026-01-01 open Assets:Cash\n'
@@ -148,7 +168,12 @@ describe('IPC handlers ledger:add-entry / list-accounts（M4）', () => {
     const handlers = makeHandlers(ledgerPath)
 
     await handlers['ledger:add-entry']({}, validParams)
-    expect(readFileSync(ledgerPath, 'utf8')).toBe('2026-01-01 open Assets:Cash\n' + SERIALIZED)
+    // Expenses:Food 未 open → 追加前自动补 open 行（修复 Equity:AutoBalance unknown account 同类问题）
+    expect(readFileSync(ledgerPath, 'utf8')).toBe(
+      '2026-01-01 open Assets:Cash\n' +
+      '2026-08-09 open Expenses:Food\n' +
+      SERIALIZED
+    )
   })
 
   it('ledger:list-accounts：postings 表 DISTINCT + 排序', async () => {

@@ -1,31 +1,27 @@
 /**
- * 录入视图（M4）：ProForm + Form.List 动态 postings + 自动平衡。
+ * 录入视图（M4）：ProForm + Form.List 固定两行 postings + 自动平衡。
  * 金额一律十进制字符串（InputNumber stringMode 直取字符串，禁浮点）；
  * 自动平衡决策抽为纯函数 nextBalancingNumber（见文件底部，单测覆盖）。
  */
-import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons'
+import { SettingOutlined } from '@ant-design/icons'
 import { ProForm, ProFormDatePicker, ProFormRadio, ProFormText } from '@ant-design/pro-components'
-import { AutoComplete, Button, Form, InputNumber, message } from 'antd'
+import { AutoComplete, Button, Form, InputNumber, message, Select, Typography } from 'antd'
 import type { Rule } from 'antd/es/form'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import type { AddEntryParams } from '../../../shared/ipc'
+import { filterAccountOptions, isEntryAccountPairValid } from '../../../shared/account'
 import { computeBalancingNumber } from '../../../shared/decimal'
 import { useLedgerStore } from '../stores/ledger'
 import AiEntryPanel from './AiEntryPanel'
+import AccountSettingsModal from './AccountSettingsModal'
 
-const MAX_POSTINGS = 20
 const DECIMAL_RE = /^-?\d+(\.\d+)?$/
 
 interface PostingRow {
   account?: string
   number?: string | null
   currency?: string
-}
-
-interface Props {
-  /** AI 区块「去设置」/未配置引导 → 打开 AI 设置 Modal（App.tsx 持有状态） */
-  onOpenAiSettings: () => void
 }
 
 interface EntryFormValues {
@@ -37,12 +33,13 @@ interface EntryFormValues {
   postings: PostingRow[]
 }
 
-export default function EntryFormView({ onOpenAiSettings }: Props) {
+export default function EntryFormView() {
   const [form] = Form.useForm<EntryFormValues>()
   const status = useLedgerStore((s) => s.status)
-  const accounts = useLedgerStore((s) => s.accounts)
   const loadAccounts = useLedgerStore((s) => s.loadAccounts)
+  const accountOptions = useLedgerStore((s) => s.accountOptions)
   const [submitting, setSubmitting] = useState(false)
+  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false)
   const postings = Form.useWatch('postings', form)
 
   useEffect(() => {
@@ -59,14 +56,15 @@ export default function EntryFormView({ onOpenAiSettings }: Props) {
     }
   }, [postings, form])
 
-  const accountOptions = accounts.map((a) => ({ value: a }))
   const currencyOptions = (status?.operatingCurrency ?? []).map((c) => ({ value: c }))
+  const accountOptionsFor = (rowIndex: number) =>
+    filterAccountOptions(accountOptions, postings?.[1 - rowIndex]?.account)
 
   const numberRule = (fieldName: number): Rule => ({
     validator: (_rule, value: string | undefined | null) => {
       const lastIdx = (postings?.length ?? 0) - 1
       const empty = value === undefined || value === null || value === ''
-      if (fieldName === lastIdx && empty) {
+      if ((postings?.length ?? 0) >= 2 && fieldName === lastIdx && empty) {
         return Promise.resolve() // 末行留空：自动平衡补差
       }
       if (empty) return Promise.reject(new Error('请输入金额'))
@@ -113,7 +111,7 @@ export default function EntryFormView({ onOpenAiSettings }: Props) {
 
   return (
     <>
-      <AiEntryPanel onOpenSettings={onOpenAiSettings} onFillForm={handleFillForm} />
+      <AiEntryPanel onFillForm={handleFillForm} />
       <ProForm<EntryFormValues>
         form={form}
         onFinish={handleFinish}
@@ -133,20 +131,34 @@ export default function EntryFormView({ onOpenAiSettings }: Props) {
             { label: '! 未确认', value: '!' }
           ]}
         />
-        <ProFormText name="payee" label="Payee" fieldProps={{ maxLength: 200 }} />
-        <ProFormText name="narration" label="Narration" fieldProps={{ maxLength: 200 }} />
+        <ProFormText name="payee" label="交易对象" fieldProps={{ maxLength: 200 }} />
+        <ProFormText name="narration" label="说明" fieldProps={{ maxLength: 200 }} />
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <Typography.Text strong>记账行</Typography.Text>
+          <Button size="small" icon={<SettingOutlined />} onClick={() => setAccountSettingsOpen(true)}>
+            账户设置
+          </Button>
+        </div>
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 12 }}>
+          两行分别记录交易涉及的两个账户：一行是资金减少/支出方，另一行是资金增加/收入方；两行金额合计必须为 0，第二行金额留空会自动补差。
+        </Typography.Paragraph>
 
         <Form.List
           name="postings"
           rules={[
             {
               validator: async (_rule, rows: PostingRow[] | undefined) => {
-                if (!rows || rows.length < 2) throw new Error('至少需要 2 行记账行')
+                if (!rows || rows.length !== 2) throw new Error('记账行必须是两行')
+                const accounts = rows.map((r) => r?.account?.trim()).filter((v): v is string => !!v)
+                if (accounts.length === 2 && !isEntryAccountPairValid(accounts[0], accounts[1])) {
+                  throw new Error('两行不能同为收支账户，至少一边应为资产/负债/权益账户')
+                }
               }
             }
           ]}
         >
-          {(fields, { add, remove }) => (
+          {(fields) => (
             <>
               {fields.map((field) => (
                 <div key={field.key} style={{ display: 'flex', gap: 8 }}>
@@ -159,7 +171,12 @@ export default function EntryFormView({ onOpenAiSettings }: Props) {
                       { pattern: /^[A-Z]\S*:\S*$/, message: '账户须大写字母开头、含冒号、无空格' }
                     ]}
                   >
-                    <AutoComplete options={accountOptions} placeholder="如 Expenses:Food" />
+                    <Select
+                      showSearch
+                      options={accountOptionsFor(field.name)}
+                      optionFilterProp="label"
+                      placeholder={field.name === 0 ? '选择资金减少/支出账户' : '选择资金增加/收入账户'}
+                    />
                   </Form.Item>
                   <Form.Item
                     name={[field.name, 'number']}
@@ -179,32 +196,13 @@ export default function EntryFormView({ onOpenAiSettings }: Props) {
                   >
                     <AutoComplete options={currencyOptions} placeholder="如 CNY" />
                   </Form.Item>
-                  {fields.length > 2 && (
-                    <Button
-                      type="text"
-                      danger
-                      icon={<MinusCircleOutlined />}
-                      onClick={() => remove(field.name)}
-                      aria-label="删除记账行"
-                    />
-                  )}
                 </div>
               ))}
-              <Form.Item style={{ marginBottom: 12 }}>
-                <Button
-                  type="dashed"
-                  block
-                  icon={<PlusOutlined />}
-                  onClick={() => add({})}
-                  disabled={fields.length >= MAX_POSTINGS}
-                >
-                  添加记账行
-                </Button>
-              </Form.Item>
             </>
           )}
         </Form.List>
       </ProForm>
+      <AccountSettingsModal open={accountSettingsOpen} onClose={() => setAccountSettingsOpen(false)} />
     </>
   )
 }
@@ -252,3 +250,4 @@ export function draftToFormValues(draft: AddEntryParams): DraftFormValues {
     postings: draft.postings.map((p) => ({ account: p.account, number: p.number, currency: p.currency }))
   }
 }
+

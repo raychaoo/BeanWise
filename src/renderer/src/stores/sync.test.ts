@@ -45,7 +45,7 @@ beforeEach(() => {
   vi.unstubAllGlobals()
   useSyncStore.setState({ status: null, conflict: null, syncing: false })
   useLedgerStore.setState({
-    status: null, entries: [], total: 0, accounts: [], loading: false, error: null,
+    status: null, entries: [], total: 0, accountOptions: [], accountValues: [], loading: false, error: null,
     editorContent: null, editorOriginal: null, editorFingerprint: null,
     editorLoaded: false, editorMissing: false, editorSaving: false, editorConflict: null
   })

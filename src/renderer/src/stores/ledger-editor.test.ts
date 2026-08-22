@@ -45,7 +45,7 @@ beforeEach(() => {
   // 未配置（stub 默认），导致后置用例被「未配置静默跳过」守卫拦截——逐用例重置
   useSyncStore.setState({ status: null, conflict: null, syncing: false })
   useLedgerStore.setState({
-    status: null, entries: [], total: 0, accounts: [], loading: false, error: null,
+    status: null, entries: [], total: 0, accountOptions: [], accountValues: [], loading: false, error: null,
     editorContent: null, editorOriginal: null, editorFingerprint: null,
     editorLoaded: false, editorMissing: false, editorSaving: false, editorConflict: null
   })

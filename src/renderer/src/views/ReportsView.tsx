@@ -3,7 +3,7 @@
  * 账户余额树表格）。图表 y 值 Number() 仅显示层，精确金额由余额表十进制字符串提供。
  */
 import { Column, Line } from '@ant-design/charts'
-import { Alert, Card, Empty, Segmented, Spin, Table, Typography } from 'antd'
+import { Alert, Card, Empty, Segmented, Spin, Table, Tooltip, Typography } from 'antd'
 import { useEffect } from 'react'
 import type { AccountBalance, IncomeExpensePoint, NetWorthPoint } from '../../../shared/ipc'
 import { useLedgerStore } from '../stores/ledger'
@@ -42,11 +42,13 @@ export default function ReportsView() {
   const error = useReportsStore((s) => s.error)
   const currency = useReportsStore((s) => s.currency)
   const status = useLedgerStore((s) => s.status)
+  const accountOptions = useLedgerStore((s) => s.accountOptions)
 
   useEffect(() => {
     void useReportsStore.getState().reloadAll()
   }, [])
 
+  const accountNameMap = new Map(accountOptions.map((o) => [o.value, o.label]))
   const hasData = (netWorth?.length ?? 0) > 0 || (incomeExpense?.length ?? 0) > 0 || (balances?.length ?? 0) > 0
 
   return (
@@ -102,7 +104,14 @@ export default function ReportsView() {
                 pagination={false}
                 expandable={{ defaultExpandAllRows: true }}
                 columns={[
-                  { title: '账户', dataIndex: 'name' },
+                  {
+                    title: '账户',
+                    dataIndex: 'name',
+                    render: (name: string) => {
+                      const label = accountNameMap.get(name) ?? name
+                      return label === name ? name : <Tooltip title={name}>{label}</Tooltip>
+                    }
+                  },
                   { title: '余额', dataIndex: 'balances', render: (b: Array<{ currency: string; number: string }>) => <BalanceCell balances={b} /> }
                 ]}
               />

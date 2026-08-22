@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AddEntryParams } from '../shared/ipc'
-import { serializeEntry, serializeFirstEntryBlock, validateEntryParams } from './entry-serializer'
+import { findUnopenedAccounts, serializeEntry, serializeFirstEntryBlock, serializeOpenLines, validateEntryParams } from './entry-serializer'
 
 const valid: AddEntryParams = {
   date: '2026-08-09',
@@ -51,6 +51,33 @@ describe('serializeEntry', () => {
   })
 })
 
+describe('findUnopenedAccounts / serializeOpenLines（追加场景补 open 行）', () => {
+  const ledger = [
+    '2026-01-01 open Assets:Cash',
+    '2026-01-01 open Expenses:Food',
+    '',
+    '2026-06-01 * "午餐"',
+    '  Expenses:Food  25.00 CNY',
+    '  Assets:Cash  -25.00 CNY',
+    ''
+  ].join('\n')
+
+  it('已 open 的账户不返回；未 open 的按顺序去重', () => {
+    expect(findUnopenedAccounts(ledger, ['Assets:Cash', 'Equity:AutoBalance', 'Assets:Cash']))
+      .toEqual(['Equity:AutoBalance'])
+  })
+
+  it('全部已 open → 空数组 + 空 open 行前缀', () => {
+    expect(findUnopenedAccounts(ledger, ['Assets:Cash'])).toEqual([])
+    expect(serializeOpenLines('2026-08-09', [])).toBe('')
+  })
+
+  it('serializeOpenLines 输出 open 行前缀', () => {
+    expect(serializeOpenLines('2026-08-09', ['Equity:AutoBalance']))
+      .toBe('2026-08-09 open Equity:AutoBalance\n')
+  })
+})
+
 describe('serializeFirstEntryBlock（首文件：open 行 + 交易块）', () => {
   it('输出快照：open 行按 posting 顺序 + 交易块', () => {
     expect(serializeFirstEntryBlock(valid)).toBe(
@@ -81,6 +108,18 @@ describe('serializeFirstEntryBlock（首文件：open 行 + 交易块）', () =>
 describe('validateEntryParams', () => {
   it('合法入参原样返回', () => {
     expect(validateEntryParams(valid)).toEqual(valid)
+  })
+
+  it('全部为收支账户拒绝（餐饮 + 购物场景）', () => {
+    expect(() =>
+      validateEntryParams({
+        ...valid,
+        postings: [
+          { account: 'Expenses:Food', number: '25.50', currency: 'CNY' },
+          { account: 'Expenses:Shopping', number: '-25.50', currency: 'CNY' }
+        ]
+      })
+    ).toThrow('交易不能全部为收支账户')
   })
 
   it('缺省字段不出现', () => {
@@ -143,7 +182,13 @@ describe('validateEntryParams', () => {
       validateEntryParams({ ...valid, postings: Array.from({ length: 21 }, () => valid.postings[0]) })
     ).toThrow(/postings/)
     expect(
-      validateEntryParams({ ...valid, postings: Array.from({ length: 20 }, () => valid.postings[0]) })
+      validateEntryParams({
+        ...valid,
+        postings: [
+          ...Array.from({ length: 19 }, () => valid.postings[0]),
+          valid.postings[1]
+        ]
+      })
     ).toBeTruthy()
   })
 

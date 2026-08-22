@@ -5,7 +5,7 @@ import { computeBalancingNumber } from '../shared/decimal'
 import type { AddEntryResult, ListAccountsResult, ListEntriesParams, ReadFileResult, RefreshResult, SaveFileParams, SaveFileResult } from '../shared/ipc'
 import type { DrizzleDb } from './db'
 import { postings } from './db/schema'
-import { serializeEntry, serializeFirstEntryBlock, validateEntryParams } from './entry-serializer'
+import { findUnopenedAccounts, serializeEntry, serializeFirstEntryBlock, serializeOpenLines, validateEntryParams } from './entry-serializer'
 import { getLedgerStatus, listEntries, refreshIndex } from './index-builder'
 import { writeLedgerChecked } from './ledger-writer'
 import type { PythonSvc } from './python-svc'
@@ -122,9 +122,19 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
     let preLength = 0
     try {
       const stat = statSync(deps.ledgerPath)
-      const endsWithLf = fileEndsWithLf(deps.ledgerPath, stat.size)
-      preLength = stat.size + (endsWithLf ? 0 : 1)
-      appendFileSync(deps.ledgerPath, (endsWithLf ? '' : '\n') + serializeEntry(params), 'utf8')
+      if (stat.size === 0) {
+        // 工作目录打开时会先创建空账本；空文件也要走首笔骨架，否则交易账户没有 open。
+        appendFileSync(deps.ledgerPath, serializeFirstEntryBlock(params), 'utf8')
+      } else {
+        const endsWithLf = fileEndsWithLf(deps.ledgerPath, stat.size)
+        preLength = stat.size + (endsWithLf ? 0 : 1)
+        // 追加场景：自动补的反向分录账户（如 Equity:AutoBalance）可能尚未 open，
+        // 需在交易前补 open 行，否则 Beancount 报 unknown account。
+        const content = readFileSync(deps.ledgerPath, 'utf8')
+        const unopened = findUnopenedAccounts(content, params.postings.map((p) => p.account))
+        const openLines = serializeOpenLines(params.date, unopened)
+        appendFileSync(deps.ledgerPath, (endsWithLf ? '' : '\n') + openLines + serializeEntry(params), 'utf8')
+      }
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
       mkdirSync(dirname(deps.ledgerPath), { recursive: true })

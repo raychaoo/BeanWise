@@ -58,7 +58,7 @@ test('M5 冲突：外部修改 → 保存触发冲突面板 → 重新加载回�
 
     // 2. 外部修改：录入视图加一笔（文件 → F2，编辑器基线仍为 F1）
     await win.getByRole('menuitem', { name: '录入' }).click()
-    await win.getByLabel('Payee').fill('外部修改')
+    await win.getByLabel('交易对象').fill('外部修改')
     await win.getByLabel('账户').nth(0).fill('Expenses:Food')
     await win.getByLabel('金额').nth(0).fill('25.50')
     await win.getByLabel('货币').nth(0).fill('CNY')

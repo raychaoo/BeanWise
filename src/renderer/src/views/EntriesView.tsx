@@ -1,22 +1,13 @@
 /**
  * 明细视图（M4）：索引状态卡 + 条目分页表。M3 只读验收面板由此取代。
  */
-import { Alert, Button, Card, Descriptions, Table, Tag } from 'antd'
+import { Alert, Button, Card, Descriptions, Table, Tag, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useState } from 'react'
 import type { LedgerEntryRow } from '../../../shared/ipc'
 import { useLedgerStore } from '../stores/ledger'
 
 const PAGE_SIZE = 20
-
-const columns: ColumnsType<LedgerEntryRow> = [
-  { title: '日期', dataIndex: 'date', width: 110 },
-  { title: '标志', dataIndex: 'flag', width: 60, render: (v: string | null) => v ?? '—' },
-  { title: '类型', dataIndex: 'type', width: 90 },
-  { title: 'Payee', dataIndex: 'payee', render: (v: string | null) => v ?? '—' },
-  { title: 'Narration', dataIndex: 'narration', render: (v: string | null) => v ?? '—' },
-  { title: '账户', dataIndex: 'account', render: (v: string | null) => v ?? '—' }
-]
 
 const STATUS_COLOR: Record<string, string> = { ok: 'success', error: 'error', missing: 'default' }
 
@@ -29,7 +20,27 @@ export default function EntriesView() {
   const refresh = useLedgerStore((s) => s.refresh)
   const loadEntries = useLedgerStore((s) => s.loadEntries)
   const setError = useLedgerStore((s) => s.setError)
+  const accountOptions = useLedgerStore((s) => s.accountOptions)
   const [page, setPage] = useState(1)
+
+  const accountNameMap = new Map(accountOptions.map((o) => [o.value, o.label]))
+
+  const columns: ColumnsType<LedgerEntryRow> = [
+    { title: '日期', dataIndex: 'date', width: 110 },
+    { title: '标志', dataIndex: 'flag', width: 60, render: (v: string | null) => v ?? '—' },
+    { title: '类型', dataIndex: 'type', width: 90 },
+    { title: '交易对象', dataIndex: 'payee', render: (v: string | null) => v ?? '—' },
+    { title: '说明', dataIndex: 'narration', render: (v: string | null) => v ?? '—' },
+    {
+      title: '账户',
+      dataIndex: 'account',
+      render: (v: string | null) => {
+        if (!v) return '—'
+        const label = accountNameMap.get(v) ?? v
+        return label === v ? v : <Tooltip title={v}>{label}</Tooltip>
+      }
+    }
+  ]
 
   /** 重建索引 → 重拉状态与条目（M3 refreshIndex 管线） */
   const handleRefreshIndex = async () => {

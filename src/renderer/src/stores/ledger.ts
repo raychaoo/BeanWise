@@ -7,7 +7,7 @@
  */
 import { message } from 'antd'
 import { create } from 'zustand'
-import type { LedgerEntryRow, LedgerStatus } from '../../../shared/ipc'
+import type { AccountEntry, LedgerEntryRow, LedgerStatus } from '../../../shared/ipc'
 import { useSyncStore } from './sync' // M6：与 sync.ts → ledger.ts 构成运行时安全的循环引用（双方仅 action 体内引用）
 
 export interface EditorConflict {
@@ -15,16 +15,26 @@ export interface EditorConflict {
   diskFingerprint: string
 }
 
+/** 下拉选项：label = 中文显示名（或原始路径），value = Beancount 账户路径 */
+export interface AccountOption {
+  label: string
+  value: string
+}
+
 interface LedgerState {
   status: LedgerStatus | null
   entries: LedgerEntryRow[]
   total: number
-  accounts: string[]
+  /** 录入页下拉框选项（配置账户用中文名，历史账户用原始路径） */
+  accountOptions: AccountOption[]
+  /** 原始 Beancount 账户路径列表（自动平衡找 Assets 用） */
+  accountValues: string[]
   loading: boolean
   error: string | null
   refresh(): Promise<void>
   loadEntries(limit: number, offset: number): Promise<void>
   loadAccounts(): Promise<void>
+  saveAccountConfig(accounts: AccountEntry[]): Promise<boolean>
   setError(error: string | null): void
   // ---- M5 编辑器 ----
   editorContent: string | null
@@ -72,11 +82,24 @@ export const useLedgerStore = create<LedgerState>((set, get) => {
     }
   }
 
+  /** 合并配置账户 + 账本历史账户为下拉选项和值列表 */
+  function mergeAccountOptions(configAccounts: AccountEntry[], ledgerAccounts: string[]): { accountOptions: AccountOption[]; accountValues: string[] } {
+    const configuredValues = new Set(configAccounts.map((e) => e.value))
+    const options: AccountOption[] = configAccounts.map((e) => ({ label: e.name || e.value, value: e.value }))
+    for (const v of ledgerAccounts) {
+      if (!configuredValues.has(v)) options.push({ label: v, value: v })
+    }
+    options.sort((a, b) => a.label.localeCompare(b.label))
+    const values = [...new Set([...configAccounts.map((e) => e.value), ...ledgerAccounts])]
+    return { accountOptions: options, accountValues: values }
+  }
+
   return {
     status: null,
     entries: [],
     total: 0,
-    accounts: [],
+    accountOptions: [],
+    accountValues: [],
     loading: false,
     error: null,
 
@@ -109,10 +132,29 @@ export const useLedgerStore = create<LedgerState>((set, get) => {
 
     loadAccounts: async () => {
       try {
-        const r = await window.beanwise.listLedgerAccounts()
-        set({ accounts: r.accounts })
+        const [r, config] = await Promise.all([
+          window.beanwise.listLedgerAccounts(),
+          window.beanwise.getAccountConfig()
+        ])
+        set(mergeAccountOptions(config.accounts ?? [], r.accounts))
       } catch (err) {
         set({ error: String(err) })
+      }
+    },
+
+    saveAccountConfig: async (accounts) => {
+      try {
+        const r = await window.beanwise.saveAccountConfig({ accounts })
+        if (!r.ok || !r.accounts) {
+          message.error(r.message ?? '账户配置保存失败')
+          return false
+        }
+        const ledger = await window.beanwise.listLedgerAccounts()
+        set(mergeAccountOptions(r.accounts, ledger.accounts))
+        return true
+      } catch (err) {
+        message.error(String(err))
+        return false
       }
     },
 
