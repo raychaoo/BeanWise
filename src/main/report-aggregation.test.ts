@@ -75,6 +75,13 @@ describe('buildAccountTree（叶子余额 + 子树 rollup + 多币种分行）',
     // 负债为负
     const liab = tree.find((n) => n.name === 'Liabilities')!
     expect(liab.balances).toEqual([{ currency: 'CNY', number: '-20' }])
+    // 收入正显示：Income 行取反聚合，父级 rollup 同步为正
+    const income = tree.find((n) => n.name === 'Income')!
+    expect(income.balances).toContainEqual({ currency: 'CNY', number: '10000' })
+    expect(income.balances).toContainEqual({ currency: 'USD', number: '100' })
+    const salary = income.children!.find((n) => n.name === 'Income:Salary')!
+    expect(salary.balances).toContainEqual({ currency: 'CNY', number: '10000' })
+    expect(salary.balances).toContainEqual({ currency: 'USD', number: '100' })
     // 叶子数 = 聚合账户数（CNY 5 个 + USD 1 个，均不含父级）。
     // 2026-08-11 TDD 修正：简报原 flatMap 两层链只能取到深度 3 节点，漏掉深度 2 叶子
     // （Expenses:*/Income:*/Liabilities:CreditCard），与「叶子 = 全部账户」口径矛盾，改递归收集

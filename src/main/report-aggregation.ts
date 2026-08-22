@@ -1,7 +1,7 @@
 /**
  * M8 报表聚合纯函数（T2）。数据源 = SQLite 索引行（SQL 只做行筛选/排序），
  * 金额累计一律 addDecimalStrings 精确字符串运算——SQLite SUM() 转 REAL 丢精度，禁用。
- * 口径：趋势图按运营货币过滤；余额树多币种分行 + 子树 rollup；收支正显示（income=-ΣIncome:*）。
+ * 口径：趋势图按运营货币过滤；余额树多币种分行 + 子树 rollup（余额树中 Income 账户同样正显示）；收支正显示（income=-ΣIncome:*）。
  */
 import { addDecimalStrings, negateDecimal } from '../shared/decimal'
 import type { AccountBalance, IncomeExpensePoint, NetWorthPoint } from '../shared/ipc'
@@ -53,7 +53,8 @@ export function computeNetWorth(
 
 /**
  * 账户余额树：叶子余额按 (账户, 币种) 聚合 → 按 '.' 前缀建树，
- * 每个节点 balances = 子树各币种合计（递归 rollup），children 按名称字典序。
+ * 每个节点 balances = 子树各币种合计（递归 rollup），children 按名称字典序；
+ * Income 账户按取反值聚合，余额表中收入显示为正，避免「工资收入 -100」。
  */
 export function buildAccountTree(rows: PostingRow[]): AccountBalance[] {
   const sums = new Map<string, Map<string, string>>() // account → currency → number
@@ -63,7 +64,8 @@ export function buildAccountTree(rows: PostingRow[]): AccountBalance[] {
       m = new Map()
       sums.set(r.account, m)
     }
-    m.set(r.currency, addDecimalStrings(m.get(r.currency) ?? '0', r.number))
+    const delta = r.account.startsWith('Income:') ? negateDecimal(r.number) : r.number
+    m.set(r.currency, addDecimalStrings(m.get(r.currency) ?? '0', delta))
   }
   const nodes = new Map<string, AccountBalance>()
   const roots: AccountBalance[] = []

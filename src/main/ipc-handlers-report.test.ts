@@ -90,7 +90,7 @@ describe('report:balances', () => {
     const liabilities = r.accounts.find((a) => a.name === 'Liabilities')!
     expect(liabilities.balances).toEqual([{ currency: 'CNY', number: '-20' }])
     const income = r.accounts.find((a) => a.name === 'Income')!
-    expect(income.balances).toEqual([{ currency: 'CNY', number: '-10000' }])
+    expect(income.balances).toEqual([{ currency: 'CNY', number: '10000' }])
   })
 })
 
