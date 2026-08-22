@@ -1,6 +1,6 @@
 /**
  * M7 E2E（T6）：AI 录入两链路——进程内 DeepSeek mock（BEANWISE_AI_BASE_URL 注入，零网络/零密钥）。
- * ① 绿灯：未配置引导 → 配置 Key → 自然语言 → 草稿 → 填入表单 → 提交落盘 → 文件/明细可见
+ * ① 绿灯：未配置隐藏入口 → 配置 Key → 自然语言 → 草稿 → 填入表单 → 提交落盘 → 文件/明细可见
  * ② 拒绝：mock 非法输出 → 「AI 输出不符合录入格式」提示 + 文件不变
  *
  * 环境事实（与 brief 的偏差，M7-T6 实测确立）：
@@ -56,14 +56,13 @@ test('M7 绿灯：自然语言 → 草稿 → 填表确认 → 落盘全链路',
     })
     const win = await app.firstWindow()
     await resetAi(win)
-    await openAiPanel(win)
 
-    // 1. 未配置 → 引导提示 + 去设置按钮
-    await expect(win.getByText('尚未配置 DeepSeek API Key')).toBeVisible()
+    // 1. 未配置 → 整个 AI 录入入口隐藏
+    await expect(win.getByRole('button', { name: /AI 辅助录入/ })).not.toBeVisible()
 
-    // 2. 配置 Key → 引导消失
+    // 2. 配置 Key → 入口出现
     await configureAi(win)
-    await expect(win.getByText('尚未配置 DeepSeek API Key')).not.toBeVisible()
+    await openAiPanel(win)
 
     // 3. 生成草稿（mock 返回固定合法交易）→ 草稿卡可见（作用域 collapse：明细表可能含同名行）
     await win.getByPlaceholder('例如：昨天午饭花了 25.5 元，用银行卡支付').fill('午饭 25.5 元')
@@ -113,8 +112,8 @@ test('M7 拒绝：mock 非法输出 → 校验拒绝提示 + 文件不变', asyn
     })
     const win = await app.firstWindow()
     await resetAi(win)
-    await openAiPanel(win)
     await configureAi(win)
+    await openAiPanel(win)
 
     await win.getByPlaceholder('例如：昨天午饭花了 25.5 元，用银行卡支付').fill('午饭 25.5 元')
     await win.getByRole('button', { name: '生成草稿' }).click()

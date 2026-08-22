@@ -1,7 +1,7 @@
 /**
  * M7：AI 辅助录入面板（录入视图顶部，Collapse 收折）。单次生成 + 草稿确认（设计 spec §4）：
  * 输入自然语言 → ai:parse → 草稿列表（只读摘要）→ 每笔「填入表单」→ 用户走 ProForm
- * 现有提交流程落盘（写路径唯一，M7 不加第二条写路径）。未配置 Key → 引导去 AI 设置。
+ * 现有提交流程落盘（写路径唯一，M7 不加第二条写路径）。未配置 Key 时整个入口隐藏。
  */
 import { RobotOutlined } from '@ant-design/icons'
 import { Alert, Button, Card, Collapse, Input, Space, Typography } from 'antd'
@@ -10,8 +10,6 @@ import type { AddEntryParams } from '../../../shared/ipc'
 import { useAiStore } from '../stores/ai'
 
 interface Props {
-  /** 未配置引导「去设置」 → 打开 AI 设置 Modal */
-  onOpenSettings: () => void
   /** 草稿「填入表单」 → 回填 ProForm（写路径仍走表单提交） */
   onFillForm: (draft: AddEntryParams) => void
 }
@@ -28,7 +26,7 @@ export function formatDraftSummary(draft: AddEntryParams): string {
   return `${head}\n${postings}`
 }
 
-export default function AiEntryPanel({ onOpenSettings, onFillForm }: Props) {
+export default function AiEntryPanel({ onFillForm }: Props) {
   const status = useAiStore((s) => s.status)
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(false)
@@ -36,6 +34,8 @@ export default function AiEntryPanel({ onOpenSettings, onFillForm }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [filled, setFilled] = useState<boolean[]>([])
   const configured = status?.configured ?? false
+
+  if (!configured) return null
 
   const generate = async () => {
     setLoading(true)
@@ -65,14 +65,6 @@ export default function AiEntryPanel({ onOpenSettings, onFillForm }: Props) {
         label: 'AI 辅助录入',
         children: (
           <Space direction="vertical" style={{ width: '100%' }}>
-            {!configured ? (
-              <Alert
-                type="info"
-                message="尚未配置 DeepSeek API Key"
-                description="配置后即可用自然语言生成记账草稿。"
-                action={<Button size="small" onClick={onOpenSettings}>去设置</Button>}
-              />
-            ) : null}
             <Input.TextArea
               placeholder="例如：昨天午饭花了 25.5 元，用银行卡支付"
               value={text}
