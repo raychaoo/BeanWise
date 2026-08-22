@@ -4,11 +4,12 @@
 
 | 密钥 | 存储方式 | 使用方 |
 |---|---|---|
-| GitHub PAT | Electron safeStorage（系统钥匙串加密） | 主进程 GitSync |
-| DeepSeek API Key | Electron safeStorage | 主进程代理 |
+| GitHub PAT | Electron safeStorage 加密 → base64 → electron-store `sync-tokens`（按工作目录路径小写键隔离） | 主进程 GitSync |
+| DeepSeek API Key | Electron safeStorage 加密 → base64 → electron-store `ai-tokens` | 主进程代理 |
 
 - 渲染进程**不接触任何密钥**
 - AI 请求由主进程代理发出，响应再回传渲染进程
+- PAT / Key 密文存应用 userData，**不落账本工作目录**（避免凭据进 git 仓库）
 
 ## 进程边界
 
@@ -32,4 +33,4 @@ Renderer ──(contextBridge 白名单 API)──▶ Preload ──(typed IPC)�
 
 - 本地 SQLite 不存敏感明文（如无必要不落交易备注以外的隐私）
 - electron-log 日志脱敏：不记录 PAT / API Key / 完整密码
-- 自动更新包来源固定为 GitHub Releases，校验发布者签名
+- 自动更新包来源固定为 GitHub Releases；无签名发布（M8 裁决，electron-updater 不校验 Authenticode），证书到位后补签

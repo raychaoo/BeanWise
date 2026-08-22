@@ -12,14 +12,17 @@
 │   └──────┬───────┘   └──────┬───────┘   └───────┬───────┘    │
 │          │                  │                    │           │
 │   ┌──────▼───────┐   ┌──────▼───────┐   ┌───────▼───────┐    │
-│   │ SQLite Index │   │   Python     │   │ isomorphic-git│    │
-│   │ Drizzle ORM  │   │  Beancount   │   │               │    │
-│   │  (缓存层)     │   │  Engine      │   │               │    │
+│   │ SQLite Index │   │   Python     │   │  Git 仓库       │   │
+│   │ Drizzle ORM  │   │  Beancount   │   │  (每工作目录)   │   │
+│   │ 每工作目录     │   │  Engine      │   │               │   │
 │   └──────────────┘   └──────────────┘   └───────┬───────┘    │
 │                                                 │           │
 │   ┌──────────────┐                              │           │
 │   │ DeepSeek API │◀──── 主进程代理（Key 不落地渲染进程）       │
 │   └──────────────┘                              │           │
+│                                                │            │
+│  工作目录运行时（activateWorkspace 整体重建）:                 │
+│   ledgerPath / db / GitSync / syncConfig / accountConfig      │
 └─────────────────────────────────────────────────┼─────────────┘
                                                   │
 ┌─────────────────────────────────────────────────▼─────────────┐
@@ -31,6 +34,7 @@
 │                                                               │
 │   Ant Design │ ProComponents(ProForm) │ Ant Charts │ Monaco  │
 │   Zustand（状态管理）                                         │
+│   WorkspaceGate（未选目录门控）│ WorkspaceSwitcher（切换 reload）│
 │                                                               │
 │   ⬇ 所有业务能力调用一律走 IPC → 主进程 → Python/SQLite/Git   │
 └───────────────────────────────────────────────────────────────┘
@@ -44,13 +48,31 @@
 | 文件变更 | Beancount 文件变更 → 增量解析 → 重建 SQLite 索引 |
 | git 同步 | Main(GitSync) → isomorphic-git → GitHub 私有仓库（冲突 → 三路合并 UI） |
 | AI 录入 | Renderer → IPC → Main 代理 → DeepSeek API（Function Calling + schema 校验） |
+| 工作目录切换 | WorkspaceSwitcher → IPC open → 主进程重建运行时 → 渲染端整页 reload |
 
 ## Node ↔ Python 通信协议
 
 - **方案**：stdio JSON-RPC 2.0，JSONL 逐行（`\n` 分隔）
-- **方法清单**：`ping` / `parse_file` / `validate` / `query` / `render_report` / `shutdown`（AI 解析不走 Python，见 ADR 13）
+- **方法清单**：`ping` / `parse_file` / `parse_entries` / `validate` / `query` / `render_report` / `shutdown`（AI 解析不走 Python，见 ADR 13）
 - **进程管理**：主进程 `spawn` 管理，异常退出指数退避重启，`before-quit` 优雅关闭
 - **渲染进程隔离**：渲染进程不直连 Python，一律走主进程代理
+
+## 工作目录运行时模型（M9 定稿）
+
+应用按「工作目录」组织账本运行时，每个工作目录独立持有：
+
+| 组件 | 路径 | 说明 |
+|---|---|---|
+| 账本文件 | `<workspace>/main.beancount` | 固定文件名；首笔录入自动补账户 open 行 |
+| SQLite 索引 | `<workspace>/.beanwise/index.db` | ledger_meta / entries / postings 三表，可随时重建 |
+| 同步配置 | `<workspace>/.beanwise/sync-config.json` | repoUrl / branch / adopted / lastSyncAt / lastError |
+| 通用账户库 | `<workspace>/.beanwise/accounts.json` | AccountEntry[]（id / name / value / description?） |
+| git 仓库 | `<workspace>/.git` | 只追踪账本文件，分支固定 main |
+
+- 主进程持有一份**动态运行时**（`Runtime`：db / ledgerPath / gitSync / syncTokens / syncConfig / accountConfig），`activateWorkspace(dir)` 先关旧 DB → 重建全部组件 → fire-and-forget 刷新索引；已注册 IPC handler 经 getter 读到最新值
+- PAT / API Key **不写在工作目录内**：safeStorage 加密后存 electron-store（`sync-tokens` 按工作目录路径小写键隔离、`ai-tokens`），避免凭据进仓库
+- 当前路径 + 最近打开列表（上限 10）存 electron-store（`workspace`）；启动时若上次目录存在则自动激活，否则渲染端显示 WorkspaceGate 选择界面
+- `workspace:open` 校验目录存在与可写 → 创建/接管 `main.beancount` → 初始化本地 git（无 `.git` 则 `initRepo`）→ commit 初始快照；成功后渲染端 `window.location.reload()` 整页重载，杜绝各域 zustand store 跨目录残留状态
 
 ## Python 分发
 

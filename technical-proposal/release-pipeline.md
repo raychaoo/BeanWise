@@ -45,8 +45,7 @@ extraResources:
 publish:
   provider: github    # electron-updater 从 GitHub Releases 读 latest.yml
   owner: raychaoo
-  repo: BeanWise
-win:
+  repo: BeanWisewin:
   target: [nsis]
 nsis:
   oneClick: false
@@ -56,7 +55,7 @@ nsis:
 ## 易错点
 
 1. `latest.yml` 必须随产物一起发布，缺了自动更新静默失败
-2. `latest.yml` 必须随产物发布（缺了自动更新静默失败）；未签名产物 SmartScreen 拦截属预期（M8 裁决接受）
+2. 未签名产物 SmartScreen 拦截属预期（M8 裁决接受）
 3. PyInstaller 不能交叉打包，Windows 产物必须在 Windows runner 上构建
 4. GitHub Secrets 需配置：`GH_TOKEN`（CSC_LINK / CSC_KEY_PASSWORD 仅在证书到位、恢复签名时配置）
 5. 国内网络访问 GitHub Releases 常超时，electron-updater 可能静默失败；预留镜像 / 直链 fallback 方案

@@ -25,9 +25,10 @@
 | M6 | Git 同步 | M3 | 推拉到 GitHub 私有仓库；人为冲突 → 三路合并 UI 完成合并 |
 | M7 | AI 辅助录入 | M3 | 自然语言 → 交易指令 → 落盘全链路；schema 校验拒绝非法输出 ✅（2026-08-11） |
 | M8 | 图表报表 + 发布加固 | M4, M5, M6, M7 | 图表渲染真实数据；升级演练；完整发布演练（tag → Release → 更新，待首版人工） ✅ 完成（2026-08-12） |
+| M9 | 工作目录 + 通用账户库 | M4, M6, M7, M8 | 工作目录切换后账本/索引/仓库/配置整体隔离重建；账户库增删改 + 录入两行配对校验生效 ✅（2026-08-22） |
 
 ```plain
-M1 ──┬──▶ M3 ──┬──▶ M4 ──┬──▶ M8
+M1 ──┬──▶ M3 ──┬──▶ M4 ──┬──▶ M8 ──▶ M9
 M2 ──┘        ├──▶ M5    ┘
               ├──▶ M6
               └──▶ M7
@@ -58,7 +59,7 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
 - 类型定义唯一来源：`src/shared/ipc.ts` → preload 白名单 → main handler 注册，禁止旁路
 - 通道命名：`{domain}:{action}` 小写 kebab，如 `ledger:validate`、`sync:push`、`ai:parse`
 - 主进程对所有入参做类型与路径校验（防目录穿越）
-- M3 定稿 ledger 通道 + M6 追加 sync 六通道（类型唯一来源 `src/shared/ipc.ts`，M4-M8 复用）：
+- M3 定稿 ledger 通道 + M6 追加 sync 六通道 + M7 追加 ai 四通道 + M9 追加 accounts/workspace（类型唯一来源 `src/shared/ipc.ts`，跨里程碑复用）：
 
   | 通道 | params | result 要点 |
   |---|---|---|
@@ -75,12 +76,21 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
   | `sync:pull`（M6） | 无 | `{ok, conflict?, base?, ours?, theirs?, message?}`（fetch → 自动合并 → 落盘 + refreshIndex） |
   | `sync:resolve-conflict`（M6） | `{content}` | `{ok, status?, entryCount?, errorCount?, message?}`（tmp 校验落盘 → commit → push → refreshIndex） |
   | `sync:clear`（M6） | 无 | `{ok}` |
+  | `ai:get-status`（M7） | 无 | `AiStatus`（configured/model；**不含 Key**——渲染端永不接触密钥） |
+  | `ai:save-config`（M7） | `{apiKey}` | `{ok, error?}`（Key 经 safeStorage 存主进程，渲染端不落 state） |
+  | `ai:clear-config`（M7） | 无 | `{ok}` |
+  | `ai:parse`（M7） | `{text}`（≤2000 字符） | `{ok, drafts?: AddEntryParams[], message?, error?}`（草稿回填 ProForm，写路径唯一） |
   | `report:net-worth`（M8） | `{granularity: 'month'\|'year'}` | `{series: [{period, assets, liabilities, netWorth}], currency, message?}`（期间累计，仅运营货币；金额 decimal 字符串） |
   | `report:balances`（M8） | 无 | `{accounts: [{name, balances: [{currency, number}], children?}], message?}`（账户树 + 子树 rollup，多币种分行） |
   | `report:income-expense`（M8） | `{granularity, year?}` | `{series: [{period, income, expense}], currency, message?}`（income/expense 正显示；月视图 12 个月补满，year 缺省最近年份） |
   | `update:check`（M8） | 无 | `{ok, message?}`（触发 updater 状态机） |
   | `update:status`（M8） | 无 | `UpdateState`（idle/checking/available/downloading/downloaded/error + currentVersion/progress/error） |
   | `update:install`（M8） | 无 | `{ok, message?}`（quitAndInstall）；事件 `update:status-changed` main→renderer |
+  | `accounts:get`（M9） | 无 | `{ok, accounts?: AccountEntry[]}`（AccountEntry：id/name/value/description?） |
+  | `accounts:save`（M9） | `{accounts}` | `{ok, accounts?, message?}`（id=0 新建按 nextId 自增；value 不可改；上限 500） |
+  | `workspace:get-status`（M9） | 无 | `WorkspaceStatus`（current 绝对路径 / ledgerFile=main.beancount；未选择 → current:null） |
+  | `workspace:choose`（M9） | 无 | `{ok, canceled?, path?, message?}`（dialog 返回取消 → canceled:true） |
+  | `workspace:open`（M9） | `{path}` | `{ok, status?, message?}`（校验目录 + 初始化 git + 接管/创建账本文件 → 整页 reload） |
 
 ### 数据流铁律
 
@@ -107,13 +117,14 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
 | # | 做什么 | 不做（留给后续/明确排除） |
 |---|---|---|
 | M1 | Vite+Electron+TS 骨架、npm scripts、electron-builder 出包、CI 基线 | 业务代码；签名（留 M8） |
-| M2 | Python service + JSON-RPC + 6 个方法 + pytest + PyInstaller | 增量解析策略（M3）；AI 解析（走主进程代理，不经 Python） |
+| M2 | Python service + JSON-RPC + 7 个方法 + pytest + PyInstaller | 增量解析策略（M3）；AI 解析（走主进程代理，不经 Python） |
 | M3 | 3 层 IPC 骨架、Drizzle 表结构、增量解析→索引重建、PythonSvc 生命周期 | 业务 UI；录入表单 |
 | M4 | ProForm 录入表单、校验错误展示、落文件→索引链路（金额一律十进制字符串 + 末行自动平衡；追加写 + 索引 error 时 truncate 回滚；首文件自动补账户 open 行——写失败策略见 data-consistency.md） | 编辑已有交易（M5）；AI 录入（M7） |
 | M5 | Monaco 编辑器 + 自研 monarch beancount 语法高亮、整文件覆盖保存（tmp 校验 + rename 原子替换，校验失败不落盘）、外部修改冲突检测（sha256 指纹比对 + DiffEditor 决策）、DiffEditor 基础；生产 CSP 补 `worker-src 'self'`（Monaco worker 独立 chunk） | 三路合并 UI（M6） |
 | M6 | isomorphic-git 推拉（账本目录即 git 工作区，只追踪账本文件；分支固定 main/remote 固定 origin）、PAT 录入（safeStorage 加密，仅主进程持有）、保存后自动 push + 手动 pull、diff3 自动合并（干净合并 → 双亲合并提交落盘；冲突才弹三路 UI：base/ours/theirs + merged 编辑）、force push 仅场景 C 接管（unrelated histories）、sync 域 syncing 互斥（push/pull/configure/resolve 任一进行中其余拒绝） | 自动定时同步（可后置，sync:push/pull 即定时器执行体）；自动 push 仅挂编辑器保存（saveEditorFile），add-entry / AI 录入不触发（M7 交接）；多账本文件追踪（目前单文件） |
 | M7 | DeepSeek 代理、function calling tool schema、主进程 schema 校验 → 落地：ai 域四通道 + DeepSeekProxy（tool_choice 强制）+ zod 4 单源校验 + AiEntryPanel（生成草稿→填入表单，写路径唯一）+ AI 设置 Modal（Key safeStorage）；单次生成 + 草稿确认，多笔数组（≤10），账户列表注入 system prompt | 提示词工程打磨 |
 | M8 | Ant Charts 报表、electron-updater 升级链、发布加固（无签名口径）、发布演练 | — |
+| M9 | 工作目录模型（workspace 域四通道 + WorkspaceGate/WorkspaceSwitcher + electron-store current/recents；每目录独立 db/git/同步配置，切换整页 reload）、通用账户库（accounts 域两通道 + `.beanwise/accounts.json` + 录入下拉 = 账本账户 ∪ 账户库）、双行配对校验（两行不能同为 Income/Expenses）、报表余额树收入正显示、AI 未配置隐藏入口 | 多账本文件追踪（仍单文件 main.beancount）；账户 value 编辑（创建后不可改） |
 
 ## 排序理由与风险
 

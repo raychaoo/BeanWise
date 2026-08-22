@@ -28,6 +28,11 @@
 | Monaco Editor | 账本编辑 + git 冲突合并 UI（双向 DiffEditor 组合）；M5 定稿：裸 monaco-editor（0.56），worker 经 Vite `?worker` 本地打包（`monaco-editor/editor/editor.worker?worker`），自研 monarch beancount 语法高亮，CSS 经相对路径直入 node_modules |
 | Zustand | 状态管理 |
 
+## 通用账户库（M9 落地）
+
+- 每工作目录一份 `<workspace>/.beanwise/accounts.json`（`JsonAccountConfigStore`），AccountEntry：`id`（自增）/ `name`（中文显示名）/ `value`（Beancount 路径，创建后不可改）/ `description?`
+- 录入页账户下拉 = 账本已有账户（postings DISTINCT）∪ 账户库自选账户；两行配对校验（`isEntryAccountPairValid`：不能同为 Income/Expenses）见 `src/shared/account.ts`
+
 ## AI 辅助
 
 | 技术 | 说明 |
@@ -54,8 +59,8 @@
 | 技术 | 说明 |
 |---|---|
 | electron-log | 日志 |
-| electron-store | 配置管理（M6 起承载 git 同步配置 repoUrl/branch/adopted/lastSyncAt/lastError 与 PAT 密文——PAT 经 safeStorage 加密后 base64 存入，不落明文） |
+| electron-store | 应用级配置（工作目录 current/recents 与 PAT/Key 密文）；git 同步配置（repoUrl/branch/adopted/lastSyncAt/lastError）自 M9 起移入工作目录 `<workspace>/.beanwise/sync-config.json`（`JsonSyncConfigStore`）——PAT 密文存 electron-store `sync-tokens`（safeStorage 加密后 base64，按工作目录路径键隔离），不落明文 |
 | Vitest + pytest + Playwright | 前端单测 / Python 引擎测试 / Electron E2E |
-| electron-builder | 打包 + Windows Authenticode 签名 |
+| electron-builder | 打包（无签名口径，`CSC_IDENTITY_AUTO_DISCOVERY=false`） |
 | electron-updater | 自动更新，对接 GitHub Releases |
 | GitHub Actions | Windows 单平台 CI/CD，tag 触发自动发布 |
