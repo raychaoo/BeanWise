@@ -18,5 +18,6 @@ export function createFixtureCopy(): string {
 
 /** 清理副本所在临时目录 */
 export function cleanupFixture(ledgerPath: string): void {
-  rmSync(dirname(ledgerPath), { recursive: true, force: true })
+  // Windows 下 Electron 退出与 SQLite 关闭可能短暂竞态，给句柄释放留出重试窗口。
+  rmSync(dirname(ledgerPath), { recursive: true, force: true, maxRetries: 120, retryDelay: 250 })
 }

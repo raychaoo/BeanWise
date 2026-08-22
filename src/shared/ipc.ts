@@ -25,6 +25,8 @@ export type {
 
 export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list-entries'
   | 'ledger:add-entry' | 'ledger:list-accounts' | 'ledger:read-file' | 'ledger:save-file'
+  | 'accounts:get' | 'accounts:save'
+  | 'workspace:get-status' | 'workspace:choose' | 'workspace:open' | 'workspace:recents'
   | 'sync:get-status' | 'sync:configure' | 'sync:push' | 'sync:pull'
   | 'sync:resolve-conflict' | 'sync:clear'
   | 'ai:get-status' | 'ai:save-config' | 'ai:clear-config' | 'ai:parse'
@@ -96,6 +98,30 @@ export interface AddEntryResult {
 /** ledger:list-accounts 结果（postings 表 DISTINCT） */
 export interface ListAccountsResult {
   accounts: string[]
+}
+
+/** 通用账户条目：name 为中文显示名，value 为 Beancount 账户路径（如 Assets:Bank:CNB） */
+export interface AccountEntry {
+  /** 自增主键，创建后不可编辑 */
+  id: number
+  /** 中文显示名（录入页下拉框 label） */
+  name: string
+  /** Beancount 账户路径（提交到账本的实际值），创建后不可编辑 */
+  value: string
+  /** 用途说明（账户设置列表中展示） */
+  description?: string
+}
+
+/** accounts:save 入参 */
+export interface SaveAccountsParams {
+  accounts: AccountEntry[]
+}
+
+/** accounts:get / accounts:save 结果 */
+export interface AccountsResult {
+  ok: boolean
+  accounts?: AccountEntry[]
+  message?: string
 }
 
 /** git 同步配置（不含 PAT——PAT 只存主进程 safeStorage） */
@@ -280,3 +306,34 @@ export interface UpdateInstallResult {
 
 /** main → renderer 事件通道（更新状态推送，白名单常量） */
 export const UPDATE_STATUS_CHANNEL = 'update:status-changed'
+
+/** 工作目录域 */
+
+/** workspace:get-status 结果（current 为 null 表示未选择） */
+export interface WorkspaceStatus {
+  /** 当前工作目录绝对路径（未选择 → null，渲染端显示选择界面） */
+  current: string | null
+  /** 当前账本文件名（固定 main.beancount） */
+  ledgerFile: string
+}
+
+/** workspace:choose 结果（dialog 返回取消 → canceled:true） */
+export interface ChooseFolderResult {
+  ok: boolean
+  canceled?: boolean
+  path?: string
+  message?: string
+}
+
+/** workspace:open 入参（主进程校验目录存在 + 可写） */
+export interface OpenWorkspaceParams {
+  path: string
+}
+
+/** workspace:open 结果 */
+export interface OpenWorkspaceResult {
+  ok: boolean
+  message?: string
+  status?: WorkspaceStatus
+}
+

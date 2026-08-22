@@ -1,4 +1,4 @@
-import { CloudDownloadOutlined, CloudOutlined, ReloadOutlined } from '@ant-design/icons'
+import { CloudDownloadOutlined, CloudOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons'
 import { Badge, Button, Space, Tag, Tooltip } from 'antd'
 import { useSyncStore } from '../stores/sync'
 
@@ -49,6 +49,9 @@ export default function SyncStatusBar({ onOpenConflict, onOpenSettings }: Props)
         <Button size="small" icon={<CloudDownloadOutlined />} loading={syncing} onClick={() => void pull()}>
           拉取
         </Button>
+      </Tooltip>
+      <Tooltip title="同步设置">
+        <Button size="small" icon={<SettingOutlined />} onClick={onOpenSettings} />
       </Tooltip>
     </Space>
   )

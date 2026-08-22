@@ -217,9 +217,12 @@ export function registerSyncHandlers(ipc: IpcRegistrar, deps: SyncDeps): void {
     withWriteLock(async () => {
       acquireSync()
       try {
-        const config = requireConfig(deps)
-        requirePat(deps) // PAT 判空即拒绝（auth 在 GitSync 构造时已注入）
+        // 本地 commit 始终执行（纯本地模式也保留版本历史）；远端操作仅配置后触发
         await snapshotLocal(deps)
+        const config = deps.config.load()
+        if (!config || !deps.tokens.load()) {
+          return { ok: true, message: '已保存到本地 Git' }
+        }
         await deps.git.fetch()
         const status = await deps.git.analyzeMerge()
         if (status.kind === 'up-to-date') { markSynced(deps, config); return { ok: true } }

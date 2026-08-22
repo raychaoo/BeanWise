@@ -14,7 +14,7 @@
  *   断言 '已同步到远端' 在现产品上必然超时（M6-T7 实测）。
  * - 冲突 merged 内容断言用「view-line 点击聚焦 + Control+End 滚底」（T6 实测：view-lines 顶部
  *   文本 ours/theirs 相同、scrollHeight 为 16777216 sentinel 不可用、容器点击不建立焦点）。
- * - 同步配置经 electron-store 持久化（userData 跨 launch 存活）：每用例先 clearSync + reload
+ * - 同步配置按工作目录持久化（.beanwise 跨 launch 存活）：每用例先 clearSync + reload
  *   复位到未配置态（T6 模式），保证用例间与历史运行残留互不污染。
  * - 链路 ② 由 e2e/conflict-t6.spec.ts（T6 临时验收 spec）整合而来，C-1 回归断言（merged 编辑器
  *   无条件渲染）随迁至此；conflict-t6.spec.ts 删除，不留重复冲突测试。

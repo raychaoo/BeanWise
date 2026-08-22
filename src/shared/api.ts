@@ -5,6 +5,9 @@ import type {
   AiStatus,
   ConfigureSyncParams,
   ConfigureSyncResult,
+  ChooseFolderResult,
+  AccountsResult,
+  SaveAccountsParams,
   LedgerStatus,
   ListAccountsResult,
   ListEntriesParams,
@@ -26,12 +29,19 @@ import type {
   SyncStatus,
   UpdateCheckResult,
   UpdateInstallResult,
-  UpdateState
+  UpdateState,
+  WorkspaceStatus
 } from './ipc'
 
 /** Preload 暴露给渲染进程的白名单 API 形状（M3 ledger 域三方法 + M4 录入链路两方法） */
 export interface BeanWiseApi {
   appName: string
+  /** 工作目录状态（current 为 null → 渲染端显示选择界面） */
+  getWorkspaceStatus(): Promise<WorkspaceStatus>
+  /** 弹出系统文件夹选择框 */
+  chooseWorkspaceFolder(): Promise<ChooseFolderResult>
+  /** 打开工作目录：校验 + git init + 创建账本 + 持久化 */
+  openWorkspace(path: string): Promise<{ ok: boolean; message?: string; status?: WorkspaceStatus }>
   /** 触发索引重建（主进程持有账本路径，渲染进程不传路径——防目录穿越） */
   refreshLedgerIndex(): Promise<RefreshResult>
   getLedgerStatus(): Promise<LedgerStatus | null>
@@ -40,6 +50,10 @@ export interface BeanWiseApi {
   addLedgerEntry(params: AddEntryParams): Promise<AddEntryResult>
   /** 账户列表（录入表单 AutoComplete 数据源，postings 表 DISTINCT） */
   listLedgerAccounts(): Promise<ListAccountsResult>
+  /** 读取通用账户库 */
+  getAccountConfig(): Promise<AccountsResult>
+  /** 保存通用账户库 */
+  saveAccountConfig(params: SaveAccountsParams): Promise<AccountsResult>
   /** 读账本全文（编辑器基线；路径主进程持有） */
   readLedgerFile(): Promise<ReadFileResult>
   /** 整文件覆盖保存：指纹比对 → tmp 校验 → rename 原子替换 → 索引重建 */

@@ -2,15 +2,20 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { APP_NAME } from '../shared/app'
 import type { BeanWiseApi } from '../shared/api'
 import { UPDATE_STATUS_CHANNEL } from '../shared/ipc'
-import type { AddEntryParams, AiParseParams, ConfigureSyncParams, ListEntriesParams, ReportIncomeExpenseParams, ReportNetWorthParams, ResolveConflictParams, SaveAiConfigParams, SaveFileParams, UpdateState } from '../shared/ipc'
+import type { AddEntryParams, AiParseParams, ConfigureSyncParams, ListEntriesParams, ReportIncomeExpenseParams, ReportNetWorthParams, ResolveConflictParams, SaveAccountsParams, SaveAiConfigParams, SaveFileParams, UpdateState } from '../shared/ipc'
 
 const api: BeanWiseApi = {
   appName: APP_NAME,
+  getWorkspaceStatus: () => ipcRenderer.invoke('workspace:get-status'),
+  chooseWorkspaceFolder: () => ipcRenderer.invoke('workspace:choose'),
+  openWorkspace: (path: string) => ipcRenderer.invoke('workspace:open', { path }),
   refreshLedgerIndex: () => ipcRenderer.invoke('ledger:refresh-index'),
   getLedgerStatus: () => ipcRenderer.invoke('ledger:status'),
   listLedgerEntries: (params: ListEntriesParams) => ipcRenderer.invoke('ledger:list-entries', params),
   addLedgerEntry: (params: AddEntryParams) => ipcRenderer.invoke('ledger:add-entry', params),
   listLedgerAccounts: () => ipcRenderer.invoke('ledger:list-accounts'),
+  getAccountConfig: () => ipcRenderer.invoke('accounts:get'),
+  saveAccountConfig: (params: SaveAccountsParams) => ipcRenderer.invoke('accounts:save', params),
   readLedgerFile: () => ipcRenderer.invoke('ledger:read-file'),
   saveLedgerFile: (params: SaveFileParams) => ipcRenderer.invoke('ledger:save-file', params),
   getSyncStatus: () => ipcRenderer.invoke('sync:get-status'),

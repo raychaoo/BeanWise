@@ -18,6 +18,8 @@ import ReportsView from './views/ReportsView'
 import SyncSettingsModal from './views/SyncSettingsModal'
 import SyncStatusBar from './views/SyncStatusBar'
 import UpdateModal from './views/UpdateModal'
+import WorkspaceGate from './views/WorkspaceGate'
+import WorkspaceSwitcher from './views/WorkspaceSwitcher'
 
 const { Sider, Header, Content } = Layout
 
@@ -31,16 +33,62 @@ export default function App() {
   const [syncOpen, setSyncOpen] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
   const [updateOpen, setUpdateOpen] = useState(false)
+  const [workspace, setWorkspace] = useState<{ current: string | null } | null>(null)
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null)
+  const [ready, setReady] = useState(false)
   const aiStatus = useAiStore((s) => s.status)
 
   useEffect(() => {
-    void useLedgerStore.getState().refresh()
-    void useSyncStore.getState().loadStatus()
-    void useAiStore.getState().loadStatus()
+    void (async () => {
+      try {
+        const ws = await window.beanwise.getWorkspaceStatus()
+        setWorkspace(ws)
+        setReady(true)
+        if (ws?.current) {
+          void useLedgerStore.getState().refresh()
+          void useLedgerStore.getState().loadAccounts()
+          void useSyncStore.getState().loadStatus()
+          void useAiStore.getState().loadStatus()
+        }
+      } catch {
+        setWorkspaceError('读取工作目录状态失败')
+        setReady(true)
+      }
+    })()
   }, [])
+
   useEffect(() => {
     void useUpdateStore.getState().init()
   }, [])
+
+  /** 工作目录就绪后加载各域状态（WorkspaceGate 回调） */
+  const handleWorkspaceOpened = () => {
+    setReady(false) // 先隐藏 gate 再重新检测，避免闪烁
+    void (async () => {
+      try {
+        const ws = await window.beanwise.getWorkspaceStatus()
+        setWorkspace(ws)
+        setReady(true)
+        if (ws?.current) {
+          void useLedgerStore.getState().refresh()
+          void useLedgerStore.getState().loadAccounts()
+          void useSyncStore.getState().loadStatus()
+          void useAiStore.getState().loadStatus()
+        }
+      } catch {
+        setWorkspaceError('读取工作目录状态失败')
+        setReady(true)
+      }
+    })()
+  }
+
+  if (workspaceError) return <div style={{ padding: 40, color: 'red' }}>{workspaceError}</div>
+
+  // 等待 workspace 状态加载完成再渲染
+  if (!ready || !workspace) return null
+
+  // 未选择工作目录 → 全屏门控
+  if (!workspace.current) return <WorkspaceGate onOpened={handleWorkspaceOpened} />
 
   /** Header Tag 点击：重建索引 → 重拉状态（与明细视图「重建索引」同链路） */
   const handleRefreshIndex = async () => {
@@ -58,6 +106,12 @@ export default function App() {
     <Layout style={{ minHeight: '100vh' }}>
       <Sider width={200} theme="light">
         <div className="app-logo">BeanWise</div>
+        <div title={workspace.current} style={{ padding: '0 16px 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{workspace.current}</Typography.Text>
+        </div>
+        <div style={{ padding: '0 12px 8px' }}>
+          <WorkspaceSwitcher />
+        </div>
         <Menu
           mode="inline"
           selectedKeys={[view]}
@@ -108,7 +162,7 @@ export default function App() {
         </Header>
         <Content style={{ padding: 24 }}>
           <div style={{ display: view === 'entry' ? 'block' : 'none' }}>
-            <EntryFormView onOpenAiSettings={() => setAiOpen(true)} />
+            <EntryFormView />
           </div>
           <div style={{ display: view === 'entries' ? 'block' : 'none' }}><EntriesView /></div>
           <div style={{ display: view === 'editor' ? 'block' : 'none', height: 'calc(100vh - 112px)' }}>
