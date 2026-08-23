@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AddEntryParams } from '../shared/ipc'
-import { findUnopenedAccounts, serializeEntry, serializeFirstEntryBlock, serializeOpenLines, validateEntryParams } from './entry-serializer'
+import { findUnopenedAccounts, serializeEntry, serializeFirstEntryBlock, serializeOpenLines, serializeOptionsHeader, validateEntryParams } from './entry-serializer'
 
 const valid: AddEntryParams = {
   date: '2026-08-09',
@@ -78,10 +78,21 @@ describe('findUnopenedAccounts / serializeOpenLines（追加场景补 open 行�
   })
 })
 
-describe('serializeFirstEntryBlock（首文件：open 行 + 交易块）', () => {
-  it('输出快照：open 行按 posting 顺序 + 交易块', () => {
+describe('serializeOptionsHeader（新建账本 options 头）', () => {
+  it('title + operating_currency，含末尾空行', () => {
+    expect(serializeOptionsHeader('CNY')).toBe(
+      'option "title" "BeanWise"\noption "operating_currency" "CNY"\n\n'
+    )
+  })
+})
+
+describe('serializeFirstEntryBlock（首文件：options 头 + open 行 + 交易块）', () => {
+  it('输出快照：options 头 + open 行按 posting 顺序 + 交易块', () => {
     expect(serializeFirstEntryBlock(valid)).toBe(
-      '2026-08-09 open Expenses:Food\n' +
+      'option "title" "BeanWise"\n' +
+        'option "operating_currency" "CNY"\n' +
+        '\n' +
+        '2026-08-09 open Expenses:Food\n' +
         '2026-08-09 open Assets:Cash\n' +
         '2026-08-09 * "测试午饭" "M4 E2E"\n' +
         '  Expenses:Food  25.50 CNY\n' +

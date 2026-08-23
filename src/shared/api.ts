@@ -6,6 +6,7 @@ import type {
   ConfigureSyncParams,
   ConfigureSyncResult,
   ChooseFolderResult,
+  ClearLedgerResult,
   ExcelImportParams,
   ExcelImportResult,
   ExcelImportTemplate,
@@ -84,6 +85,8 @@ export interface BeanWiseApi {
   readLedgerFile(): Promise<ReadFileResult>
   /** 整文件覆盖保存：指纹比对 → tmp 校验 → rename 原子替换 → 索引重建 */
   saveLedgerFile(params: SaveFileParams): Promise<SaveFileResult>
+  /** 清空账本：清空文件 → 校验 → 索引重建（账户设置保留） */
+  clearLedger(): Promise<ClearLedgerResult>
   /** git 同步状态（未配置 → configured:false） */
   getSyncStatus(): Promise<SyncStatus>
   /** 配置同步：测试连接 → 首同步（场景 A/B/C）→ 返回状态；场景 C 不一致 → conflict 三路快照 */

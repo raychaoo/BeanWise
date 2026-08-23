@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, truncateSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { computeBalancingNumber } from '../shared/decimal'
-import type { AddEntryResult, ListAccountsResult, ListEntriesParams, ReadFileResult, RefreshResult, SaveFileParams, SaveFileResult } from '../shared/ipc'
+import type { AddEntryResult, ClearLedgerResult, ListAccountsResult, ListEntriesParams, ReadFileResult, RefreshResult, SaveFileParams, SaveFileResult } from '../shared/ipc'
 import type { DrizzleDb } from './db'
 import { postings } from './db/schema'
 import { findUnopenedAccounts, serializeEntry, serializeFirstEntryBlock, serializeOpenLines, validateEntryParams } from './entry-serializer'
@@ -25,6 +25,22 @@ export interface LedgerDeps {
 
 const MAX_LIMIT = 1_000
 const DEFAULT_LIMIT = 100
+
+/** 提取账本 option 行（title/operating_currency 等配置）；无 option → ''。清空账本时保留。 */
+function extractOptionLines(content: string): string {
+  const options = content.split('\n').filter((l) => /^option\s+/.test(l))
+  return options.length > 0 ? options.join('\n') + '\n' : ''
+}
+
+/** 读账本全文；文件不存在 → ''（clear 保留 option 用）。 */
+function readLedgerText(ledgerPath: string): string {
+  try {
+    return readFileSync(ledgerPath, 'utf8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return ''
+    throw err
+  }
+}
 
 /** 文件末字节是否为换行；空文件视为「是」——追加首个文本块时避免前导空行 */
 function fileEndsWithLf(path: string, size: number): boolean {
@@ -217,4 +233,22 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
       ...(result.status === 'error' ? { message: result.message } : {})
     }
   }))
+
+  // 清空账本：复用共享落盘管线（tmp 校验 → rename 原子替换）→ 索引重建。
+  // 账户设置保留，只清账本文本（交易 + open 记录）；option 行（title/operating_currency）
+  // 一并保留——否则清空重录/导入后运营货币丢失，报表图表恒空（2026-08-23 回归修复）。
+  ipc.handle('ledger:clear', (): Promise<ClearLedgerResult> =>
+    withWriteLock(async () => {
+      const current = readLedgerText(deps.ledgerPath)
+      const written = await writeLedgerChecked(deps, extractOptionLines(current))
+      if (!written.ok) return { ok: false, message: written.message }
+      const result = await refreshIndex(deps.db, deps.engine, deps.ledgerPath)
+      return {
+        ok: true,
+        status: result.status,
+        entryCount: result.entryCount,
+        errorCount: result.errorCount,
+        ...(result.status === 'error' ? { message: result.message } : {})
+      }
+    }))
 }

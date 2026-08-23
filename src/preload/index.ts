@@ -25,6 +25,7 @@ const api: BeanWiseApi = {
   deleteExcelTemplate: (id: string) => ipcRenderer.invoke('excel:delete-template', { id }),
   readLedgerFile: () => ipcRenderer.invoke('ledger:read-file'),
   saveLedgerFile: (params: SaveFileParams) => ipcRenderer.invoke('ledger:save-file', params),
+  clearLedger: () => ipcRenderer.invoke('ledger:clear'),
   getSyncStatus: () => ipcRenderer.invoke('sync:get-status'),
   configureSync: (params: ConfigureSyncParams) => ipcRenderer.invoke('sync:configure', params),
   pushLedger: () => ipcRenderer.invoke('sync:push'),

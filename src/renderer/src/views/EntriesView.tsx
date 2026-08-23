@@ -1,7 +1,8 @@
 /**
  * 明细视图（M4）：索引状态卡 + 条目分页表。M3 只读验收面板由此取代。
  */
-import { Alert, Button, Card, Descriptions, Table, Tag, Tooltip } from 'antd'
+import { DeleteOutlined } from '@ant-design/icons'
+import { Alert, Button, Card, Descriptions, message, Modal, Space, Table, Tag, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useState } from 'react'
 import type { LedgerEntryRow } from '../../../shared/ipc'
@@ -22,6 +23,7 @@ export default function EntriesView() {
   const setError = useLedgerStore((s) => s.setError)
   const accountOptions = useLedgerStore((s) => s.accountOptions)
   const [page, setPage] = useState(1)
+  const [clearing, setClearing] = useState(false)
 
   const accountNameMap = new Map(accountOptions.map((o) => [o.value, o.label]))
 
@@ -52,6 +54,43 @@ export default function EntriesView() {
     await refresh()
   }
 
+  const handleClear = () => {
+    Modal.confirm({
+      title: '清空账本',
+      content: '将删除账本中的所有交易记录与账户 open 记录，账户设置会保留。此操作不可撤销。',
+      okText: '清空',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: async () => {
+        setClearing(true)
+        try {
+          const result = typeof window.beanwise.clearLedger === 'function'
+            ? await window.beanwise.clearLedger()
+            : await clearViaSaveFile()
+          if (result.ok) {
+            message.success('账本已清空')
+            setPage(1)
+            await refresh()
+            await useLedgerStore.getState().loadAccounts()
+          } else {
+            message.error(result.message ?? '清空失败')
+          }
+        } catch (err) {
+          message.error(String(err))
+        } finally {
+          setClearing(false)
+        }
+      }
+    })
+  }
+
+  /** 旧版 preload 没有 clearLedger 时，复用读取 + 整文件覆盖保存清空账本。 */
+  const clearViaSaveFile = async () => {
+    const read = await window.beanwise.readLedgerFile()
+    if (!read.ok || !read.fingerprint) throw new Error(read.message ?? '读取账本失败')
+    return window.beanwise.saveLedgerFile({ content: '', expectedFingerprint: read.fingerprint })
+  }
+
   return (
     <div>
       {error && (
@@ -60,7 +99,12 @@ export default function EntriesView() {
       <Card
         title="索引状态"
         style={{ marginBottom: 16 }}
-        extra={<Button onClick={() => void handleRefreshIndex()}>重建索引</Button>}
+        extra={
+          <Space>
+            <Button onClick={() => void handleRefreshIndex()}>重建索引</Button>
+            <Button danger icon={<DeleteOutlined />} loading={clearing} onClick={handleClear}>清空账本</Button>
+          </Space>
+        }
       >
         <Descriptions column={2} size="small">
           <Descriptions.Item label="路径">{status?.path ?? '—'}</Descriptions.Item>

@@ -1,8 +1,8 @@
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AddEntryParams, AddEntryResult, ListAccountsResult } from '../shared/ipc'
+import type { AddEntryParams, AddEntryResult, ClearLedgerResult, ListAccountsResult } from '../shared/ipc'
 import { createDrizzle, openDatabase } from './db'
 import { entries, postings } from './db/schema'
 import { registerLedgerHandlers, type IpcRegistrar } from './ipc-handlers'
@@ -10,7 +10,8 @@ import { registerLedgerHandlers, type IpcRegistrar } from './ipc-handlers'
 // 录入口径测试用 mock refreshIndex（不 spawn 真实 Python 引擎）：
 // 断言「写入后调用校验重建」与「error → truncate 回滚」的接线
 const mocks = vi.hoisted(() => ({
-  refreshIndex: vi.fn()
+  refreshIndex: vi.fn(),
+  writeLedgerChecked: vi.fn()
 }))
 
 vi.mock('./index-builder', () => ({
@@ -18,6 +19,7 @@ vi.mock('./index-builder', () => ({
   getLedgerStatus: vi.fn(),
   listEntries: vi.fn()
 }))
+vi.mock('./ledger-writer', () => ({ writeLedgerChecked: mocks.writeLedgerChecked }))
 
 const validParams: AddEntryParams = {
   date: '2026-08-09',
@@ -52,6 +54,7 @@ describe('IPC handlers ledger:add-entry / list-accounts（M4）', () => {
     dir = mkdtempSync(join(tmpdir(), 'beanwise-m4-'))
     mocks.refreshIndex.mockReset()
     mocks.refreshIndex.mockResolvedValue({ changed: true, status: 'ok', entryCount: 6, errorCount: 0 })
+    mocks.writeLedgerChecked.mockReset()
   })
 
   afterEach(() => {
@@ -71,14 +74,17 @@ describe('IPC handlers ledger:add-entry / list-accounts（M4）', () => {
     expect(readFileSync(ledgerPath, 'utf8')).toContain(SERIALIZED)
   })
 
-  it('首文件：目录不存在自动创建，文件 = 账户 open 行 + entry 块（beancount 未 open 账户报错）', async () => {
+  it('首文件：目录不存在自动创建，文件 = options 头 + 账户 open 行 + entry 块（beancount 未 open 账户报错）', async () => {
     const ledgerPath = join(dir, 'nested', 'deep', 'ledger.beancount')
     const handlers = makeHandlers(ledgerPath)
 
     const result = (await handlers['ledger:add-entry']({}, validParams)) as AddEntryResult
     expect(result.ok).toBe(true)
     expect(readFileSync(ledgerPath, 'utf8')).toBe(
-      '2026-08-09 open Expenses:Food\n' +
+      'option "title" "BeanWise"\n' +
+        'option "operating_currency" "CNY"\n' +
+        '\n' +
+        '2026-08-09 open Expenses:Food\n' +
         '2026-08-09 open Assets:Cash\n' +
         '2026-08-09 * "测试午饭" "M4 单测"\n' +
         '  Expenses:Food  25.50 CNY\n' +
@@ -189,5 +195,26 @@ describe('IPC handlers ledger:add-entry / list-accounts（M4）', () => {
 
     const result = (await handlers['ledger:list-accounts']()) as ListAccountsResult
     expect(result.accounts).toEqual(['Assets:Cash', 'Expenses:Food'])
+  })
+
+  it('ledger:clear：只清交易/open，保留 option 行（title/operating_currency）并重建索引', async () => {
+    const ledgerPath = join(dir, 'ledger.beancount')
+    appendFileSync(
+      ledgerPath,
+      'option "title" "我的账本"\noption "operating_currency" "CNY"\n\n2026-01-01 open Assets:Cash\n2026-01-01 * "x"\n  Assets:Cash  1 CNY\n  Income:Salary  -1 CNY\n',
+      'utf8'
+    )
+    mocks.writeLedgerChecked.mockImplementation(async (_deps: unknown, content: string) => {
+      writeFileSync(ledgerPath, content, 'utf8')
+      return { ok: true }
+    })
+    mocks.refreshIndex.mockResolvedValue({ changed: true, status: 'ok', entryCount: 0, errorCount: 0 })
+    const handlers = makeHandlers(ledgerPath)
+
+    const result = (await handlers['ledger:clear']()) as ClearLedgerResult
+    expect(result.ok).toBe(true)
+    expect(result.entryCount).toBe(0)
+    expect(readFileSync(ledgerPath, 'utf8')).toBe('option "title" "我的账本"\noption "operating_currency" "CNY"\n')
+    expect(mocks.refreshIndex).toHaveBeenCalledTimes(1)
   })
 })

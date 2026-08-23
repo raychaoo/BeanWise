@@ -113,10 +113,11 @@ test('M4 首文件：路径不存在 → 录入自动创建账本（open 行 + �
     await win.getByRole('button', { name: '写入账本' }).click()
     await expect(win.locator('.ant-message')).toContainText('已写入并校验通过')
 
-    // 文件 = 账户 open 行 + 交易块（beancount 未 open 账户报 ValidationError）
+    // 文件 = options 头（title + operating_currency）+ 账户 open 行 + 交易块
+// （2026-08-23 回归修复：首笔录入必须带运营货币 option，否则报表图表恒空）
     const content = readFileSync(ledgerPath, 'utf8')
     expect(content).toMatch(
-      /^20\d{2}-\d{2}-\d{2} open Expenses:Food\n20\d{2}-\d{2}-\d{2} open Assets:Bank:CNB\n20\d{2}-\d{2}-\d{2} \* "首笔"\n  Expenses:Food  10 CNY\n  Assets:Bank:CNB  -10 CNY\n$/
+      /^option "title" "BeanWise"\noption "operating_currency" "CNY"\n\n20\d{2}-\d{2}-\d{2} open Expenses:Food\n20\d{2}-\d{2}-\d{2} open Assets:Bank:CNB\n20\d{2}-\d{2}-\d{2} \* "首笔"\n  Expenses:Food  10 CNY\n  Assets:Bank:CNB  -10 CNY\n$/
     )
 
     await app.close()

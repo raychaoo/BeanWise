@@ -24,7 +24,7 @@ export type {
 }
 
 export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list-entries'
-  | 'ledger:add-entry' | 'ledger:list-accounts' | 'ledger:read-file' | 'ledger:save-file'
+  | 'ledger:add-entry' | 'ledger:list-accounts' | 'ledger:read-file' | 'ledger:save-file' | 'ledger:clear'
   | 'accounts:get' | 'accounts:save'
   | 'excel:choose' | 'excel:parse' | 'excel:preview' | 'excel:import' | 'excel:get-templates' | 'excel:save-template' | 'excel:delete-template'
   | 'workspace:get-status' | 'workspace:choose' | 'workspace:open' | 'workspace:recents'
@@ -64,6 +64,15 @@ export interface SaveFileResult {
   entryCount?: number
   errorCount?: number
   message?: string
+}
+
+/** ledger:clear 结果（清空账本后索引重建） */
+export interface ClearLedgerResult {
+  ok: boolean
+  message?: string
+  status?: LedgerIndexStatus
+  entryCount?: number
+  errorCount?: number
 }
 
 /** 录入交易的 posting 行；金额一律十进制字符串（禁浮点，见 src/shared/decimal.ts） */
