@@ -26,6 +26,7 @@ export type {
 export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list-entries'
   | 'ledger:add-entry' | 'ledger:list-accounts' | 'ledger:read-file' | 'ledger:save-file'
   | 'accounts:get' | 'accounts:save'
+  | 'excel:choose' | 'excel:parse' | 'excel:preview' | 'excel:import' | 'excel:get-templates' | 'excel:save-template' | 'excel:delete-template'
   | 'workspace:get-status' | 'workspace:choose' | 'workspace:open' | 'workspace:recents'
   | 'sync:get-status' | 'sync:configure' | 'sync:push' | 'sync:pull'
   | 'sync:resolve-conflict' | 'sync:clear'
@@ -121,6 +122,220 @@ export interface SaveAccountsParams {
 export interface AccountsResult {
   ok: boolean
   accounts?: AccountEntry[]
+  message?: string
+}
+
+/** 通用导入账户映射：交易类型 → 支出/收入账户、支付方式 → 来源/现金账户 + 兜底（Excel 流水导入用）。 */
+export interface AccountMappingConfig {
+  expenseByType: Record<string, string>
+  /** 收入行（含退款类）交易类型 → Income 账户 */
+  incomeByType: Record<string, string>
+  sourceByMethod: Record<string, string>
+  /** 中性交易（提现/充值/互转）的另一侧资产账户 */
+  cashAccountByMethod: Record<string, string>
+  fallbackExpenseAccount: string
+  fallbackSourceAccount: string
+  fallbackIncomeAccount: string
+  fallbackCashAccount: string
+}
+
+/** M10：通用 Excel 流水导入（独立 excel 域） */
+
+/** 列映射：Excel 列头名 → 标准字段（缺省 = 未映射） */
+export interface ExcelFieldMapping {
+  dateColumn?: string
+  amountColumn?: string
+  /** 方向列（directionRule.mode === 'column' 时必填） */
+  ioColumn?: string
+  /** 交易类型列（账户映射的支出/收入键） */
+  typeColumn?: string
+  /** 交易对方列（payee） */
+  counterpartyColumn?: string
+  /** 商品/摘要列（narration） */
+  productColumn?: string
+  /** 支付方式/来源键列（新交易账户检测键） */
+  methodColumn?: string
+  statusColumn?: string
+  /** 去重单号列；缺省用 日期+对方+金额 hash */
+  rowIdColumn?: string
+  noteColumn?: string
+}
+
+export type ExcelDirectionMode = 'column' | 'amountSign' | 'keywords'
+
+export interface ExcelDirectionRule {
+  mode: ExcelDirectionMode
+  /** amountSign：金额正数对应的方向 */
+  positiveAs?: 'income' | 'expense'
+  /** keywords：类型/摘要命中即中性（充值/提现/互转），否则按 defaultKind */
+  neutralKeywords?: string[]
+  /** keywords 模式：未命中关键词时的默认方向 */
+  defaultKind?: 'expense' | 'income'
+}
+
+/** 通用 Excel 导入模板（每工作目录多份，持久化于 .beanwise/excel-import-templates.json） */
+export interface ExcelImportTemplate {
+  /** 模板唯一 id（去重 source 标识），新建时由主进程生成 */
+  id: string
+  /** 展示名，如「招商银行信用卡」 */
+  name: string
+  /** 去重标记前缀（beanwise-import: <source>:<rowId>） */
+  source: string
+  /** 表头行（1 基）；0/缺省 = 自动检测 */
+  headerRow?: number
+  /** 固定工作表名；缺省 = 第一个工作表 */
+  sheetName?: string
+  fieldMapping: ExcelFieldMapping
+  directionRule: ExcelDirectionRule
+  /** 账户映射：交易类型/支付方式 → 账户四表 + 兜底模型 */
+  accountMapping: AccountMappingConfig
+  /** 策略 C 严格模式：存在未处理新交易账户 → 阻塞导入 */
+  strictNewAccounts?: boolean
+}
+
+/** excel:preview 预览行 */
+export interface ExcelPreviewRow {
+  rowNumber: number
+  date: string
+  time: string
+  transactionType: string
+  counterparty: string
+  product: string
+  kind: 'expense' | 'income' | 'neutral'
+  amount: string
+  paymentMethod: string
+  status: string
+  rowId: string
+  alreadyImported: boolean
+  /** 跨来源去重指纹（date|amount|counterparty|kind 哈希，不含来源/单号） */
+  fingerprint: string
+  /** 去重状态：none 正常 / exact 同来源已导入 / suspect 疑似跨来源重复 / confirm 需人工确认 */
+  dupState: 'none' | 'exact' | 'suspect' | 'confirm'
+  expenseAccount: string
+  sourceAccount: string
+}
+
+export type NewAccountResolution = 'fallback' | 'existing' | 'new' | 'exclude'
+
+/** 未映射支付方式键（新交易账户）检测结果：同支付方式按交易类型拆分为多条（支付方式@交易类型） */
+export interface ExcelNewAccountInfo {
+  /** 唯一键：<支付方式>@<交易类型>（交易类型为空退化为支付方式；写入 sourceByMethod/cashAccountByMethod） */
+  id: string
+  /** 支付方式文本（Excel 支付方式列原值） */
+  key: string
+  /** 区分该支付方式的交易类型文本（无则空串） */
+  type: string
+  count: number
+  /** 金额合计（十进制字符串） */
+  amount: string
+  /** 建议账户路径（账户库模糊命中；无则空串） */
+  suggestedAccount: string
+  /** 当前解析将采用的处置（未处理 = fallback） */
+  resolution: NewAccountResolution
+}
+
+
+/** 未映射交易类型键的处置方式（mapped=按指定账户记账 / fallback=兜底 / exclude=排除这些行） */
+export type TypeMappingResolution = 'mapped' | 'fallback' | 'exclude'
+
+/** 未映射交易类型键（新支出/收入/退款类型）检测结果：同交易类型按支付方式拆分为多条（交易类型@支付方式） */
+export interface ExcelNewTypeInfo {
+  /** 唯一键：<kind>:<交易类型>@<支付方式>（支付方式为空退化为 <kind>:<交易类型>） */
+  id: string
+  /** 交易类型文本（Excel 类型列原值） */
+  key: string
+  /** 区分该交易类型的支付方式文本（无则空串） */
+  method: string
+  kind: 'expense' | 'income'
+  count: number
+  /** 金额合计（十进制字符串） */
+  amount: string
+  /** 建议账户路径（关键词启发式；无则空串） */
+  suggestedAccount: string
+  /** 当前解析将采用的处置（未处理 = fallback） */
+  resolution: TypeMappingResolution
+}
+
+export interface ExcelPreviewTotals {
+  total: number
+  expense: number
+  income: number
+  neutral: number
+  alreadyImported: number
+  /** 疑似跨来源重复行数（默认跳过） */
+  suspect: number
+  /** 需人工确认行数（默认保留，提示核对） */
+  confirm: number
+}
+
+/** excel:parse 入参（path 来自 choose；template 可带已有映射做建议增强） */
+export interface ExcelParseParams {
+  path: string
+  template?: ExcelImportTemplate
+}
+
+export interface ExcelParseResult {
+  ok: boolean
+  message?: string
+  sheets?: string[]
+  /** 检测/指定的表头行（1 基） */
+  headerRow?: number
+  columns?: string[]
+  suggestedMapping?: ExcelFieldMapping
+  /** 表头后前 3 行样例行（原始值，渲染端核对用） */
+  sampleRows?: string[][]
+}
+
+/** excel:preview 入参（path + 完整模板；账户映射含用户已处理的新账户归位） */
+export interface ExcelPreviewParams {
+  path: string
+  template: ExcelImportTemplate
+}
+
+export interface ExcelPreviewResult {
+  ok: boolean
+  message?: string
+  rows?: ExcelPreviewRow[]
+  newAccounts?: ExcelNewAccountInfo[]
+  /** 未映射交易类型键（按实际导入数据聚合） */
+  newTypes?: ExcelNewTypeInfo[]
+  totals?: ExcelPreviewTotals
+}
+
+export interface ExcelImportParams {
+  path: string
+  template: ExcelImportTemplate
+  rowIds: string[]
+  currency?: string
+}
+
+export interface ExcelImportResult {
+  ok: boolean
+  message?: string
+  imported?: number
+  skipped?: number
+  status?: LedgerIndexStatus
+  entryCount?: number
+  errorCount?: number
+}
+
+/** excel:get-templates 结果 */
+export interface ExcelTemplateListResult {
+  ok: boolean
+  templates?: ExcelImportTemplate[]
+  message?: string
+}
+
+/** excel:save-template 结果（id 为空 → 新建并返回分配 id 的模板） */
+export interface ExcelTemplateSaveResult {
+  ok: boolean
+  template?: ExcelImportTemplate
+  message?: string
+}
+
+/** excel:delete-template 结果 */
+export interface ExcelTemplateDeleteResult {
+  ok: boolean
   message?: string
 }
 

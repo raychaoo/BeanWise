@@ -26,9 +26,10 @@
 | M7 | AI 辅助录入 | M3 | 自然语言 → 交易指令 → 落盘全链路；schema 校验拒绝非法输出 ✅（2026-08-11） |
 | M8 | 图表报表 + 发布加固 | M4, M5, M6, M7 | 图表渲染真实数据；升级演练；完整发布演练（tag → Release → 更新，待首版人工） ✅ 完成（2026-08-12） |
 | M9 | 工作目录 + 通用账户库 | M4, M6, M7, M8 | 工作目录切换后账本/索引/仓库/配置整体隔离重建；账户库增删改 + 录入两行配对校验生效 ✅（2026-08-22） |
+| M10 | 通用 Excel 流水导入 | M4, M9 | 非微信 xlsx/csv 经列映射+账户映射导入；新交易账户检测/处理（策略 C）；去重；多模板持久化 |
 
 ```plain
-M1 ──┬──▶ M3 ──┬──▶ M4 ──┬──▶ M8 ──▶ M9
+M1 ──┬──▶ M3 ──┬──▶ M4 ──┬──▶ M8 ──▶ M9 ──▶ M10
 M2 ──┘        ├──▶ M5    ┘
               ├──▶ M6
               └──▶ M7
@@ -91,6 +92,13 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
   | `workspace:get-status`（M9） | 无 | `WorkspaceStatus`（current 绝对路径 / ledgerFile=main.beancount；未选择 → current:null） |
   | `workspace:choose`（M9） | 无 | `{ok, canceled?, path?, message?}`（dialog 返回取消 → canceled:true） |
   | `workspace:open`（M9） | `{path}` | `{ok, status?, message?}`（校验目录 + 初始化 git + 接管/创建账本文件 → 整页 reload） |
+  | `excel:choose`（M10） | 无 | `{ok, canceled?, path?, message?}`（.xlsx / .csv 文件选择） |
+  | `excel:parse`（M10） | `{path, template?}` | `{ok, sheets?, headerRow?, columns, suggestedMapping?, sampleRows?, message?}`（文件级识别，不落账） |
+  | `excel:preview`（M10） | `{path, template}` | `{ok, rows, newAccounts?: [{key, count, amount, resolution}], totals?, message?}`（应用列映射+方向+账户映射 + 新交易账户检测） |
+  | `excel:import`（M10） | `{path, template, rowIds}` | `{ok, imported, skipped, status, entryCount, errorCount, message?}`（写锁内原子落盘 + 索引重建 + 账户库同步） |
+  | `excel:get-templates`（M10） | 无 | `{ok, templates: ExcelImportTemplate[]}` |
+  | `excel:save-template`（M10） | `{template}` | `{ok, template?, message?}`（id 空新建 / 覆盖） |
+  | `excel:delete-template`（M10） | `{id}` | `{ok, message?}` |
 
 ### 数据流铁律
 
@@ -125,6 +133,7 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
 | M7 | DeepSeek 代理、function calling tool schema、主进程 schema 校验 → 落地：ai 域四通道 + DeepSeekProxy（tool_choice 强制）+ zod 4 单源校验 + AiEntryPanel（生成草稿→填入表单，写路径唯一）+ AI 设置 Modal（Key safeStorage）；单次生成 + 草稿确认，多笔数组（≤10），账户列表注入 system prompt | 提示词工程打磨 |
 | M8 | Ant Charts 报表、electron-updater 升级链、发布加固（无签名口径）、发布演练 | — |
 | M9 | 工作目录模型（workspace 域四通道 + WorkspaceGate/WorkspaceSwitcher + electron-store current/recents；每目录独立 db/git/同步配置，切换整页 reload）、通用账户库（accounts 域两通道 + `.beanwise/accounts.json` + 录入下拉 = 账本账户 ∪ 账户库）、双行配对校验（两行不能同为 Income/Expenses）、报表余额树收入正显示、AI 未配置隐藏入口 | 多账本文件追踪（仍单文件 main.beancount）；账户 value 编辑（创建后不可改） |
+| M10 | 通用 Excel 流水导入（excel 域七通道 + 列映射/方向判定/账户映射两层映射 + 新交易账户检测与处理策略 C + `beanwise-import` 去重标记 + 多模板持久化 `.beanwise/excel-import-templates.json`；复用 open 校正/原子落盘/索引重建/账户库同步） | 关键字自动归类（对方/商品→科目）；微信导入重构为通用模板；导入回滚；多币种自动折算 |
 
 ## 排序理由与风险
 

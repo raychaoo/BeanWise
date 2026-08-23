@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { APP_NAME } from '../shared/app'
 import type { BeanWiseApi } from '../shared/api'
 import { UPDATE_STATUS_CHANNEL } from '../shared/ipc'
-import type { AddEntryParams, AiParseParams, ConfigureSyncParams, ListEntriesParams, ReportIncomeExpenseParams, ReportNetWorthParams, ResolveConflictParams, SaveAccountsParams, SaveAiConfigParams, SaveFileParams, UpdateState } from '../shared/ipc'
+import type { AddEntryParams, AiParseParams, ConfigureSyncParams, ExcelImportParams, ExcelImportTemplate, ExcelParseParams, ExcelPreviewParams, ListEntriesParams, ReportIncomeExpenseParams, ReportNetWorthParams, ResolveConflictParams, SaveAccountsParams, SaveAiConfigParams, SaveFileParams, UpdateState } from '../shared/ipc'
 
 const api: BeanWiseApi = {
   appName: APP_NAME,
@@ -16,6 +16,13 @@ const api: BeanWiseApi = {
   listLedgerAccounts: () => ipcRenderer.invoke('ledger:list-accounts'),
   getAccountConfig: () => ipcRenderer.invoke('accounts:get'),
   saveAccountConfig: (params: SaveAccountsParams) => ipcRenderer.invoke('accounts:save', params),
+  chooseExcelFile: () => ipcRenderer.invoke('excel:choose'),
+  parseExcelFile: (params: ExcelParseParams) => ipcRenderer.invoke('excel:parse', params),
+  previewExcelImport: (params: ExcelPreviewParams) => ipcRenderer.invoke('excel:preview', params),
+  importExcel: (params: ExcelImportParams) => ipcRenderer.invoke('excel:import', params),
+  getExcelTemplates: () => ipcRenderer.invoke('excel:get-templates'),
+  saveExcelTemplate: (template: ExcelImportTemplate) => ipcRenderer.invoke('excel:save-template', template),
+  deleteExcelTemplate: (id: string) => ipcRenderer.invoke('excel:delete-template', { id }),
   readLedgerFile: () => ipcRenderer.invoke('ledger:read-file'),
   saveLedgerFile: (params: SaveFileParams) => ipcRenderer.invoke('ledger:save-file', params),
   getSyncStatus: () => ipcRenderer.invoke('sync:get-status'),

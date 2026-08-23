@@ -15,6 +15,7 @@ import { computeBalancingNumber } from '../../../shared/decimal'
 import { useLedgerStore } from '../stores/ledger'
 import AiEntryPanel from './AiEntryPanel'
 import AccountSettingsModal from './AccountSettingsModal'
+import ExcelImportPanel from './ExcelImportPanel'
 
 const DECIMAL_RE = /^-?\d+(\.\d+)?$/
 
@@ -111,6 +112,7 @@ export default function EntryFormView() {
 
   return (
     <>
+      <ExcelImportPanel onImported={() => void loadAccounts()} />
       <AiEntryPanel onFillForm={handleFillForm} />
       <ProForm<EntryFormValues>
         form={form}

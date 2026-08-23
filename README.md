@@ -12,6 +12,7 @@
 | [implementation-roadmap.md](./technical-proposal/implementation-roadmap.md) | 里程碑拆分、共享契约、执行节奏 | 全员 / 执行者 |
 | [design-decisions.md](./technical-proposal/design-decisions.md) | 关键设计决策与取舍记录（ADR） | 评审 / 新人 onboarding |
 | [data-consistency.md](./technical-proposal/data-consistency.md) | 文件与索引的一致性、工作目录隔离、git 同步与冲突处理 | 后端 / 数据 |
+| [excel-import.md](./technical-proposal/excel-import.md) | 通用 Excel 流水导入（列映射 / 账户映射 / 新交易账户策略 C / 去重 / 模板持久化） | 全栈 / M10 |
 | [security.md](./technical-proposal/security.md) | 密钥管理、CSP、IPC 白名单 | 全员 |
 | [release-pipeline.md](./technical-proposal/release-pipeline.md) | CI/CD、签名、自动更新 | DevOps / 发布负责人 |
 

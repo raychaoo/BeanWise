@@ -17,6 +17,8 @@ import { LEDGER_FILE, registerWorkspaceHandlers } from './ipc-handlers-workspace
 import { PythonSvc } from './python-svc'
 import { JsonAccountConfigStore } from './account-config-store'
 import { registerAccountHandlers } from './ipc-handlers-accounts'
+import { registerExcelHandlers } from './ipc-handlers-excel'
+import { JsonExcelTemplateStore } from './excel/config-store'
 import { ElectronAiTokenStore, ElectronWorkspaceTokenStore } from './token-store'
 import type { SyncConfigStore, TokenStore } from './token-store'
 import { createUpdaterService } from './updater'
@@ -69,9 +71,19 @@ interface Runtime {
   syncTokens: TokenStore | null
   syncConfig: SyncConfigStore | null
   accountConfig: JsonAccountConfigStore | null
+  excelTemplates: JsonExcelTemplateStore | null
 }
 
-const runtime: Runtime = { db: null, ledgerPath: null, gitSync: null, database: null, syncTokens: null, syncConfig: null, accountConfig: null }
+const runtime: Runtime = {
+  db: null,
+  ledgerPath: null,
+  gitSync: null,
+  database: null,
+  syncTokens: null,
+  syncConfig: null,
+  accountConfig: null,
+  excelTemplates: null
+}
 
 let pythonSvc: PythonSvc | null = null
 let quitHandled = false
@@ -92,6 +104,7 @@ function activateWorkspace(workspaceDir: string): void {
   runtime.syncTokens = new ElectronWorkspaceTokenStore(workspaceDir)
   runtime.syncConfig = new JsonSyncConfigStore(join(dbDir, 'sync-config.json'))
   runtime.accountConfig = new JsonAccountConfigStore(join(dbDir, 'accounts.json'))
+  runtime.excelTemplates = new JsonExcelTemplateStore(join(dbDir, 'excel-import-templates.json'))
 
   runtime.database = openDatabase(join(dbDir, 'index.db'))
   runtime.db = createDrizzle(runtime.database)
@@ -144,6 +157,28 @@ app.whenReady().then(() => {
   // 通用账户库（跟随工作目录）
   registerAccountHandlers(ipcMain, {
     get store() { return runtime.accountConfig! }
+  })
+
+  // M10：通用 Excel 流水导入（工作目录模板 + 文件选择框）
+  registerExcelHandlers(ipcMain, {
+    get db() { return runtime.db! },
+    get engine() { return pythonSvc! },
+    get ledgerPath() { return runtime.ledgerPath ?? '' },
+    get templates() { return runtime.excelTemplates! },
+    get accountConfig() { return runtime.accountConfig! },
+    showFileDialog: async () => {
+      const win = BrowserWindow.getAllWindows()[0]
+      return win
+        ? dialog.showOpenDialog(win, {
+            properties: ['openFile'],
+            filters: [
+              { name: 'Excel/CSV/PDF 流水', extensions: ['xlsx', 'xls', 'csv', 'pdf'] },
+              { name: 'Excel 工作簿', extensions: ['xlsx'] },
+              { name: 'CSV', extensions: ['csv'] }
+            ]
+          })
+        : { canceled: true, filePaths: [] }
+    }
   })
 
   // sync 域六通道

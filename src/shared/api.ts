@@ -6,6 +6,16 @@ import type {
   ConfigureSyncParams,
   ConfigureSyncResult,
   ChooseFolderResult,
+  ExcelImportParams,
+  ExcelImportResult,
+  ExcelImportTemplate,
+  ExcelParseParams,
+  ExcelParseResult,
+  ExcelPreviewParams,
+  ExcelPreviewResult,
+  ExcelTemplateDeleteResult,
+  ExcelTemplateListResult,
+  ExcelTemplateSaveResult,
   AccountsResult,
   SaveAccountsParams,
   LedgerStatus,
@@ -54,6 +64,20 @@ export interface BeanWiseApi {
   getAccountConfig(): Promise<AccountsResult>
   /** 保存通用账户库 */
   saveAccountConfig(params: SaveAccountsParams): Promise<AccountsResult>
+  /** 弹出 Excel 流水文件选择框（.xlsx / .csv） */
+  chooseExcelFile(): Promise<{ ok: boolean; canceled?: boolean; path?: string; message?: string }>
+  /** 解析 Excel 文件结构（sheet / 表头 / 列建议），不落账 */
+  parseExcelFile(params: ExcelParseParams): Promise<ExcelParseResult>
+  /** 应用模板预览（列映射 + 方向 + 账户映射 + 新交易账户检测） */
+  previewExcelImport(params: ExcelPreviewParams): Promise<ExcelPreviewResult>
+  /** 批量导入（去重 + 原子写入 + 索引重建 + 账户库同步） */
+  importExcel(params: ExcelImportParams): Promise<ExcelImportResult>
+  /** 读取导入模板列表 */
+  getExcelTemplates(): Promise<ExcelTemplateListResult>
+  /** 保存模板（id 空 → 新建） */
+  saveExcelTemplate(template: ExcelImportTemplate): Promise<ExcelTemplateSaveResult>
+  /** 删除模板 */
+  deleteExcelTemplate(id: string): Promise<ExcelTemplateDeleteResult>
   /** 读账本全文（编辑器基线；路径主进程持有） */
   readLedgerFile(): Promise<ReadFileResult>
   /** 整文件覆盖保存：指纹比对 → tmp 校验 → rename 原子替换 → 索引重建 */

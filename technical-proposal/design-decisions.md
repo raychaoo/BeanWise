@@ -22,6 +22,9 @@
 | 18 | 通用账户库 + 录入配对 | 未定义 | **`<workspace>/.beanwise/accounts.json` + 双行配对校验** | 录入行下拉只列账本已有账户，新账户录入成本高、易错。**M9 落地（2026-08-22）**：accounts 域两通道（`get`/`save`），`JsonAccountConfigStore` 每目录一份，`id=0` 新建按 `nextId` 自增、`value` 创建后不可改；下拉 = 账本已有账户 ∪ 账户库；`isEntryAccountPairValid` 拒绝两行同为 Income/Expenses（至少一边为资产/负债/权益） |
 | 19 | 报表余额树收入正显示 | 未定义 | **Income 账户取反聚合** | 复式记账下收入为负，直出余额树会显示「工资收入 -100」。**M9 落地（2026-08-22）**：`buildAccountTree` 对 Income 前缀按 `negateDecimal` 取反聚合，子树 rollup + 字典序排序，余额表收入恒为正 |
 
+| 20 | 通用 Excel 导入的映射模型 | 未定义 | **两层映射 + 独立 excel 域 + 多模板持久化** | 微信导入（在制品）已打通解析→映射→落盘全链路，但严格绑定微信 11 列签名；任意 Excel 导入需在复用落盘链路（open 校正/原子写入/索引重建/账户库同步）的前提下，前置「列映射（Excel列→标准字段）+ 方向判定（列/金额正负/关键词）」一层，账户映射完全复用 `WechatMappingConfig` 四表+兜底；去重标记统一为 `; beanwise-import: <source>:<rowId>`（兼容 `wechat-pay-id`）；每工作目录 `.beanwise/excel-import-templates.json` 多模板（招商/支付宝…）。**M10（2026-08-22 方案定稿）**：微信导入保持不动，后续收敛为内置模板 | 
+| 21 | 新交易账户（新银行卡/新充值渠道）处理 | 静默进兜底资产 | **策略 C（混合）：默认允许+强提示，可开严格模式** | 现状 `sourceByMethod[key] || fallbackSourceAccount` 会把新支付方式静默记到 `Assets:WeChat`（资产账户记错、无提示）；M10 preview 阶段聚合支付方式键 → 分类（已映射/账户库模糊命中建议/全新），UI 逐项处理（选已有/填新路径/兜底/排除）并写回模板；默认模式未处理新账户二次确认后进兜底，严格模式（模板 `strictNewAccounts`）阻塞导入；新账户落盘复用 open 自动补齐 + 账户库自动同步 |
+
 ## 待评审 / 待定事项
 
 - [ ] 大账本（>5 万笔）性能基准：增量解析策略是否足够
