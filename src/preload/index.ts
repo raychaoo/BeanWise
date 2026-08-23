@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { APP_NAME } from '../shared/app'
 import type { BeanWiseApi } from '../shared/api'
 import { UPDATE_STATUS_CHANNEL } from '../shared/ipc'
-import type { AddEntryParams, AiParseParams, ConfigureSyncParams, ExcelImportParams, ExcelImportTemplate, ExcelParseParams, ExcelPreviewParams, ListEntriesParams, ReportIncomeExpenseParams, ReportNetWorthParams, ResolveConflictParams, SaveAccountsParams, SaveAiConfigParams, SaveFileParams, UpdateState } from '../shared/ipc'
+import type { AddEntryParams, AiParseParams, ConfigureSyncParams, ExcelImportParams, ExcelImportTemplate, ExcelParseParams, ExcelPreviewParams, ListEntriesParams, ReportBalancesParams, ReportIncomeExpenseParams, ReportNetWorthParams, ReportYearsResult, ResolveConflictParams, SaveAccountsParams, SaveAiConfigParams, SaveFileParams, UpdateState } from '../shared/ipc'
 
 const api: BeanWiseApi = {
   appName: APP_NAME,
@@ -36,8 +36,9 @@ const api: BeanWiseApi = {
   clearAiConfig: () => ipcRenderer.invoke('ai:clear-config'),
   parseAiEntry: (text: string) => ipcRenderer.invoke('ai:parse', { text } satisfies AiParseParams),
   getNetWorthReport: (params: ReportNetWorthParams) => ipcRenderer.invoke('report:net-worth', params),
-  getBalancesReport: () => ipcRenderer.invoke('report:balances'),
+  getBalancesReport: (params?: ReportBalancesParams) => ipcRenderer.invoke('report:balances', params),
   getIncomeExpenseReport: (params: ReportIncomeExpenseParams) => ipcRenderer.invoke('report:income-expense', params),
+  getReportYears: (): Promise<ReportYearsResult> => ipcRenderer.invoke('report:years'),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   getUpdateStatus: () => ipcRenderer.invoke('update:status'),
   installUpdate: () => ipcRenderer.invoke('update:install'),

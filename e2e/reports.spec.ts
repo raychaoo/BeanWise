@@ -3,12 +3,23 @@
  * IPC 返回精确聚合（decimal 字符串）+ UI 渲染无错误 + 余额表精确文本 + 图表容器存在。
  * 断言口径：canvas 文本不可 DOM 断言，以 IPC 数据 + 表格文本为准（Global Constraints 偏差②）。
  */
-import { _electron as electron, expect, test } from '@playwright/test'
-import { copyFileSync, mkdtempSync, rmSync } from 'node:fs'
+import { _electron as electron, expect, test, type Page } from '@playwright/test'
+import { copyFileSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { cleanupFixture } from './fixtures/setup'
 
 const launchArgs = process.env['CI'] ? ['.', '--no-sandbox'] : ['.']
+
+/** E2E 不复用全局工作目录；显式激活临时目录后重载，让渲染端拿到新运行时（M9 工作目录模型）。 */
+async function activateWorkspace(win: Page, ledgerPath: string): Promise<void> {
+  await win.evaluate(async (path) => {
+    const opened = await window.beanwise.openWorkspace(path)
+    if (!opened.ok) throw new Error(opened.message ?? '打开工作目录失败')
+  }, dirname(ledgerPath))
+  await win.reload()
+  await expect(win.getByRole('menuitem', { name: '报表' })).toBeVisible()
+}
 
 /** reports.beancount 副本（临时目录） */
 function createReportsFixture(): string {
@@ -21,16 +32,13 @@ test('M8 报表：真实数据渲染（IPC 聚合 + 余额表 + 图表容器）'
   test.setTimeout(120_000)
   const ledgerPath = createReportsFixture()
   try {
-    const app = await electron.launch({
-      args: launchArgs,
-      env: { ...process.env, BEANWISE_LEDGER_PATH: ledgerPath }
-    })
+    const app = await electron.launch({ args: launchArgs })
     const win = await app.firstWindow()
+    await activateWorkspace(win, ledgerPath)
 
     // 1. IPC 真实数据链路：净资产月趋势（期末累计，decimal 精确字符串）。
     // 实测修正（M8-T8）：启动索引重建是 fire-and-forget（index-builder.refreshIndex），
-    // 首窗立即查询会命中 userData 持久化 DB 的上一轮索引（实测残留 main.beancount 数据）
-    // → 用 expect.poll 等新索引重建完成，断言值与简报完全一致
+    // 首窗立即查询可能命中上一轮索引 → 用 expect.poll 等新索引重建完成，断言值与简报完全一致
     await expect
       .poll(
         async () => {
@@ -47,7 +55,7 @@ test('M8 报表：真实数据渲染（IPC 聚合 + 余额表 + 图表容器）'
     expect(assets?.balances).toEqual([{ currency: 'CNY', number: '19960' }])
 
     // 3. IPC：收支对比（月视图 12 个月补满，收入正显示）
-    const ie = await win.evaluate(() => window.beanwise.getIncomeExpenseReport({ granularity: 'month', year: 2026 }))
+    const ie = await win.evaluate(() => window.beanwise.getIncomeExpenseReport({ granularity: 'month', startYear: 2026, endYear: 2026 }))
     expect(ie.series).toHaveLength(12)
     expect(ie.series.find((p) => p.period === '2026-01')).toEqual({ period: '2026-01', income: '0', expense: '20' })
     expect(ie.series.find((p) => p.period === '2026-02')).toEqual({ period: '2026-02', income: '10000', expense: '0' })
@@ -70,6 +78,20 @@ test('M8 报表：真实数据渲染（IPC 聚合 + 余额表 + 图表容器）'
     // 无错误条
     await expect(win.locator('.ant-alert-error')).toHaveCount(0)
 
+    // 4b. 起止年筛选：年份下拉可见 + IPC 范围过滤（净资产含范围前累计 / 余额期末快照 / 收支跨年 24 个月）
+    await expect(win.locator('.ant-select', { hasText: '起始年' }).first()).toBeVisible()
+    await expect(win.locator('.ant-select', { hasText: '结束年' }).first()).toBeVisible()
+    const nwRange = await win.evaluate(() => window.beanwise.getNetWorthReport({ granularity: 'month', startYear: 2026, endYear: 2026 }))
+    expect(nwRange.series).toEqual([{ period: '2026-01', assets: '9960', liabilities: '-20', netWorth: '9940' }, { period: '2026-02', assets: '19960', liabilities: '-20', netWorth: '19940' }])
+    const balEnd2025 = await win.evaluate(() => window.beanwise.getBalancesReport({ endYear: 2025 }))
+    expect(balEnd2025.accounts.find((a) => a.name === 'Assets')?.balances).toEqual([{ currency: 'CNY', number: '9960' }])
+    expect(balEnd2025.accounts.find((a) => a.name === 'Liabilities')).toBeUndefined()
+    const ieRange = await win.evaluate(() => window.beanwise.getIncomeExpenseReport({ granularity: 'month', startYear: 2025, endYear: 2026 }))
+    expect(ieRange.series).toHaveLength(24)
+    expect(ieRange.series.find((p) => p.period === '2025-03')).toEqual({ period: '2025-03', income: '10000', expense: '35' })
+    const years = await win.evaluate(() => window.beanwise.getReportYears())
+    expect(years).toEqual({ min: 2025, max: 2026 })
+
     // 5. 粒度切换：年视图不报错（图表容器仍在）
     // 实测修正：antd Segmented 的 radio input 视觉隐藏（不可点），可点区域是选项 label
     // → 按简报兜底策略走选项文本定位：.ant-segmented-item 作用域 hasText '年'
@@ -79,6 +101,6 @@ test('M8 报表：真实数据渲染（IPC 聚合 + 余额表 + 图表容器）'
 
     await app.close()
   } finally {
-    rmSync(dirname(ledgerPath), { recursive: true, force: true })
+    cleanupFixture(ledgerPath)
   }
 })

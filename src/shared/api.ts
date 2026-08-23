@@ -24,11 +24,13 @@ import type {
   ListEntriesResult,
   ReadFileResult,
   RefreshResult,
+  ReportBalancesParams,
   ReportBalancesResult,
   ReportIncomeExpenseParams,
   ReportIncomeExpenseResult,
   ReportNetWorthParams,
   ReportNetWorthResult,
+  ReportYearsResult,
   ResolveConflictParams,
   ResolveConflictResult,
   SaveAiConfigParams,
@@ -102,13 +104,14 @@ export interface BeanWiseApi {
   clearAiConfig(): Promise<{ ok: boolean }>
   /** 自然语言 → 结构化草稿（主进程代理 + 本地 schema 校验，非法输出拒绝） */
   parseAiEntry(text: string): Promise<AiParseResult>
-  /** 净资产趋势（SQLite 精确聚合，运营货币） */
+  /** 净资产趋势（SQLite 精确聚合，运营货币；startYear/endYear 筛选输出点，累计含全历史） */
   getNetWorthReport(params: ReportNetWorthParams): Promise<ReportNetWorthResult>
-  /** 账户余额树（全部币种分行） */
-  getBalancesReport(): Promise<ReportBalancesResult>
-  /** 收支对比（income/expense 正显示） */
+  /** 账户余额树（全部币种分行；endYear 筛选 → 截至该年末的余额快照） */
+  getBalancesReport(params?: ReportBalancesParams): Promise<ReportBalancesResult>
+  /** 收支对比（income/expense 正显示；startYear/endYear 筛选范围） */
   getIncomeExpenseReport(params: ReportIncomeExpenseParams): Promise<ReportIncomeExpenseResult>
-  /** 检查更新（触发 updater 状态机） */
+  /** 账本全量年份范围（供报表年份下拉选项，不随筛选变化） */
+  getReportYears(): Promise<ReportYearsResult>
   checkForUpdates(): Promise<UpdateCheckResult>
   /** 当前更新状态（idle/checking/available/downloading/downloaded/error） */
   getUpdateStatus(): Promise<UpdateState>

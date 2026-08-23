@@ -31,7 +31,7 @@ export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list
   | 'sync:get-status' | 'sync:configure' | 'sync:push' | 'sync:pull'
   | 'sync:resolve-conflict' | 'sync:clear'
   | 'ai:get-status' | 'ai:save-config' | 'ai:clear-config' | 'ai:parse'
-  | 'report:net-worth' | 'report:balances' | 'report:income-expense'
+  | 'report:net-worth' | 'report:balances' | 'report:income-expense' | 'report:years'
   | 'update:check' | 'update:status' | 'update:install'
 
 /** ledger:read-file 结果（ENOENT → ok:false + message，编辑器 Empty 态） */
@@ -440,8 +440,14 @@ export interface AiParseResult {
 /** 报表粒度（月 YYYY-MM / 年 YYYY） */
 export type ReportGranularity = 'month' | 'year'
 
+/** 报表年份范围（缺省 = 不设边界，全量数据；startYear > endYear 由 handler 校验拒绝） */
+export interface ReportYearRange {
+  startYear?: number
+  endYear?: number
+}
+
 /** report:net-worth 入参 */
-export interface ReportNetWorthParams {
+export interface ReportNetWorthParams extends ReportYearRange {
   granularity: ReportGranularity
 }
 
@@ -467,16 +473,18 @@ export interface AccountBalance {
   children?: AccountBalance[]
 }
 
+/** report:balances 入参（余额为「期末快照」：仅 endYear 参与过滤——截至该年末的余额，startYear 不影响余额值） */
+export interface ReportBalancesParams extends ReportYearRange {}
+
 /** report:balances 结果（全部币种分行） */
 export interface ReportBalancesResult {
   accounts: AccountBalance[]
   message?: string
 }
 
-/** report:income-expense 入参（year 仅月视图有意义，缺省 = 最近有数据的年份） */
-export interface ReportIncomeExpenseParams {
+/** report:income-expense 入参（month 粒度缺省范围 = 最近有数据的年份，与旧 year 行为一致） */
+export interface ReportIncomeExpenseParams extends ReportYearRange {
   granularity: ReportGranularity
-  year?: number
 }
 
 /** 收支对比点（income/expense 均为正显示：income=-ΣIncome:*，expense = ΣExpenses:*（索引行支出记正数，正显示）） */
@@ -491,6 +499,12 @@ export interface ReportIncomeExpenseResult {
   series: IncomeExpensePoint[]
   currency: string
   message?: string
+}
+
+/** report:years 结果（账本全量数据年份范围，供渲染端年份下拉选项；无数据 → min/max 均为 0） */
+export interface ReportYearsResult {
+  min: number
+  max: number
 }
 
 /** M8：更新域（electron-updater 状态机，主进程持有） */

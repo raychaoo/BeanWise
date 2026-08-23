@@ -1,9 +1,9 @@
 /**
- * M8 报表视图（T4）：粒度 Segmented + 三面板（净资产趋势 Line / 收支对比 Column /
+ * M8 报表视图（T4）：粒度 Segmented + 起止年筛选 + 三面板（净资产趋势 Line / 收支对比 Column /
  * 账户余额树表格）。图表 y 值 Number() 仅显示层，精确金额由余额表十进制字符串提供。
  */
 import { Column, Line } from '@ant-design/charts'
-import { Alert, Card, Empty, Segmented, Spin, Table, Tooltip, Typography } from 'antd'
+import { Alert, Card, Empty, Segmented, Select, Spin, Table, Tooltip, Typography } from 'antd'
 import { useEffect } from 'react'
 import type { AccountBalance, IncomeExpensePoint, NetWorthPoint } from '../../../shared/ipc'
 import { useLedgerStore } from '../stores/ledger'
@@ -35,6 +35,10 @@ function BalanceCell({ balances }: { balances: Array<{ currency: string; number:
 export default function ReportsView() {
   const granularity = useReportsStore((s) => s.granularity)
   const setGranularity = useReportsStore((s) => s.setGranularity)
+  const startYear = useReportsStore((s) => s.startYear)
+  const endYear = useReportsStore((s) => s.endYear)
+  const setYearRange = useReportsStore((s) => s.setYearRange)
+  const availableYears = useReportsStore((s) => s.availableYears)
   const netWorth = useReportsStore((s) => s.netWorth)
   const balances = useReportsStore((s) => s.balances)
   const incomeExpense = useReportsStore((s) => s.incomeExpense)
@@ -51,9 +55,18 @@ export default function ReportsView() {
   const accountNameMap = new Map(accountOptions.map((o) => [o.value, o.label]))
   const hasData = (netWorth?.length ?? 0) > 0 || (incomeExpense?.length ?? 0) > 0 || (balances?.length ?? 0) > 0
 
+  /** 年份下拉选项（账本全量年份范围，不随筛选收缩） */
+  const yearOptions = (() => {
+    if (!availableYears || availableYears.max <= 0) return []
+    const options: Array<{ label: string; value: number }> = []
+    for (let y = availableYears.min; y <= availableYears.max; y++) options.push({ label: `${y}年`, value: y })
+    return options
+  })()
+  const yearSelectDisabled = yearOptions.length === 0
+
   return (
     <div>
-      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <Segmented
           value={granularity}
           onChange={(v) => { if (typeof v === 'string') setGranularity(v as 'month' | 'year') }}
@@ -61,6 +74,27 @@ export default function ReportsView() {
             { label: '月', value: 'month' },
             { label: '年', value: 'year' }
           ]}
+        />
+        <Select
+          aria-label="起始年"
+          placeholder="起始年"
+          allowClear
+          style={{ width: 110 }}
+          value={startYear ?? undefined}
+          options={yearOptions}
+          onChange={(v) => setYearRange(v ?? null, endYear)}
+          disabled={yearSelectDisabled}
+        />
+        <Typography.Text type="secondary">至</Typography.Text>
+        <Select
+          aria-label="结束年"
+          placeholder="结束年"
+          allowClear
+          style={{ width: 110 }}
+          value={endYear ?? undefined}
+          options={yearOptions}
+          onChange={(v) => setYearRange(startYear, v ?? null)}
+          disabled={yearSelectDisabled}
         />
         {currency && <Typography.Text type="secondary">运营货币：{currency}</Typography.Text>}
       </div>

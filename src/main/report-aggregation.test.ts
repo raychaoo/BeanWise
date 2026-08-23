@@ -52,6 +52,20 @@ describe('computeNetWorth（按期间累计，运营货币过滤）', () => {
     expect(pts[1]).toEqual({ period: '2026', assets: '9960', liabilities: '-20', netWorth: '9940' })
   })
 
+  it('起止年筛选：仅输出范围内期间，累计含范围前历史', () => {
+    const pts = computeNetWorth(rows, 'month', 'CNY', { startYear: 2026 })
+    expect(pts.map((p) => p.period)).toEqual(['2026-01', '2026-02'])
+    // 2026-01 累计含 2025 全历史：assets = 9960，liabilities = -20
+    expect(pts[0]).toEqual({ period: '2026-01', assets: '9960', liabilities: '-20', netWorth: '9940' })
+    expect(pts[1]).toEqual({ period: '2026-02', assets: '9960', liabilities: '-20', netWorth: '9940' })
+  })
+
+  it('endYear 筛选：不输出结束年之后期间', () => {
+    const pts = computeNetWorth(rows, 'month', 'CNY', { startYear: 2025, endYear: 2025 })
+    expect(pts.map((p) => p.period)).toEqual(['2025-03', '2025-06'])
+    expect(pts[1]).toEqual({ period: '2025-06', assets: '9960', liabilities: '0', netWorth: '9960' })
+  })
+
   it('空输入 → 空数组', () => {
     expect(computeNetWorth([], 'month', 'CNY')).toEqual([])
   })
@@ -108,15 +122,28 @@ describe('buildAccountTree（叶子余额 + 子树 rollup + 多币种分行）',
   })
 })
 
-describe('computeIncomeExpense（正显示 + 月视图补满 12 个月 + 年过滤）', () => {
-  it('month + year=2026：12 个月全量，income = -ΣIncome:*，expense = ΣExpenses:*（索引行支出记正数，正显示）', () => {
-    const pts = computeIncomeExpense(rows, 'month', 'CNY', 2026)
+describe('computeIncomeExpense（正显示 + 月视图补满 + 起止年范围）', () => {
+  it('month + 2026 单年：12 个月全量，income = -ΣIncome:*，expense = ΣExpenses:*（索引行支出记正数，正显示）', () => {
+    const pts = computeIncomeExpense(rows, 'month', 'CNY', { startYear: 2026, endYear: 2026 })
     expect(pts).toHaveLength(12)
     const jan = pts.find((p) => p.period === '2026-01')!
     expect(jan).toEqual({ period: '2026-01', income: '0', expense: '20' })
     const feb = pts.find((p) => p.period === '2026-02')!
     expect(feb).toEqual({ period: '2026-02', income: '0', expense: '0' }) // USD 收入被过滤
     expect(pts.every((p) => p.period.startsWith('2026-'))).toBe(true)
+  })
+
+  it('month + 跨年范围：自 startYear-01 起逐月补满至 endYear-12', () => {
+    const pts = computeIncomeExpense(rows, 'month', 'CNY', { startYear: 2025, endYear: 2026 })
+    expect(pts).toHaveLength(24)
+    expect(pts[0].period).toBe('2025-01')
+    expect(pts.at(-1)?.period).toBe('2026-12')
+    const mar25 = pts.find((p) => p.period === '2025-03')!
+    expect(mar25).toEqual({ period: '2025-03', income: '10000', expense: '35' })
+    const jun25 = pts.find((p) => p.period === '2025-06')!
+    expect(jun25).toEqual({ period: '2025-06', income: '0', expense: '5' })
+    const jan26 = pts.find((p) => p.period === '2026-01')!
+    expect(jan26).toEqual({ period: '2026-01', income: '0', expense: '20' })
   })
 
   it('year：全历史按年分组，income/expense 正显示', () => {
@@ -126,13 +153,13 @@ describe('computeIncomeExpense（正显示 + 月视图补满 12 个月 + 年过�
     expect(pts[1]).toEqual({ period: '2026', income: '0', expense: '20' })
   })
 
-  it('year 过滤：只算该年', () => {
-    const pts = computeIncomeExpense(rows, 'year', 'CNY', 2025)
+  it('year + 范围：只输出范围内有数据的年份', () => {
+    const pts = computeIncomeExpense(rows, 'year', 'CNY', { startYear: 2025, endYear: 2025 })
     expect(pts.map((p) => p.period)).toEqual(['2025'])
-    expect(pts[0].expense).toBe('40')
+    expect(pts[0]).toEqual({ period: '2025', income: '10000', expense: '40' })
   })
 
-  it('month 粒度缺省 year：直接 throw（函数级防御，handler 必解析）', () => {
-    expect(() => computeIncomeExpense(rows, 'month', 'CNY')).toThrow('year')
+  it('month 粒度缺省范围：直接 throw（函数级防御，handler 必解析）', () => {
+    expect(() => computeIncomeExpense(rows, 'month', 'CNY')).toThrow('startYear')
   })
 })
