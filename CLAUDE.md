@@ -119,3 +119,7 @@ pytest python/tests  # Python Beancount 引擎测试
 | `technical-proposal/data-consistency.md` | 数据一致性、同步与冲突处理 |
 | `technical-proposal/security.md`         | 密钥管理、CSP、进程边界    |
 | `technical-proposal/release-pipeline.md` | CI/CD、签名、自动更新      |
+
+## 跑测试时
+
+测试时请使用`F:\BeanWiseData\test`目录跑，这个目录下有账本
