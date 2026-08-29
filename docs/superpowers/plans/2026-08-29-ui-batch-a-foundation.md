@@ -105,19 +105,19 @@ describe('THEME_TOKENS', () => {
 - Modify: `src/renderer/src/App.tsx`（整文件重写）
 - Create: `src/renderer/src/views/HeaderStatusArea.tsx`
 - Create: `src/renderer/src/views/LedgerSwitcher.tsx`（基础版）
-- Create: `src/renderer/src/views/DashboardPlaceholder.tsx`、`src/renderer/src/views/SettingsPage.tsx`（占位，卡片骨架 + `Empty`「批次 D 完善」）
+- Create: **四个占位页（D 批重写这些文件的 content，路由不动）**：`views/DashboardPage.tsx`、`views/ReconcilePage.tsx`、`views/AccountsPage.tsx`、`views/SettingsPage.tsx`
 - Test: `e2e/smoke.spec.ts`（更新断言）
 
 **Interfaces:**
 - Consumes: Task 1/2 的 less 类与 THEME_TOKENS；既有 `WorkspaceSwitcher` 的打开目录链路（`chooseWorkspaceFolder` + `openWorkspace` + `window.location.reload()`，迁移进 LedgerSwitcher）
-- Produces: 路由表（总计划契约）；`LedgerSwitcher`（批次 C 增强）；菜单标签 `录入/明细/报表/编辑器/合并(条件)/总览/设置`
+- Produces: 路由表（总计划契约，含 `/reconcile` `/accounts`）；四个占位页文件（D 批重写目标）；`LedgerSwitcher`（批次 C 增强）；菜单标签 `录入/明细/报表/编辑器/合并(条件)/总览/对账/账户/设置`
 
 - [ ] **Step 1: LedgerSwitcher 基础版** —— Button(type text, size large) 显示当前目录 `basename`（临时内联 `path.split(/[\\/]/).pop()`，批次 C 抽 util）+ Dropdown（当前项 disabled + `浏览其他目录…` 走原 WorkspaceSwitcher 链路）；hover Tooltip 显示完整路径
 - [ ] **Step 2: HeaderStatusArea** —— 按方案模块 1 代码骨架：同步状态 `Popover`（内含分支 Tag / 上次同步 / 拉取按钮 / 冲突入口 / 同步设置 / 索引状态 Tag + 重建索引，内容取自现 `SyncStatusBar` + `App.tsx:144-161` 的元素，**SyncStatusBar.tsx 保留不删**，Popover 内容复用其元素）、更新按钮加 `Badge dot`（`useUpdateStore` 有可用更新时）、AI 徽标（configured 与否，点击开 `AiSettingsModal`）
-- [ ] **Step 3: 占位页** —— `DashboardPlaceholder`：`Result icon={<DashboardOutlined>} title="总览" subTitle="批次 D 落地指标卡与图表" />`；`SettingsPage`：分区骨架（账本管理/同步/AI/索引/关于，各放 `Empty` 占位）
+- [ ] **Step 3: 四个占位页** —— 统一模式：`Result icon title subTitle="批次 D 落地"`（`DashboardPage` title=总览 DashboardOutlined；`ReconcilePage` title=对账；`AccountsPage` title=账户管理；`SettingsPage` 额外留五个空 Card 分区骨架：账本管理/同步/AI/索引/关于）。**文件名必须与路由导入一致**——D 批将原样重写这些文件，App.tsx 不再改动
 - [ ] **Step 4: 重写 App.tsx** —— 按方案第三节 ≤30 行骨架落地，要点：
-  - `HashRouter` + `Routes`（`/`=DashboardPlaceholder，`/entry`=EntryFormView，`/entries`=EntriesView，`/reports`=ReportsView，`/editor`=EditorView，`/merge`=ConflictView，`/settings`=SettingsPage，`*`→`<Navigate to="/" replace />`）
-  - ProLayout：`route={{ routes: MENU }}`（`/` 总览 DashboardOutlined、`/entry` 录入 FormOutlined、`/entries` 明细 UnorderedListOutlined、`/reports` 报表 BarChartOutlined、`/editor` 编辑器 FileTextOutlined、`/merge` 合并 CloudOutlined 仅 `conflict` 时），`menuItemRender` 用 `Link`，`avatarProps` → 设置入口，`headerContentRender` → `<LedgerSwitcher />`，右侧状态区由 `HeaderStatusArea` 通过 `headerRender`/页面级 Layout 组合（若 ProLayout 插槽不顺，可 ProLayout 外层不再套 Header，状态区放 `headerContentRender` 右侧 flex）
+  - `HashRouter` + `Routes`（`/`=DashboardPage(占位)，`/entry`=EntryFormView，`/entries`=EntriesView，`/reconcile`=ReconcilePage(占位)，`/accounts`=AccountsPage(占位)，`/reports`=ReportsView，`/editor`=EditorView，`/merge`=ConflictView，`/settings`=SettingsPage(占位)，`*`→`<Navigate to="/" replace />`）
+  - ProLayout：`route={{ routes: MENU }}`（`/` 总览 DashboardOutlined、`/entry` 录入 FormOutlined、`/entries` 明细 UnorderedListOutlined、`/reconcile` 对账 AuditOutlined、`/accounts` 账户 AppstoreOutlined、`/reports` 报表 BarChartOutlined、`/editor` 编辑器 FileTextOutlined、`/merge` 合并 CloudOutlined 仅 `conflict` 时），`menuItemRender` 用 `Link`，`avatarProps` → 设置入口，`headerContentRender` → `<LedgerSwitcher />`，右侧状态区由 `HeaderStatusArea` 通过 `headerRender`/页面级 Layout 组合（若 ProLayout 插槽不顺，可 ProLayout 外层不再套 Header，状态区放 `headerContentRender` 右侧 flex）
   - 保留：workspace 加载门控逻辑（`ready` 前 `Content` 区域渲染 `Skeleton` 而非 `null`）、`workspaceError` → `<Result status="error" extra={[重试/更换目录]}>`、`conflict` 条件菜单项、各 Modal（Sync/Ai/Update）
   - 删除：`display:none` 挂载、`calc(100vh - 112px)`、Sider 磁盘路径展示、重复 appName 标题
   - 滚动复位：`contentRef` + `useEffect(..., [location.pathname])`
@@ -125,7 +125,22 @@ describe('THEME_TOKENS', () => {
 - [ ] **Step 6: 验证**：`npm run typecheck`；`npm run test:unit`；`npm run test:e2e`（smoke/ledger-index/reports/editor/sync/ai-entry/update 全绿；ledger-index 的 `menuitem '明细'` 点击依赖平铺菜单 —— 已保持）
 - [ ] **Step 7: Commit** `feat(ui-a): HashRouter + ProLayout 应用壳重写（内容区独立滚动 + 路由动画 + 失败兜底）`
 
-### Task 4: 窗口默认尺寸
+### Task 4: 录入表单 dirty 微 store（B 写 / C 读的契约）
+
+**Files:**
+- Create: `src/renderer/src/stores/entry-form.ts`
+- Test: `src/renderer/src/stores/entry-form.test.ts`
+
+**Interfaces:**
+- Produces: `useEntryFormStore`（zustand，`{ dirty: boolean; setDirty(v: boolean): void }`）——批次 B 在 EntryFormView 的 `onValuesChange`/提交成功处调用 `setDirty`，批次 C 的切换确认只读
+
+- [ ] **Step 1: 失败测试**（初始 dirty=false；setDirty(true) → true；再 setDirty(false) → false）
+- [ ] **Step 2: 跑失败** `npx vitest run src/renderer/src/stores/entry-form.test.ts` → FAIL
+- [ ] **Step 3: 实现**（create + set，≤10 行）
+- [ ] **Step 4: 跑通过** → PASS
+- [ ] **Step 5: Commit** `feat(ui-a): 录入表单 dirty 微 store（B/C 批次契约）`
+
+### Task 5: 窗口默认尺寸
 
 **Files:**
 - Modify: `src/main/index.ts:29-33`
@@ -134,7 +149,7 @@ describe('THEME_TOKENS', () => {
 - [ ] **Step 2: 验证**：`npm run test:e2e`（smoke 启动断言仍过）
 - [ ] **Step 3: Commit** `feat(ui-a): 窗口默认 1440×900，最小 1280×800`
 
-### Task 5: 批次收尾
+### Task 6: 批次收尾
 
 - [ ] **Step 1:** 全量 `npm run typecheck && npm run test:unit && npm run test:e2e` 全绿
 - [ ] **Step 2:** 勾选本文件 checkbox，`git add -A && git commit`（如有遗漏）

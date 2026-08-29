@@ -10,12 +10,14 @@
 
 **Spec:** `ui-optimization-plan.md` 模块 2、4、5 及「设置页」节、`docs/superpowers/plans/2026-08-29-ui-optimization-master.md`。
 
-**Worktree:** `.worktrees/d-new-pages`，分支 `ui/d-new-pages`，基于含批次 A/B/C 的 `ui-v4`。
+**Worktree:** `.worktrees/d-new-pages`，分支 `ui/d-new-pages`，基于含 **批次 A、B、C、E 全部已合并** 的 `ui-v4`（波次 3 收口批，必须最后开工）。
 
-**前置命令（会话开始时执行）：**
+**收口说明：** 路由与菜单已由批次 A 全部建齐（`/` `/reconcile` `/accounts` `/settings` 指向四个占位文件）——本批**重写这四个占位文件的内容，不改 App.tsx**。同时执行跨批迁移：把批次 B 保留在 EntriesView 的「索引状态卡 + 清空账本」迁入设置页（此时 B 已合并，顺序执行无冲突）；DashboardPage 图表复用批次 E 的 `LazyLine`/`LazyColumn`；账本管理复用批次 C 的 `getWorkspaceRecents` 与 `switchWorkspace`。
+
+**前置命令（会话开始时执行；`git worktree add` 不需要也不应该 checkout 主 checkout）：**
 
 ```bash
-cd /f/raychaoo/BeanWise && git checkout ui-v4 && git worktree add .worktrees/d-new-pages -b ui/d-new-pages ui-v4 && cd .worktrees/d-new-pages && npm install --ignore-scripts
+cd /f/raychaoo/BeanWise && git worktree add .worktrees/d-new-pages -b ui/d-new-pages ui-v4 && cd .worktrees/d-new-pages && npm install --ignore-scripts
 ```
 
 ## Global Constraints
@@ -55,27 +57,25 @@ cd /f/raychaoo/BeanWise && git checkout ui-v4 && git worktree add .worktrees/d-n
 - [ ] **Step 4: 跑通过** → PASS；typecheck
 - [ ] **Step 5: Commit** `feat(ui-d): Dashboard 聚合 store（decimal 精确累加 + 去年序列）`
 
-### Task 3: 总览页 DashboardPage
+### Task 3: 总览页 DashboardPage（重写占位文件）
 
 **Files:**
-- Create: `src/renderer/src/views/DashboardPage.tsx`
-- Modify: `src/renderer/src/App.tsx`（`/` 从 DashboardPlaceholder 换为 DashboardPage，删除占位文件）
+- Modify: `src/renderer/src/views/DashboardPage.tsx`（批次 A 占位 → 完整页面；路由已指向此文件，App.tsx 零改动）
 - Create: `src/renderer/src/styles/views/dashboard.less`
 
 **Interfaces:**
-- Consumes: Task 1/2 产物、批次 A 的 `.num`、THEME_TOKENS 色值
+- Consumes: Task 1/2 产物、批次 A 的 `.num` 与 `BW_COLORS`、批次 E 的 `LazyLine`（图表懒加载）
 
 - [ ] **Step 1: 指标卡行** —— 4 × `Card`+`Statistic`（总资产/总负债/净资产/本月收支）：值 `formatAmount` 千分位；净资产卡片值颜色遵循 `BW_COLORS`（正文本色、负 `#cf1322`）；本月收支 `suffix` 放 ↑(青)/↓(橙) 图标 + 金额；每卡 `loading` 用 `Skeleton.active`（高度对齐 Statistic，防跳变）
-- [ ] **Step 2: 趋势卡** —— `Card title="净资产趋势"` 内 `Line`：本期序列实线 + 去年同期虚线（series 名「去年同期」，x 轴按月序号对齐）；图顶 `TimeRangeBar`（granularity 月/年）；`Skeleton` 占位（高 280）
+- [ ] **Step 2: 趋势卡** —— `Card title="净资产趋势"` 内 `LazyLine`：本期序列实线 + 去年同期虚线（series 名「去年同期」，x 轴按月序号对齐）；图顶 `TimeRangeBar`（granularity 月/年）；`Skeleton` 占位（高 280）
 - [ ] **Step 3: 空态** —— 账本无数据时整页 `Empty` + 「去录入第一笔」Button（`Link to="/entry"`）
 - [ ] **Step 4: 验证**：typecheck + unit + 手动 dev 目测（测试账本）；e2e 新增最小用例（见 Task 7）
 - [ ] **Step 5: Commit** `feat(ui-d): 总览页指标卡 + 同比趋势 + 骨架加载`
 
-### Task 4: 对账页 ReconcilePage
+### Task 4: 对账页 ReconcilePage（重写占位文件）
 
 **Files:**
-- Create: `src/renderer/src/views/ReconcilePage.tsx`
-- Modify: `src/renderer/src/App.tsx`（新增 `/reconcile` 路由 + 菜单项「对账」，置于明细后）
+- Modify: `src/renderer/src/views/ReconcilePage.tsx`（批次 A 占位 → 完整页面，App.tsx 零改动）
 - Create: `src/renderer/src/styles/views/reconcile.less`
 
 **Interfaces:**
@@ -86,13 +86,12 @@ cd /f/raychaoo/BeanWise && git checkout ui-v4 && git worktree add .worktrees/d-n
 - [ ] **Step 3: 验证**：typecheck + unit + 手动 dev
 - [ ] **Step 4: Commit** `feat(ui-d): 对账页科目余额表（树表 + 千分位右对齐）`
 
-### Task 5: 账户页 AccountsPage
+### Task 5: 账户页 AccountsPage（重写占位文件）
 
 **Files:**
-- Create: `src/renderer/src/views/AccountsPage.tsx`
+- Modify: `src/renderer/src/views/AccountsPage.tsx`（批次 A 占位 → 完整页面，App.tsx 零改动）
 - Modify: `src/renderer/src/views/AccountSettingsModal.tsx`（**保留文件**但录入页不再引用；若 e2e 无依赖则标记 deprecated 注释）
-- Modify: `src/renderer/src/views/EntryFormView.tsx`（「账户设置」按钮 → `useNavigate()` 跳 `/accounts`）
-- Modify: `src/renderer/src/App.tsx`（`/accounts` 路由 + 菜单项「账户」）
+- Modify: `src/renderer/src/views/EntryFormView.tsx`（「账户设置」按钮 → `useNavigate()` 跳 `/accounts`；此时批次 B 已合并，基于其重排后的代码做最小改动）
 - Create: `src/renderer/src/styles/views/accounts.less`
 
 **Interfaces:**
@@ -103,17 +102,19 @@ cd /f/raychaoo/BeanWise && git checkout ui-v4 && git worktree add .worktrees/d-n
 - [ ] **Step 3: 验证**：typecheck + unit + 手动 dev（新增/编辑/删除/保存全链路）
 - [ ] **Step 4: Commit** `feat(ui-d): 账户管理独立页（分类 Tabs + 抽屉新增），录入页按钮改跳转`
 
-### Task 6: 设置页完善
+### Task 6: 设置页完善 + 跨批迁移
 
 **Files:**
-- Modify: `src/renderer/src/views/SettingsPage.tsx`（批次 B 迁入的索引/清空区块 + 新增区块）
+- Modify: `src/renderer/src/views/SettingsPage.tsx`（批次 A 占位 → 完整聚合页，App.tsx 零改动）
+- Modify: `src/renderer/src/views/EntriesView.tsx`（迁出「索引状态」Card 与「清空账本」按钮至设置页——批次 B 已合并，顺序执行无冲突；「重建索引」按钮保留在明细页页头）
 
 **Interfaces:**
-- Consumes: `getWorkspaceRecents`（批次 C）、各设置 Modal（`SyncSettingsModal`/`AiSettingsModal`/`UpdateModal` **保留为 Modal**，设置页放触发卡片）
+- Consumes: 批次 C 的 `getWorkspaceRecents` + `switchWorkspace`（LedgerSwitcher 导出）、各设置 Modal（`SyncSettingsModal`/`AiSettingsModal`/`UpdateModal` **保留为 Modal**，设置页放触发卡片）
 
-- [ ] **Step 1: 区块结构** —— `Card` 分组：① 账本管理（recents 列表 List：每项 basenamePath + Tooltip 路径 + 「打开」按钮走 `switchWorkspace`；含批次 B 迁入的清空账本按钮）② 同步（当前状态一行 + 「同步设置」开 Modal）③ AI 助手（配置状态 + 开 Modal）④ 索引状态（批次 B 迁入内容归位此卡）⑤ 关于与更新（版本行 + 「检查更新」开 UpdateModal）
-- [ ] **Step 2: 验证**：typecheck + unit + 手动 dev
-- [ ] **Step 3: Commit** `feat(ui-d): 设置聚合页（账本管理/同步/AI/索引/更新）`
+- [ ] **Step 1: 迁移**：把 EntriesView 的索引状态 Descriptions + 清空账本（Modal.confirm 原逻辑整体搬移，逻辑零改动）移入设置页；ledger-index.spec 若断言受影响做最小调整
+- [ ] **Step 2: 区块结构** —— `Card` 分组：① 账本管理（recents 列表 List：每项 basenamePath + Tooltip 路径 + 「打开」按钮走 `switchWorkspace`；含清空账本按钮）② 同步（当前状态一行 + 「同步设置」开 Modal）③ AI 助手（配置状态 + 开 Modal）④ 索引状态（迁入内容归位此卡）⑤ 关于与更新（版本行 + 「检查更新」开 UpdateModal）
+- [ ] **Step 3: 验证**：typecheck + unit + 手动 dev
+- [ ] **Step 4: Commit** `feat(ui-d): 设置聚合页（账本管理/同步/AI/索引/更新）+ 索引卡/清空自明细页迁入`
 
 ### Task 7: E2E 与收尾
 

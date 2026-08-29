@@ -4,18 +4,20 @@
 
 **Goal:** 账本切换升级为财务软件心智：顶部 Dropdown 主入口（当前 + 最近 + 浏览）+ Ctrl+K 快捷弹层 + 未保存防误操作；打通主进程已有但未接线的 `workspace:recents` 能力。
 
-**Architecture:** `workspace:recents` 按 IPC 标准链路补全三处（main handler 注册 → shared/api 类型 → preload 白名单）；`LedgerSwitcher` 增强为完整 Dropdown；新增 `useEntryFormDirty` zustand 微 store 供确认弹层判断；`QuickSwitchModal` 原生 antd 组合（零新依赖）。
+**Architecture:** `workspace:recents` 按 IPC 标准链路补全三处（main handler 注册 → shared/api 类型 → preload 白名单）；`LedgerSwitcher` 增强为完整 Dropdown 并内挂 `QuickSwitchModal`（Ctrl+K），**不触碰 App.tsx**；切换确认读取批次 A 提供的 `useEntryFormStore`（dirty 写入由批次 B 在 EntryFormView 接线）；零新依赖。
 
 **Tech Stack:** 现有栈，零新依赖。
 
 **Spec:** `ui-optimization-plan.md` 模块 8、`docs/superpowers/plans/2026-08-29-ui-optimization-master.md`。
 
-**Worktree:** `.worktrees/c-workspace`，分支 `ui/c-workspace`，基于含批次 A（建议 B 亦已合并）的 `ui-v4`。
+**Worktree:** `.worktrees/c-workspace`，分支 `ui/c-workspace`，基于含批次 A 的 `ui-v4`。
 
-**前置命令（会话开始时执行）：**
+**并行说明：** 本批与批次 B、E **同时开工**（波次 2）。文件所有权：本批独占 `LedgerSwitcher.tsx` / `QuickSwitchModal.tsx` / `utils/path.ts` / `preload/index.ts` / `shared/api.ts` / `src/main/ipc-handlers-workspace.ts`；**不得改动** `App.tsx`（QuickSwitchModal 挂在 LedgerSwitcher 内部）、`EntryFormView.tsx`（dirty 接线归 B 批，本批只读 `useEntryFormStore`——store 由批次 A 提供）、`package.json`、四个占位页。合并前先 `git merge ui-v4` 同步主干再跑全量验证。
+
+**前置命令（会话开始时执行；`git worktree add` 不需要也不应该 checkout 主 checkout）：**
 
 ```bash
-cd /f/raychaoo/BeanWise && git checkout ui-v4 && git worktree add .worktrees/c-workspace -b ui/c-workspace ui-v4 && cd .worktrees/c-workspace && npm install --ignore-scripts
+cd /f/raychaoo/BeanWise && git worktree add .worktrees/c-workspace -b ui/c-workspace ui-v4 && cd .worktrees/c-workspace && npm install --ignore-scripts
 ```
 
 ## Global Constraints
@@ -61,32 +63,27 @@ cd /f/raychaoo/BeanWise && git checkout ui-v4 && git worktree add .worktrees/c-w
 
 **Files:**
 - Modify: `src/renderer/src/views/LedgerSwitcher.tsx`（重写为完整 Dropdown）
-- Create: `src/renderer/src/stores/entry-form.ts`
-- Modify: `src/renderer/src/views/EntryFormView.tsx`（接线 dirty，≤3 行）
-- Test: `src/renderer/src/stores/entry-form.test.ts`
+- Test: 手动验证（store 由批次 A 提供并有单测，本批无新纯函数）
 
 **Interfaces:**
-- Consumes: `getWorkspaceRecents`（Task 1）、`basenamePath`（Task 2）、`useLedgerStore`/`useSyncStore` 不动
-- Produces: `useEntryFormStore`（`{ dirty: boolean; setDirty(v: boolean): void }`）；LedgerSwitcher 行为：当前账本（CheckOutlined + hover Tooltip 完整路径，disabled）→ 分隔线 → 最近账本（排除当前，逐项 `basenamePath`，hover Tooltip 完整路径）→ 分隔线 → `浏览其他目录…`（原 choose+open+reload 链路）→ 底部固定 `Menu.Item` 说明「每个目录独立账本与索引，切换后整页重载」（disabled）
+- Consumes: `getWorkspaceRecents`（Task 1）、`basenamePath`（Task 2）、`useEntryFormStore`（批次 A 提供，**只读 `dirty`**，不写入——写入接线归批次 B）、`useLedgerStore`/`useSyncStore` 不动
+- Produces: `switchWorkspace(path: string): Promise<void>`（从 LedgerSwitcher 导出：dirty 为 true 时先 `Modal.confirm` 再 `openWorkspace` + `window.location.reload()`）；LedgerSwitcher 行为：当前账本（CheckOutlined + hover Tooltip 完整路径，disabled）→ 分隔线 → 最近账本（排除当前，逐项 `basenamePath`，hover Tooltip 完整路径）→ 分隔线 → `浏览其他目录…`（原 choose+open+reload 链路）→ 底部固定 `Menu.Item` 说明「每个目录独立账本与索引，切换后整页重载」（disabled）
 
-- [ ] **Step 1: 失败测试 useEntryFormStore**（setDirty(true) → dirty true）
-- [ ] **Step 2: 跑失败** → FAIL；**Step 3: 实现**；**Step 4: 跑通过**
-- [ ] **Step 5: EntryFormView 接线**：`onValuesChange={() => useEntryFormStore.getState().setDirty(true)}`、提交成功 `resetFields` 后 `setDirty(false)`
-- [ ] **Step 6: Dropdown 交互**：`onClick` 分派——`key === current` 忽略；recents 项 → `confirmSwitch(path)`；`browse` → 原链路。`confirmSwitch`：`useEntryFormStore.getState().dirty` 为 true 时先 `Modal.confirm({ title: '切换账本', content: '录入表单有未提交内容，切换后将丢失。确定切换？', okText: '切换', okButtonProps:{danger:true} })` 再走 `openWorkspace(path)` + 成功 `window.location.reload()`；失败 `message.error(result.message)`
-- [ ] **Step 7: 验证**：typecheck + unit；手动 `npm run dev`（测试账本 `F:\BeanWiseData\test`）核对下拉与确认弹层
-- [ ] **Step 8: Commit** `feat(ui-c): 账本 Dropdown 切换（recents + dirty 确认 + 路径 tooltip）`
+- [ ] **Step 1: Dropdown 交互**：`onClick` 分派——`key === current` 忽略；recents 项 → `switchWorkspace(path)`；`browse` → 原链路。`switchWorkspace`：`useEntryFormStore.getState().dirty` 为 true 时先 `Modal.confirm({ title: '切换账本', content: '录入表单有未提交内容，切换后将丢失。确定切换？', okText: '切换', okButtonProps:{danger:true} })` 再走 `openWorkspace(path)` + 成功 `window.location.reload()`；失败 `message.error(result.message)`
+- [ ] **Step 2: 验证**：typecheck + unit；手动 `npm run dev`（测试账本 `F:\BeanWiseData\test`）核对下拉与确认弹层
+- [ ] **Step 3: Commit** `feat(ui-c): 账本 Dropdown 切换（recents + dirty 确认 + 路径 tooltip）`
 
 ### Task 4: Ctrl+K 快捷切换弹层
 
 **Files:**
 - Create: `src/renderer/src/views/QuickSwitchModal.tsx`
-- Modify: `src/renderer/src/App.tsx`（挂载 Modal + 全局 keydown）
+- Modify: `src/renderer/src/views/LedgerSwitcher.tsx`（**在 LedgerSwitcher 内部挂载 Modal + keydown 监听，不改 App.tsx**）
 
 **Interfaces:**
-- Consumes: Task 3 的 `confirmSwitch` 逻辑抽为 `switchWorkspace(path: string): Promise<void>`（从 LedgerSwitcher 导出或放 `src/renderer/src/utils/workspace.ts`，Dropdown 与 Modal 共用）
+- Consumes: Task 3 的 `switchWorkspace`（LedgerSwitcher 导出，Modal 复用）
 
 - [ ] **Step 1: QuickSwitchModal** —— `Modal`（title「切换账本」+ `Input` autoFocus placeholder「输入目录名过滤」）+ recents 过滤列表（`basenamePath` 包含匹配，不区分大小写）+ 键盘 ↑↓ 选择 / Enter 确认；选中即调 `switchWorkspace`
-- [ ] **Step 2: 全局快捷键** —— App 内 `useEffect` 挂 `keydown`（`(e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k'` → setOpen(true)，`e.preventDefault()`）；组件卸载移除
+- [ ] **Step 2: 快捷键** —— LedgerSwitcher 内 `useEffect` 挂 `keydown`（`(e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k'` → setOpen(true)，`e.preventDefault()`）；组件卸载移除。LedgerSwitcher 常驻 Header，等价全局快捷键且零 App.tsx 改动
 - [ ] **Step 3: 验证**：typecheck + unit；`npm run test:e2e`（无新增 spec，回归全绿即可）
 - [ ] **Step 4: Commit** `feat(ui-c): Ctrl+K 账本快捷切换弹层`
 

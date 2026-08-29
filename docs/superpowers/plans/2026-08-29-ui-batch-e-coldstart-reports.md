@@ -4,18 +4,20 @@
 
 **Goal:** 消除冷启动白屏（index.html 内联 Splash + 框架先行 + 图表懒加载），报表页补资产负债表（账户式）与利润表（报告式）排版，全量回归收尾。
 
-**Architecture:** Splash 为 `index.html` 内联纯 CSS（零脚本，生产 CSP `style-src 'unsafe-inline'` 已放行），React 挂载后移除；报表新增两个 Tab，数据全部来自既有 `report:balances` / `report:income-expense`，零 IPC 变更。
+**Architecture:** Splash 为 `index.html` 内联**纯 CSS 自淡出**（零脚本、零 JS 移除逻辑，不碰 App.tsx；生产 CSP `style-src 'unsafe-inline'` 已放行）——展示约 1.2s 后由 CSS `animation ... forwards` 自动淡出并 `visibility: hidden`，框架（批次 A）在其下方立即渲染骨架；报表新增两个 Tab，数据全部来自既有 `report:balances` / `report:income-expense`，零 IPC 变更。图表懒加载封装 `LazyLine`/`LazyColumn` 供本批 ReportsView 使用，并作为**批次 D 的消费契约**。
 
 **Tech Stack:** 现有栈，零新依赖。
 
 **Spec:** `ui-optimization-plan.md` 模块 6、9、`docs/superpowers/plans/2026-08-29-ui-optimization-master.md`。
 
-**Worktree:** `.worktrees/e-coldstart-reports`，分支 `ui/e-coldstart-reports`，基于含批次 A-D 的 `ui-v4`。
+**Worktree:** `.worktrees/e-coldstart-reports`，分支 `ui/e-coldstart-reports`，基于含批次 A 的 `ui-v4`。
 
-**前置命令（会话开始时执行）：**
+**并行说明：** 本批与批次 B、C **同时开工**（波次 2）。文件所有权：本批独占 `index.html` / `ReportsView.tsx` / `views/reports/*` / `components/Lazy*.tsx` / `styles/views/reports.less` / `CLAUDE.md`；**不得改动** `App.tsx`（Splash 为纯 CSS 自淡出，无需 JS 移除逻辑）、`package.json`、四个占位页。合并前先 `git merge ui-v4` 同步主干再跑全量验证。
+
+**前置命令（会话开始时执行；`git worktree add` 不需要也不应该 checkout 主 checkout）：**
 
 ```bash
-cd /f/raychaoo/BeanWise && git checkout ui-v4 && git worktree add .worktrees/e-coldstart-reports -b ui/e-coldstart-reports ui-v4 && cd .worktrees/e-coldstart-reports && npm install --ignore-scripts
+cd /f/raychaoo/BeanWise && git worktree add .worktrees/e-coldstart-reports -b ui/e-coldstart-reports ui-v4 && cd .worktrees/e-coldstart-reports && npm install --ignore-scripts
 ```
 
 ## Global Constraints
@@ -24,29 +26,32 @@ cd /f/raychaoo/BeanWise && git checkout ui-v4 && git worktree add .worktrees/e-c
 
 ---
 
-### Task 1: 启动 Splash
+### Task 1: 启动 Splash（纯 CSS 自淡出，不碰 App.tsx）
 
 **Files:**
 - Modify: `index.html`（body 内加 `#splash` 节点 + 内联 `<style>`）
-- Modify: `src/renderer/src/App.tsx`（mount 后移除 splash 的 useEffect）
 
 **Interfaces:**
-- Produces: 约定——splash 节点 `id="splash"`，App 首次渲染 `useEffect` 中 `document.getElementById('splash')` 加 `class="bw-splash-hide"`（CSS opacity 200ms 过渡），`transitionend`/300ms 后 `remove()`
+- Produces: 约定——splash 节点 `id="splash"`，`position: fixed; inset: 0; pointer-events: none;`（始终不拦截交互，e2e 与用户点击均不受影响），`animation: bw-splash-out 0.4s ease-out 1.2s forwards`（ forwards 保持 `opacity:0; visibility:hidden` 终态）；`@keyframes bw-splash-out` 与 `prefers-reduced-motion` 覆写（直接终态）
 
-- [ ] **Step 1: index.html splash** —— `<div id="splash">` 内：居中字标「BeanWise · 豆账」（`color: var(--bw-primary)` 回退 `#1d39c4`）+ 三点呼吸动画（`@keyframes` opacity 循环）；底色 `#f5f7fa`；`bw-splash-hide { opacity: 0; transition: opacity .2s ease-out; }` + `@media (prefers-reduced-motion: reduce)` 关闭动画
-- [ ] **Step 2: App 移除逻辑**（首次 useEffect，幂等：节点不存在则跳过）
-- [ ] **Step 3: 验证**：`npm run build` 后 `npx electron out/main/index.js` 手动观察冷启动无白屏（或 `npm run dev` 观察 splash 闪现与淡出）；typecheck；`npm run test:e2e`（smoke 首屏断言不受影响——splash 在 root 外不挡 e2e 元素）
-- [ ] **Step 4: Commit** `feat(ui-e): index.html 内联 Splash，冷启动零白屏`
+- [ ] **Step 1: index.html splash** —— `<div id="splash">` 内：居中字标「BeanWise · 豆账」（`color: var(--bw-primary)` 回退 `#1d39c4`）+ 三点呼吸动画（`@keyframes` opacity 循环）；底色 `#f5f7fa`；按 Interfaces 约定实现自淡出；**禁止任何 `<script>`**
+- [ ] **Step 2: 验证**：`npm run build` 后 `npx electron out/main/index.js` 手动观察冷启动无白屏（或 `npm run dev` 观察 splash 1.2s 后自动淡出，框架骨架在其下已可交互）；typecheck；`npm run test:e2e`（splash `pointer-events:none` 且在 root 外，不挡任何断言）
+- [ ] **Step 3: Commit** `feat(ui-e): index.html 纯 CSS 自淡出 Splash，冷启动零白屏零 JS`
 
-### Task 2: 图表懒加载
+### Task 2: 图表懒加载（产出 D 批消费的契约）
 
 **Files:**
-- Modify: `src/renderer/src/views/DashboardPage.tsx`、`src/renderer/src/views/ReportsView.tsx`（`React.lazy(() => import('@ant-design/charts').then(m => ({ default: m.Line })))` 模式抽组件 `components/LazyLine.tsx` / `LazyColumn.tsx`）+ `Suspense fallback={<Skeleton.Node active style={{height:280}}/>}`
+- Create: `src/renderer/src/components/LazyLine.tsx`、`src/renderer/src/components/LazyColumn.tsx`
+- Modify: `src/renderer/src/views/ReportsView.tsx`（仅趋势图两处替换 + `Suspense` fallback `Skeleton.Node`）
 
-- [ ] **Step 1: LazyLine/LazyColumn 封装**（props 透传图表 props，类型 `ComponentProps<typeof Line>` 收窄为 `Record<string, unknown>` + key 字段或直接 any 化注释说明——保持 typecheck 通过的最小类型面）
-- [ ] **Step 2: 两页替换** + Suspense
+**Interfaces:**
+- Produces: `LazyLine` / `LazyColumn`（`React.lazy(() => import('@ant-design/charts').then(m => ({ default: m.Line })))` 模式，props 透传，类型收窄为保持 typecheck 通过的最小面）——**批次 D 的 DashboardPage 直接复用**
+- 边界：DashboardPage 归批次 D（占位文件），本批不动
+
+- [ ] **Step 1: LazyLine/LazyColumn 封装**
+- [ ] **Step 2: ReportsView 替换** + Suspense
 - [ ] **Step 3: 验证**：typecheck + `npm run test:e2e -- --grep "报表"`（canvas 可见断言仍过）
-- [ ] **Step 4: Commit** `perf(ui-e): 图表组件懒加载，首屏不背 Ant Charts`
+- [ ] **Step 4: Commit** `perf(ui-e): 图表懒加载 LazyLine/LazyColumn（D 批复用）`
 
 ### Task 3: 报表页三表排版
 
@@ -67,7 +72,7 @@ cd /f/raychaoo/BeanWise && git checkout ui-v4 && git worktree add .worktrees/e-c
 ### Task 4: 全量回归与收尾
 
 - [ ] **Step 1: reduced-motion 审计** —— 全局 grep `animation`：所有 keyframes 均有 `@media (prefers-reduced-motion: reduce)` 覆写
-- [ ] **Step 2: 清理** —— 删除不再被引用的占位文件（DashboardPlaceholder 等）与 `styles.css` 残留；`grep -r "styles.css" src/renderer` 为空
+- [ ] **Step 2: 清理** —— 删除 `styles.css` 残留（若存在）；`grep -r "styles.css" src/renderer` 为空。占位页（DashboardPage 等）**保留**——批次 D 收口时重写
 - [ ] **Step 3: 文档** —— `CLAUDE.md` 技术栈 UI 行补一句「样式：Less 分层（styles/）+ antd token 单源（theme/tokens.ts）」与路由说明
 - [ ] **Step 4:** 全量 `npm run typecheck && npm run test:unit && npm run test:e2e` 全绿
 - [ ] **Step 5:** 按总计划 DoD 合并回 `ui-v4` 并移除 worktree；五批次完成后在 `ui-v4` 上 `git worktree prune` 并可删除各批次分支
