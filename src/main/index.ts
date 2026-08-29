@@ -27,8 +27,11 @@ import { JsonSyncConfigStore } from './workspace-config-store'
 
 function createWindow(): void {
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: 1440,
+    height: 900,
+    minWidth: 1280,
+    minHeight: 800,
+    useContentSize: true,
     title: APP_NAME,
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.mjs'),
