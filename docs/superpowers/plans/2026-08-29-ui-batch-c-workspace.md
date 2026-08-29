@@ -37,11 +37,11 @@ cd /f/raychaoo/BeanWise && git worktree add .worktrees/c-workspace -b ui/c-works
 **Interfaces:**
 - Produces: `window.beanwise.getWorkspaceRecents(): Promise<string[]>`（最近工作目录绝对路径数组，最新在前，上限 10——由 `WorkspaceStore.loadRecents()` 保证）
 
-- [ ] **Step 1: 失败测试**（构造 `WorkspaceStore` 依赖的临时目录 fixture 或 mock store：`registerWorkspaceHandlers` 后调用 handler，断言返回 `loadRecents()` 结果）
-- [ ] **Step 2: 跑失败** `npx vitest run src/main/ipc-handlers-workspace.test.ts` → FAIL
-- [ ] **Step 3: 实现**：`ipc.handle('workspace:recents', (): string[] => deps.store.loadRecents())`（handler 内不接收参数，无入参校验面）
-- [ ] **Step 4: 跑通过** → PASS；`npm run typecheck`
-- [ ] **Step 5: Commit** `feat(ui-c): workspace:recents IPC 全链路（main/api/preload）`
+- [x] **Step 1: 失败测试**（构造 `WorkspaceStore` 依赖的临时目录 fixture 或 mock store：`registerWorkspaceHandlers` 后调用 handler，断言返回 `loadRecents()` 结果）
+- [x] **Step 2: 跑失败** `npx vitest run src/main/ipc-handlers-workspace.test.ts` → FAIL
+- [x] **Step 3: 实现**：`ipc.handle('workspace:recents', (): string[] => deps.store.loadRecents())`（handler 内不接收参数，无入参校验面）
+- [x] **Step 4: 跑通过** → PASS；`npm run typecheck`
+- [x] **Step 5: Commit** `feat(ui-c): workspace:recents IPC 全链路（main/api/preload）`
 
 ### Task 2: 路径工具
 
@@ -52,12 +52,12 @@ cd /f/raychaoo/BeanWise && git worktree add .worktrees/c-workspace -b ui/c-works
 **Interfaces:**
 - Produces: `basenamePath(p: string): string`（按 `/` 与 `\` 双分隔符取末段，空串返回原值）
 
-- [ ] **Step 1: 失败测试**（`'C:\\a\\b'`→`'b'`、`'/x/y'`→`'y'`、`'name'`→`'name'`）
-- [ ] **Step 2: 跑失败** → FAIL
-- [ ] **Step 3: 实现** `p.split(/[\\/]/).filter(Boolean).pop() ?? p`
-- [ ] **Step 4: 跑通过** → PASS
-- [ ] **Step 5: LedgerSwitcher 基础版换用 `basenamePath`**（删除批次 A 的临时内联实现）
-- [ ] **Step 6: Commit** `feat(ui-c): basenamePath 工具 + LedgerSwitcher 复用`
+- [x] **Step 1: 失败测试**（`'C:\\a\\b'`→`'b'`、`'/x/y'`→`'y'`、`'name'`→`'name'`）
+- [x] **Step 2: 跑失败** → FAIL
+- [x] **Step 3: 实现** `p.split(/[\\/]/).filter(Boolean).pop() ?? p`
+- [x] **Step 4: 跑通过** → PASS
+- [x] **Step 5: LedgerSwitcher 基础版换用 `basenamePath`**（删除批次 A 的临时内联实现）
+- [x] **Step 6: Commit** `feat(ui-c): basenamePath 工具 + LedgerSwitcher 复用`
 
 ### Task 3: LedgerSwitcher 完整版
 
@@ -69,9 +69,9 @@ cd /f/raychaoo/BeanWise && git worktree add .worktrees/c-workspace -b ui/c-works
 - Consumes: `getWorkspaceRecents`（Task 1）、`basenamePath`（Task 2）、`useEntryFormStore`（批次 A 提供，**只读 `dirty`**，不写入——写入接线归批次 B）、`useLedgerStore`/`useSyncStore` 不动
 - Produces: `switchWorkspace(path: string): Promise<void>`（从 LedgerSwitcher 导出：dirty 为 true 时先 `Modal.confirm` 再 `openWorkspace` + `window.location.reload()`）；LedgerSwitcher 行为：当前账本（CheckOutlined + hover Tooltip 完整路径，disabled）→ 分隔线 → 最近账本（排除当前，逐项 `basenamePath`，hover Tooltip 完整路径）→ 分隔线 → `浏览其他目录…`（原 choose+open+reload 链路）→ 底部固定 `Menu.Item` 说明「每个目录独立账本与索引，切换后整页重载」（disabled）
 
-- [ ] **Step 1: Dropdown 交互**：`onClick` 分派——`key === current` 忽略；recents 项 → `switchWorkspace(path)`；`browse` → 原链路。`switchWorkspace`：`useEntryFormStore.getState().dirty` 为 true 时先 `Modal.confirm({ title: '切换账本', content: '录入表单有未提交内容，切换后将丢失。确定切换？', okText: '切换', okButtonProps:{danger:true} })` 再走 `openWorkspace(path)` + 成功 `window.location.reload()`；失败 `message.error(result.message)`
-- [ ] **Step 2: 验证**：typecheck + unit；手动 `npm run dev`（测试账本 `F:\BeanWiseData\test`）核对下拉与确认弹层
-- [ ] **Step 3: Commit** `feat(ui-c): 账本 Dropdown 切换（recents + dirty 确认 + 路径 tooltip）`
+- [x] **Step 1: Dropdown 交互**：`onClick` 分派——`key === current` 忽略；recents 项 → `switchWorkspace(path)`；`browse` → 原链路。`switchWorkspace`：`useEntryFormStore.getState().dirty` 为 true 时先 `Modal.confirm({ title: '切换账本', content: '录入表单有未提交内容，切换后将丢失。确定切换？', okText: '切换', okButtonProps:{danger:true} })` 再走 `openWorkspace(path)` + 成功 `window.location.reload()`；失败 `message.error(result.message)`
+- [x] **Step 2: 验证**：typecheck + unit；手动 `npm run dev`（测试账本 `F:\BeanWiseData\test`）核对下拉与确认弹层
+- [x] **Step 3: Commit** `feat(ui-c): 账本 Dropdown 切换（recents + dirty 确认 + 路径 tooltip）`
 
 ### Task 4: Ctrl+K 快捷切换弹层
 
@@ -82,12 +82,12 @@ cd /f/raychaoo/BeanWise && git worktree add .worktrees/c-workspace -b ui/c-works
 **Interfaces:**
 - Consumes: Task 3 的 `switchWorkspace`（LedgerSwitcher 导出，Modal 复用）
 
-- [ ] **Step 1: QuickSwitchModal** —— `Modal`（title「切换账本」+ `Input` autoFocus placeholder「输入目录名过滤」）+ recents 过滤列表（`basenamePath` 包含匹配，不区分大小写）+ 键盘 ↑↓ 选择 / Enter 确认；选中即调 `switchWorkspace`
-- [ ] **Step 2: 快捷键** —— LedgerSwitcher 内 `useEffect` 挂 `keydown`（`(e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k'` → setOpen(true)，`e.preventDefault()`）；组件卸载移除。LedgerSwitcher 常驻 Header，等价全局快捷键且零 App.tsx 改动
-- [ ] **Step 3: 验证**：typecheck + unit；`npm run test:e2e`（无新增 spec，回归全绿即可）
-- [ ] **Step 4: Commit** `feat(ui-c): Ctrl+K 账本快捷切换弹层`
+- [x] **Step 1: QuickSwitchModal** —— `Modal`（title「切换账本」+ `Input` autoFocus placeholder「输入目录名过滤」）+ recents 过滤列表（`basenamePath` 包含匹配，不区分大小写）+ 键盘 ↑↓ 选择 / Enter 确认；选中即调 `switchWorkspace`
+- [x] **Step 2: 快捷键** —— LedgerSwitcher 内 `useEffect` 挂 `keydown`（`(e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k'` → setOpen(true)，`e.preventDefault()`）；组件卸载移除。LedgerSwitcher 常驻 Header，等价全局快捷键且零 App.tsx 改动
+- [x] **Step 3: 验证**：typecheck + unit；`npm run test:e2e`（无新增 spec，回归全绿即可）
+- [x] **Step 4: Commit** `feat(ui-c): Ctrl+K 账本快捷切换弹层`
 
 ### Task 5: 批次收尾
 
-- [ ] **Step 1:** 全量 `npm run typecheck && npm run test:unit && npm run test:e2e` 全绿
-- [ ] **Step 2:** 按总计划 DoD 合并回 `ui-v4` 并移除 worktree
+- [x] **Step 1:** 全量 `npm run typecheck && npm run test:unit && npm run test:e2e` 全绿
+- [x] **Step 2:** 按总计划 DoD 合并回 `ui-v4` 并移除 worktree
