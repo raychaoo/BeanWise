@@ -1,0 +1,123 @@
+// 录入页样式（批次 B Task 3，方案模块 3）：双栏布局 + 借贷分录卡 + 平衡指示条。
+// 借贷色沿用 tokens.less：付方蓝=@bw-primary、收方橙=@bw-outflow（方案草案 @bw-blue/@bw-orange 的落地映射）。
+@import (reference) '../tokens.less';
+
+@bw-posting-bg: #f8fafc; // 分录行次级底色（卡片白上的浅灰蓝）
+@bw-text-secondary: #64748b; // 辅助文字（slate-500）
+
+// 桌面双栏 flex:3/2（≥1280 有效；最小窗口 1280，以下为防御性退化）
+.entry-two-col {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.entry-col-form {
+  flex: 3;
+  min-width: 0;
+}
+
+.entry-col-side {
+  flex: 2;
+  min-width: 0;
+}
+
+@media (max-width: 1279px) {
+  .entry-two-col {
+    flex-direction: column;
+  }
+
+  .entry-col-form,
+  .entry-col-side {
+    width: 100%;
+    flex: none;
+  }
+}
+
+// 凭证头 2 列栅格：日期/标志 + 交易对象/说明
+.entry-voucher-head {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 16px;
+}
+
+.entry-postings-head {
+  margin-top: 8px;
+}
+
+.entry-postings-tip {
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+// 分录行借贷卡：左边条 + 头部语义文案 + 账户/金额/货币一行
+.posting-row {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border-left: 3px solid transparent;
+  background: @bw-posting-bg;
+
+  &--debit {
+    border-left-color: @bw-primary;
+  }
+
+  &--credit {
+    border-left-color: @bw-outflow;
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    font-size: 12px;
+    color: @bw-text-secondary;
+  }
+
+  &__fields {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+
+    .ant-form-item {
+      margin-bottom: 0;
+    }
+  }
+
+  &__account {
+    flex: 5.5;
+    min-width: 0;
+  }
+
+  &__number {
+    flex: 3;
+    min-width: 0;
+  }
+
+  &__currency {
+    flex: 1.5;
+    min-width: 0;
+  }
+}
+
+// 平衡指示条两态：绿（@bw-inflow）已平衡 / 红（@bw-negative）差额与自动平衡预告
+.balance-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+
+  &--balanced {
+    color: @bw-inflow;
+    background: fade(@bw-inflow, 8%);
+  }
+
+  &--diff {
+    color: @bw-negative;
+    background: fade(@bw-negative, 8%);
+  }
+}

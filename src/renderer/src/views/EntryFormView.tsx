@@ -1,21 +1,26 @@
 /**
- * 录入视图（M4）：ProForm + Form.List 固定两行 postings + 自动平衡。
- * 金额一律十进制字符串（InputNumber stringMode 直取字符串，禁浮点）；
- * 自动平衡决策抽为纯函数 nextBalancingNumber（见文件底部，单测覆盖）。
+ * 录入视图（M4；批次 B 双栏重排）：左栏凭证卡（凭证头 2 列栅格 + 借贷分录卡 + 平衡指示条 + 提交区），
+ * 右栏「最近流水」占位卡（批次 D 接入总览联动）。
+ * ProForm + Form.List 固定两行 postings + 自动平衡。金额一律十进制字符串（InputNumber stringMode
+ * 直取字符串，禁浮点）；自动平衡决策抽为纯函数 nextBalancingNumber（见文件底部，单测覆盖）——
+ * 写路径（ProForm → add-entry、自动平衡、stringMode）逻辑零改动。
+ * 分录行展示拆至 entry/PostingRowCard（纯展示，name/rules 仍由本组件传入）。
  */
 import { SettingOutlined } from '@ant-design/icons'
 import { ProForm, ProFormDatePicker, ProFormRadio, ProFormText } from '@ant-design/pro-components'
-import { AutoComplete, Button, Form, InputNumber, message, Select, Typography } from 'antd'
+import { Button, Card, Empty, Form, message, Typography } from 'antd'
 import type { Rule } from 'antd/es/form'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import type { AddEntryParams } from '../../../shared/ipc'
 import { filterAccountOptions, isEntryAccountPairValid } from '../../../shared/account'
 import { computeBalancingNumber } from '../../../shared/decimal'
+import { useEntryFormStore } from '../stores/entry-form'
 import { useLedgerStore } from '../stores/ledger'
-import AiEntryPanel from './AiEntryPanel'
+import '../styles/views/entry.less'
 import AccountSettingsModal from './AccountSettingsModal'
-import ExcelImportPanel from './ExcelImportPanel'
+import BalanceHint from './entry/BalanceHint'
+import PostingRowCard from './entry/PostingRowCard'
 
 const DECIMAL_RE = /^-?\d+(\.\d+)?$/
 
@@ -57,6 +62,18 @@ export default function EntryFormView() {
     }
   }, [postings, form])
 
+  // Ctrl+Enter 提交凭证（方案交互清单 2）：挂全局 keydown，卸载移除
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'Enter') {
+        e.preventDefault()
+        form.submit()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [form])
+
   const currencyOptions = (status?.operatingCurrency ?? []).map((c) => ({ value: c }))
   const accountOptionsFor = (rowIndex: number) =>
     filterAccountOptions(accountOptions, postings?.[1 - rowIndex]?.account)
@@ -73,6 +90,11 @@ export default function EntryFormView() {
       return Promise.resolve()
     }
   })
+
+  const accountRules: Rule[] = [
+    { required: true, message: '请输入账户' },
+    { pattern: /^[A-Z]\S*:\S*$/, message: '账户须大写字母开头、含冒号、无空格' }
+  ]
 
   const handleFinish = async (values: EntryFormValues) => {
     const params: AddEntryParams = {
@@ -93,6 +115,7 @@ export default function EntryFormView() {
       if (result.ok) {
         message.success('已写入并校验通过')
         form.resetFields()
+        useEntryFormStore.getState().setDirty(false)
         await useLedgerStore.getState().refresh()
       } else {
         message.error(result.message ?? '写入失败')
@@ -104,108 +127,92 @@ export default function EntryFormView() {
     }
   }
 
-  /** 草稿 → 表单回填（写路径唯一：确认仍走本表单的「写入账本」提交） */
+  /** 草稿 → 表单回填（写路径唯一：确认仍走本表单的「写入账本」提交）；回填内容视为未保存草稿 */
   const handleFillForm = (draft: AddEntryParams) => {
     form.setFieldsValue(draftToFormValues(draft))
+    useEntryFormStore.getState().setDirty(true)
     message.success('已填入表单，请确认后提交')
   }
 
   return (
-    <>
-      <ExcelImportPanel onImported={() => void loadAccounts()} />
-      <AiEntryPanel onFillForm={handleFillForm} />
-      <ProForm<EntryFormValues>
-        form={form}
-        onFinish={handleFinish}
-        initialValues={{ date: dayjs(), flag: '*', postings: [{}, {}] }}
-        submitter={{
-          searchConfig: { submitText: '写入账本' },
-          submitButtonProps: { loading: submitting }
-        }}
-        style={{ maxWidth: 720 }}
-      >
-        <ProFormDatePicker name="date" label="日期" fieldProps={{ format: 'YYYY-MM-DD' }} />
-        <ProFormRadio.Group
-          name="flag"
-          label="标志"
-          options={[
-            { label: '* 已确认', value: '*' },
-            { label: '! 未确认', value: '!' }
-          ]}
-        />
-        <ProFormText name="payee" label="交易对象" fieldProps={{ maxLength: 200 }} />
-        <ProFormText name="narration" label="说明" fieldProps={{ maxLength: 200 }} />
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <Typography.Text strong>记账行</Typography.Text>
+    <div className="entry-two-col">
+      <Card
+        className="entry-col-form"
+        title="录入凭证"
+        extra={
           <Button size="small" icon={<SettingOutlined />} onClick={() => setAccountSettingsOpen(true)}>
             账户设置
           </Button>
-        </div>
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 12 }}>
-          两行分别记录交易涉及的两个账户：一行是资金减少/支出方，另一行是资金增加/收入方；两行金额合计必须为 0，第二行金额留空会自动补差。
-        </Typography.Paragraph>
+        }
+      >
+        <ProForm<EntryFormValues>
+          form={form}
+          onFinish={handleFinish}
+          onValuesChange={() => useEntryFormStore.getState().setDirty(true)}
+          initialValues={{ date: dayjs(), flag: '*', postings: [{}, {}] }}
+          submitter={{
+            searchConfig: { submitText: '写入账本' },
+            submitButtonProps: { loading: submitting }
+          }}
+        >
+          <div className="entry-voucher-head">
+            <ProFormDatePicker name="date" label="日期" fieldProps={{ format: 'YYYY-MM-DD' }} />
+            <ProFormRadio.Group
+              name="flag"
+              label="标志"
+              options={[
+                { label: '* 已确认', value: '*' },
+                { label: '! 未确认', value: '!' }
+              ]}
+            />
+            <ProFormText name="payee" label="交易对象" fieldProps={{ maxLength: 200 }} />
+            <ProFormText name="narration" label="说明" fieldProps={{ maxLength: 200 }} />
+          </div>
 
-        <Form.List
-          name="postings"
-          rules={[
-            {
-              validator: async (_rule, rows: PostingRow[] | undefined) => {
-                if (!rows || rows.length !== 2) throw new Error('记账行必须是两行')
-                const accounts = rows.map((r) => r?.account?.trim()).filter((v): v is string => !!v)
-                if (accounts.length === 2 && !isEntryAccountPairValid(accounts[0], accounts[1])) {
-                  throw new Error('两行不能同为收支账户，至少一边应为资产/负债/权益账户')
+          <div className="entry-postings-head">
+            <Typography.Text strong>记账行</Typography.Text>
+          </div>
+          <Typography.Paragraph type="secondary" className="entry-postings-tip">
+            两行分别记录交易涉及的两个账户：一行是资金减少/支出方，另一行是资金增加/收入方；两行金额合计必须为 0，第二行金额留空会自动补差。
+          </Typography.Paragraph>
+
+          <Form.List
+            name="postings"
+            rules={[
+              {
+                validator: async (_rule, rows: PostingRow[] | undefined) => {
+                  if (!rows || rows.length !== 2) throw new Error('记账行必须是两行')
+                  const accounts = rows.map((r) => r?.account?.trim()).filter((v): v is string => !!v)
+                  if (accounts.length === 2 && !isEntryAccountPairValid(accounts[0], accounts[1])) {
+                    throw new Error('两行不能同为收支账户，至少一边应为资产/负债/权益账户')
+                  }
                 }
               }
-            }
-          ]}
-        >
-          {(fields) => (
-            <>
-              {fields.map((field) => (
-                <div key={field.key} style={{ display: 'flex', gap: 8 }}>
-                  <Form.Item
-                    name={[field.name, 'account']}
-                    label="账户"
-                    style={{ flex: 3, marginBottom: 12 }}
-                    rules={[
-                      { required: true, message: '请输入账户' },
-                      { pattern: /^[A-Z]\S*:\S*$/, message: '账户须大写字母开头、含冒号、无空格' }
-                    ]}
-                  >
-                    <Select
-                      showSearch
-                      options={accountOptionsFor(field.name)}
-                      optionFilterProp="label"
-                      placeholder={field.name === 0 ? '选择资金减少/支出账户' : '选择资金增加/收入账户'}
-                    />
-                  </Form.Item>
-                  <Form.Item
-                    name={[field.name, 'number']}
-                    label="金额"
-                    style={{ flex: 2, marginBottom: 12 }}
-                    rules={[numberRule(field.name)]}
-                  >
-                    {/* stringMode 直取十进制字符串；不设 precision——antd 在 stringMode 下会重格式化
-                        数值（如 '0' → '0.0000'），破坏金额原样传递（校验以正则为准） */}
-                    <InputNumber stringMode placeholder="0.00" style={{ width: '100%' }} />
-                  </Form.Item>
-                  <Form.Item
-                    name={[field.name, 'currency']}
-                    label="货币"
-                    style={{ flex: 1, marginBottom: 12 }}
-                    rules={[{ required: true, message: '请输入货币' }]}
-                  >
-                    <AutoComplete options={currencyOptions} placeholder="如 CNY" />
-                  </Form.Item>
-                </div>
-              ))}
-            </>
-          )}
-        </Form.List>
-      </ProForm>
+            ]}
+          >
+            {(fields) => (
+              <>
+                {fields.map((field) => (
+                  <PostingRowCard
+                    key={field.key}
+                    index={field.name as 0 | 1}
+                    currencyOptions={currencyOptions}
+                    accountOptions={accountOptionsFor(field.name)}
+                    accountRules={accountRules}
+                    numberRules={[numberRule(field.name)]}
+                  />
+                ))}
+              </>
+            )}
+          </Form.List>
+          <BalanceHint rows={postings} />
+        </ProForm>
+      </Card>
+      <Card className="entry-col-side" title="最近流水">
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="最近流水（批次 D 接入总览联动）" />
+      </Card>
       <AccountSettingsModal open={accountSettingsOpen} onClose={() => setAccountSettingsOpen(false)} />
-    </>
+    </div>
   )
 }
 
@@ -252,4 +259,3 @@ export function draftToFormValues(draft: AddEntryParams): DraftFormValues {
     postings: draft.postings.map((p) => ({ account: p.account, number: p.number, currency: p.currency }))
   }
 }
-
