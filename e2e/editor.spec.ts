@@ -1,8 +1,29 @@
 import { _electron as electron, expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { cleanupFixture, createFixtureCopy } from './fixtures/setup'
 
 const launchArgs = process.env['CI'] ? ['.', '--no-sandbox'] : ['.']
+
+/** E2E 不复用全局工作目录：显式激活临时目录后重载（与 ledger-index 同模式，批次 A 补齐 hermetic） */
+async function activateWorkspace(win: import('@playwright/test').Page, ledgerPath: string): Promise<void> {
+  await win.evaluate(async (path) => {
+    const opened = await window.beanwise.openWorkspace(path)
+    if (!opened.ok) throw new Error(opened.message ?? '打开工作目录失败')
+  }, dirname(ledgerPath))
+  await win.reload()
+}
+
+/**
+ * 账户字段下拉点选（批次 A 实测确立，同 ledger-index.pickAccount）：antd Select 的 fill()
+ * 只写搜索文本、失焦即丢弃、不落表单值（基线 ui-v4 同样如此）；键盘选择避开视口边缘下拉裁剪。
+ */
+async function pickAccount(win: import('@playwright/test').Page, row: number, account: string): Promise<void> {
+  const trigger = win.getByLabel('账户').nth(row)
+  await trigger.click()
+  await trigger.fill(account)
+  await win.keyboard.press('Enter')
+}
 
 test('M5 绿灯：打开账本 → beancount 高亮 → 编辑保存 → 校验提示 → 索引联动', async () => {
   const ledgerPath = createFixtureCopy()
@@ -12,6 +33,7 @@ test('M5 绿灯：打开账本 → beancount 高亮 → 编辑保存 → 校验�
       env: { ...process.env, BEANWISE_LEDGER_PATH: ledgerPath }
     })
     const win = await app.firstWindow()
+    await activateWorkspace(win, ledgerPath)
     await win.getByRole('menuitem', { name: '编辑器' }).click()
 
     // 1. 内容加载 + 高亮（tokenized span：class 形如 mtk1，用属性包含匹配）
@@ -53,16 +75,17 @@ test('M5 冲突：外部修改 → 保存触发冲突面板 → 重新加载回�
     const win = await app.firstWindow()
 
     // 1. 编辑器先加载文件（基线指纹 F1）
+    await activateWorkspace(win, ledgerPath)
     await win.getByRole('menuitem', { name: '编辑器' }).click()
     await expect(win.locator('.editor-main .view-lines')).toContainText('Breakfast')
 
     // 2. 外部修改：录入视图加一笔（文件 → F2，编辑器基线仍为 F1）
     await win.getByRole('menuitem', { name: '录入' }).click()
     await win.getByLabel('交易对象').fill('外部修改')
-    await win.getByLabel('账户').nth(0).fill('Expenses:Food')
+    await pickAccount(win, 0, 'Expenses:Food')
     await win.getByLabel('金额').nth(0).fill('25.50')
     await win.getByLabel('货币').nth(0).fill('CNY')
-    await win.getByLabel('账户').nth(1).fill('Assets:Bank:CNB')
+    await pickAccount(win, 1, 'Assets:Bank:CNB')
     await win.getByLabel('货币').nth(1).fill('CNY')
     await win.getByRole('button', { name: '写入账本' }).click()
     await expect(win.locator('.ant-message')).toContainText('已写入并校验通过')
@@ -94,6 +117,7 @@ test('M5 失败：保存校验失败 → 错误提示 + 文件字节不变', asy
       env: { ...process.env, BEANWISE_LEDGER_PATH: ledgerPath }
     })
     const win = await app.firstWindow()
+    await activateWorkspace(win, ledgerPath)
     await win.getByRole('menuitem', { name: '编辑器' }).click()
     await expect(win.locator('.editor-main .view-lines')).toContainText('Breakfast')
 

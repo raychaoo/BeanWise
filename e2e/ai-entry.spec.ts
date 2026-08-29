@@ -19,11 +19,21 @@
  */
 import { _electron as electron, expect, test, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { chatCompletion, startAiServer, type AiServer } from './fixtures/ai'
 import { cleanupFixture, createFixtureCopy } from './fixtures/setup'
 
 // GitHub Actions 的 ubuntu runner 无 user namespaces，需关 Chromium 沙箱；本机 Windows 不用
 const launchArgs = process.env['CI'] ? ['.', '--no-sandbox'] : ['.']
+
+/** E2E 不复用全局工作目录：显式激活临时目录后重载（与 ledger-index 同模式，批次 A 补齐 hermetic） */
+async function activateWorkspace(win: Page, ledgerPath: string): Promise<void> {
+  await win.evaluate(async (path) => {
+    const opened = await window.beanwise.openWorkspace(path)
+    if (!opened.ok) throw new Error(opened.message ?? '打开工作目录失败')
+  }, dirname(ledgerPath))
+  await win.reload()
+}
 
 /** 清掉 electron-store 残留 AI 配置（跨测试持久化），重载回未配置态 */
 async function resetAi(win: Page): Promise<void> {
@@ -55,7 +65,10 @@ test('M7 绿灯：自然语言 → 草稿 → 填表确认 → 落盘全链路',
       env: { ...process.env, BEANWISE_LEDGER_PATH: ledgerPath, BEANWISE_AI_BASE_URL: ai.url }
     })
     const win = await app.firstWindow()
+    await activateWorkspace(win, ledgerPath)
     await resetAi(win)
+    // 批次 A 路由化：默认路由为总览，AI 录入面板位于「录入」页
+    await win.getByRole('menuitem', { name: '录入' }).click()
 
     // 1. 未配置 → 整个 AI 录入入口隐藏
     await expect(win.getByRole('button', { name: /AI 辅助录入/ })).not.toBeVisible()
@@ -111,7 +124,10 @@ test('M7 拒绝：mock 非法输出 → 校验拒绝提示 + 文件不变', asyn
       env: { ...process.env, BEANWISE_LEDGER_PATH: ledgerPath, BEANWISE_AI_BASE_URL: ai.url }
     })
     const win = await app.firstWindow()
+    await activateWorkspace(win, ledgerPath)
     await resetAi(win)
+    // 批次 A 路由化：先进「录入」页（AI 面板所在路由）
+    await win.getByRole('menuitem', { name: '录入' }).click()
     await configureAi(win)
     await openAiPanel(win)
 
