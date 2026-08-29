@@ -2,6 +2,7 @@ import { CheckOutlined, FolderOpenOutlined } from '@ant-design/icons'
 import { Button, Dropdown, message } from 'antd'
 import type { MenuProps } from 'antd'
 import { useState } from 'react'
+import { basenamePath } from '../utils/path'
 
 /**
  * 浏览并打开其他工作目录：choose → open → 整页 reload（CLAUDE.md 约束 9，不新增软切换路径）。
@@ -33,8 +34,7 @@ export async function browseAndOpenWorkspace(): Promise<void> {
  */
 export default function LedgerSwitcher({ current }: { current: string }) {
   const [switching, setSwitching] = useState(false)
-  // 临时内联 basename（批次 C 抽 utils/path.ts）
-  const basename = current.split(/[\\/]/).pop() ?? current
+  const basename = basenamePath(current)
 
   const items: MenuProps['items'] = [
     { key: 'current', icon: <CheckOutlined />, label: basename, disabled: true },
