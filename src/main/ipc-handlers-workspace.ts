@@ -1,5 +1,5 @@
 /**
- * 工作目录 IPC 四通道：get-status / choose / open / recents。
+ * 工作目录 IPC 通道：get-status / choose / open / recents。
  * open 负责校验目录 + 初始化本地 git（已有 .git 则跳过）+ 创建/接管账本文件，
  * 然后通过注入的 onWorkspaceChanged 回调通知主入口重建运行时（db / GitSync / 索引）。
  */
@@ -29,6 +29,7 @@ function toStatus(store: WorkspaceStore): WorkspaceStatus {
 
 export function registerWorkspaceHandlers(ipc: IpcRegistrar, deps: WorkspaceDeps): void {
   ipc.handle('workspace:get-status', (): WorkspaceStatus => toStatus(deps.store))
+  ipc.handle('workspace:recents', (): string[] => deps.store.loadRecents())
 
   ipc.handle('workspace:choose', async (): Promise<ChooseFolderResult> => {
     try {
