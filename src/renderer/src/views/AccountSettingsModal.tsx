@@ -1,3 +1,7 @@
+/**
+ * @deprecated 批次 D 起账户管理迁至独立页面 /accounts（views/AccountsPage.tsx，逻辑原样搬移），
+ * 录入页「账户设置」按钮已改为路由跳转；本文件暂无引用，留待下个清理批次删除。
+ */
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import { Button, Input, message, Modal, Radio, Space, Table, Tooltip, Typography } from 'antd'
 import { useEffect, useState } from 'react'

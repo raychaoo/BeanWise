@@ -1,0 +1,32 @@
+// 总览页（批次 D Task 3）：指标卡行 + 净资产趋势卡。
+// 骨架高度对齐 Statistic / 图表（280px），数据就绪无布局跳变（方案交互清单 5）。
+.dashboard-metrics {
+  margin-bottom: 16px;
+}
+
+// Skeleton 对齐 Statistic：标题(~22px) + 值(38px) ≈ 60px
+.dash-metric-skeleton {
+  .ant-skeleton-paragraph {
+    margin: 22px 0 0;
+
+    > li {
+      height: 38px;
+    }
+  }
+}
+
+.dashboard-trend-toolbar {
+  margin-bottom: 12px;
+}
+
+.dashboard-trend-skeleton {
+  height: 280px;
+
+  .ant-skeleton-paragraph {
+    margin-top: 24px;
+  }
+}
+
+.dashboard-other-currencies {
+  margin-top: 8px;
+}
