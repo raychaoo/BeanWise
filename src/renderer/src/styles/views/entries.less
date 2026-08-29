@@ -1,0 +1,36 @@
+// 流水页样式（批次 B Task 5）：页头时间筛选工具条。
+@import (reference) '../tokens.less';
+
+@bw-text-secondary: #64748b; // 辅助文字（slate-500，与 entry.less 同值）
+
+.entries-view {
+  .entries-error {
+    margin-bottom: 16px;
+  }
+}
+
+.entries-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.entries-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.entries-filter-hint {
+  color: @bw-text-secondary;
+  cursor: help;
+  font-size: 14px;
+}
+
+.entries-status-card {
+  margin-bottom: 16px;
+}
