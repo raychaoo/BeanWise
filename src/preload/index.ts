@@ -9,6 +9,7 @@ const api: BeanWiseApi = {
   getWorkspaceStatus: () => ipcRenderer.invoke('workspace:get-status'),
   chooseWorkspaceFolder: () => ipcRenderer.invoke('workspace:choose'),
   openWorkspace: (path: string) => ipcRenderer.invoke('workspace:open', { path }),
+  getWorkspaceRecents: () => ipcRenderer.invoke('workspace:recents'),
   refreshLedgerIndex: () => ipcRenderer.invoke('ledger:refresh-index'),
   getLedgerStatus: () => ipcRenderer.invoke('ledger:status'),
   listLedgerEntries: (params: ListEntriesParams) => ipcRenderer.invoke('ledger:list-entries', params),

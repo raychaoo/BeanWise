@@ -55,6 +55,8 @@ export interface BeanWiseApi {
   chooseWorkspaceFolder(): Promise<ChooseFolderResult>
   /** 打开工作目录：校验 + git init + 创建账本 + 持久化 */
   openWorkspace(path: string): Promise<{ ok: boolean; message?: string; status?: WorkspaceStatus }>
+  /** 最近打开的工作目录（绝对路径，最新在前，上限 10——由 WorkspaceStore.loadRecents() 保证） */
+  getWorkspaceRecents(): Promise<string[]>
   /** 触发索引重建（主进程持有账本路径，渲染进程不传路径——防目录穿越） */
   refreshLedgerIndex(): Promise<RefreshResult>
   getLedgerStatus(): Promise<LedgerStatus | null>
