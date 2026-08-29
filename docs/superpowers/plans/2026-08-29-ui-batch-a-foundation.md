@@ -30,13 +30,13 @@
 **Interfaces:**
 - Produces: `tokens.less` 中变量 `@bw-primary: #1d39c4; @bw-inflow: #08979c; @bw-outflow: #d46b08; @bw-negative: #cf1322; @bw-bg-layout: #f5f7fa; @bw-text-base: #0f172a;` 及同名 `--bw-*` CSS 变量；`base.less` 提供 `.num` 类；`layout.less` 提供 `.page-scroll` / `.page-enter`
 
-- [ ] **Step 1: 安装依赖**（worktree 创建时已执行 `npm install --ignore-scripts`，基线 typecheck + 329 单测已通过，仅补装两包）
+- [x] **Step 1: 安装依赖**（worktree 创建时已执行 `npm install --ignore-scripts`，基线 typecheck + 329 单测已通过，仅补装两包）
 
 ```bash
 npm i react-router-dom && npm i -D less
 ```
 
-- [ ] **Step 2: 写 tokens.less**（文件头注释注明与 `theme/tokens.ts` 同步）
+- [x] **Step 2: 写 tokens.less**（文件头注释注明与 `theme/tokens.ts` 同步）
 
 ```less
 // 与 src/renderer/src/theme/tokens.ts 的 BW_COLORS 保持同步（修改任一侧必须同步另一侧）
@@ -57,15 +57,15 @@ npm i react-router-dom && npm i -D less
 }
 ```
 
-- [ ] **Step 3: 写 base.less**（沿用方案 2.3 节内容：字体栈、`.num`、`.num-negative`）
+- [x] **Step 3: 写 base.less**（沿用方案 2.3 节内容：字体栈、`.num`、`.num-negative`）
 
-- [ ] **Step 4: 写 layout.less**（沿用方案第三节代码：`.page-scroll` 高度 `calc(100vh - 56px)` + overflow-y、`.page-enter` 180ms 动画、`prefers-reduced-motion` 覆写）
+- [x] **Step 4: 写 layout.less**（沿用方案第三节代码：`.page-scroll` 高度 `calc(100vh - 56px)` + overflow-y、`.page-enter` 180ms 动画、`prefers-reduced-motion` 覆写）
 
-- [ ] **Step 5: main.tsx 引入**（在 `import './styles.css'` 处替换为 `import './styles/tokens.less'; import './styles/base.less'; import './styles/layout.less';`，删除 `styles.css`）
+- [x] **Step 5: main.tsx 引入**（在 `import './styles.css'` 处替换为 `import './styles/tokens.less'; import './styles/base.less'; import './styles/layout.less';`，删除 `styles.css`）
 
-- [ ] **Step 6: 验证构建**：`npm run typecheck` 通过；`npm run build` 通过（electron-vite 会用内置 less 管线编译，验证 less 可用）
+- [x] **Step 6: 验证构建**：`npm run typecheck` 通过；`npm run build` 通过（electron-vite 会用内置 less 管线编译，验证 less 可用）
 
-- [ ] **Step 7: Commit** `feat(ui-a): less 样式脚手架 + react-router-dom/less 依赖`
+- [x] **Step 7: Commit** `feat(ui-a): less 样式脚手架 + react-router-dom/less 依赖`
 
 ### Task 2: antd Theme Token 单源
 
@@ -77,7 +77,7 @@ npm i react-router-dom && npm i -D less
 **Interfaces:**
 - Produces: `BW_COLORS`（值见总计划契约）、`THEME_TOKENS: ThemeConfig`（含 `token: { colorPrimary, colorSuccess, colorWarning, colorError, colorInfo, colorTextBase, colorBgLayout, borderRadius: 6, fontSize: 14, wireframe: false }`）
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -93,11 +93,11 @@ describe('THEME_TOKENS', () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败** `npx vitest run src/renderer/src/theme/tokens.test.ts` → FAIL（模块不存在）
-- [ ] **Step 3: 实现 tokens.ts**（按 Interfaces 值实现；`import type { ThemeConfig } from 'antd'`）
-- [ ] **Step 4: 跑测试通过** 同上命令 → PASS
-- [ ] **Step 5: main.tsx 挂主题**：`<ConfigProvider locale={zhCN} theme={THEME_TOKENS}>`
-- [ ] **Step 6: Commit** `feat(ui-a): antd design token 单源 + ConfigProvider 接入`
+- [x] **Step 2: 跑测试确认失败** `npx vitest run src/renderer/src/theme/tokens.test.ts` → FAIL（模块不存在）
+- [x] **Step 3: 实现 tokens.ts**（按 Interfaces 值实现；`import type { ThemeConfig } from 'antd'`）
+- [x] **Step 4: 跑测试通过** 同上命令 → PASS
+- [x] **Step 5: main.tsx 挂主题**：`<ConfigProvider locale={zhCN} theme={THEME_TOKENS}>`
+- [x] **Step 6: Commit** `feat(ui-a): antd design token 单源 + ConfigProvider 接入`
 
 ### Task 3: App.tsx 重写（HashRouter + ProLayout + 滚动/动画/兜底）
 
@@ -112,18 +112,18 @@ describe('THEME_TOKENS', () => {
 - Consumes: Task 1/2 的 less 类与 THEME_TOKENS；既有 `WorkspaceSwitcher` 的打开目录链路（`chooseWorkspaceFolder` + `openWorkspace` + `window.location.reload()`，迁移进 LedgerSwitcher）
 - Produces: 路由表（总计划契约，含 `/reconcile` `/accounts`）；四个占位页文件（D 批重写目标）；`LedgerSwitcher`（批次 C 增强）；菜单标签 `录入/明细/报表/编辑器/合并(条件)/总览/对账/账户/设置`
 
-- [ ] **Step 1: LedgerSwitcher 基础版** —— Button(type text, size large) 显示当前目录 `basename`（临时内联 `path.split(/[\\/]/).pop()`，批次 C 抽 util）+ Dropdown（当前项 disabled + `浏览其他目录…` 走原 WorkspaceSwitcher 链路）；hover Tooltip 显示完整路径
-- [ ] **Step 2: HeaderStatusArea** —— 按方案模块 1 代码骨架：同步状态 `Popover`（内含分支 Tag / 上次同步 / 拉取按钮 / 冲突入口 / 同步设置 / 索引状态 Tag + 重建索引，内容取自现 `SyncStatusBar` + `App.tsx:144-161` 的元素，**SyncStatusBar.tsx 保留不删**，Popover 内容复用其元素）、更新按钮加 `Badge dot`（`useUpdateStore` 有可用更新时）、AI 徽标（configured 与否，点击开 `AiSettingsModal`）
-- [ ] **Step 3: 四个占位页** —— 统一模式：`Result icon title subTitle="批次 D 落地"`（`DashboardPage` title=总览 DashboardOutlined；`ReconcilePage` title=对账；`AccountsPage` title=账户管理；`SettingsPage` 额外留五个空 Card 分区骨架：账本管理/同步/AI/索引/关于）。**文件名必须与路由导入一致**——D 批将原样重写这些文件，App.tsx 不再改动
-- [ ] **Step 4: 重写 App.tsx** —— 按方案第三节 ≤30 行骨架落地，要点：
+- [x] **Step 1: LedgerSwitcher 基础版** —— Button(type text, size large) 显示当前目录 `basename`（临时内联 `path.split(/[\\/]/).pop()`，批次 C 抽 util）+ Dropdown（当前项 disabled + `浏览其他目录…` 走原 WorkspaceSwitcher 链路）；hover Tooltip 显示完整路径
+- [x] **Step 2: HeaderStatusArea** —— 按方案模块 1 代码骨架：同步状态 `Popover`（内含分支 Tag / 上次同步 / 拉取按钮 / 冲突入口 / 同步设置 / 索引状态 Tag + 重建索引，内容取自现 `SyncStatusBar` + `App.tsx:144-161` 的元素，**SyncStatusBar.tsx 保留不删**，Popover 内容复用其元素）、更新按钮加 `Badge dot`（`useUpdateStore` 有可用更新时）、AI 徽标（configured 与否，点击开 `AiSettingsModal`）
+- [x] **Step 3: 四个占位页** —— 统一模式：`Result icon title subTitle="批次 D 落地"`（`DashboardPage` title=总览 DashboardOutlined；`ReconcilePage` title=对账；`AccountsPage` title=账户管理；`SettingsPage` 额外留五个空 Card 分区骨架：账本管理/同步/AI/索引/关于）。**文件名必须与路由导入一致**——D 批将原样重写这些文件，App.tsx 不再改动
+- [x] **Step 4: 重写 App.tsx** —— 按方案第三节 ≤30 行骨架落地，要点：
   - `HashRouter` + `Routes`（`/`=DashboardPage(占位)，`/entry`=EntryFormView，`/entries`=EntriesView，`/reconcile`=ReconcilePage(占位)，`/accounts`=AccountsPage(占位)，`/reports`=ReportsView，`/editor`=EditorView，`/merge`=ConflictView，`/settings`=SettingsPage(占位)，`*`→`<Navigate to="/" replace />`）
   - ProLayout：`route={{ routes: MENU }}`（`/` 总览 DashboardOutlined、`/entry` 录入 FormOutlined、`/entries` 明细 UnorderedListOutlined、`/reconcile` 对账 AuditOutlined、`/accounts` 账户 AppstoreOutlined、`/reports` 报表 BarChartOutlined、`/editor` 编辑器 FileTextOutlined、`/merge` 合并 CloudOutlined 仅 `conflict` 时），`menuItemRender` 用 `Link`，`avatarProps` → 设置入口，`headerContentRender` → `<LedgerSwitcher />`，右侧状态区由 `HeaderStatusArea` 通过 `headerRender`/页面级 Layout 组合（若 ProLayout 插槽不顺，可 ProLayout 外层不再套 Header，状态区放 `headerContentRender` 右侧 flex）
   - 保留：workspace 加载门控逻辑（`ready` 前 `Content` 区域渲染 `Skeleton` 而非 `null`）、`workspaceError` → `<Result status="error" extra={[重试/更换目录]}>`、`conflict` 条件菜单项、各 Modal（Sync/Ai/Update）
   - 删除：`display:none` 挂载、`calc(100vh - 112px)`、Sider 磁盘路径展示、重复 appName 标题
   - 滚动复位：`contentRef` + `useEffect(..., [location.pathname])`
-- [ ] **Step 5: 更新 e2e/smoke.spec.ts** —— 默认路由改为总览：`await expect(win.getByText('总览')).toBeVisible()`；再 `win.getByRole('menuitem', { name: '录入' }).click()` 后断言 `写入账本` 按钮可见（保住 preload 链路断言）
-- [ ] **Step 6: 验证**：`npm run typecheck`；`npm run test:unit`；`npm run test:e2e`（smoke/ledger-index/reports/editor/sync/ai-entry/update 全绿；ledger-index 的 `menuitem '明细'` 点击依赖平铺菜单 —— 已保持）
-- [ ] **Step 7: Commit** `feat(ui-a): HashRouter + ProLayout 应用壳重写（内容区独立滚动 + 路由动画 + 失败兜底）`
+- [x] **Step 5: 更新 e2e/smoke.spec.ts** —— 默认路由改为总览：`await expect(win.getByText('总览')).toBeVisible()`；再 `win.getByRole('menuitem', { name: '录入' }).click()` 后断言 `写入账本` 按钮可见（保住 preload 链路断言）
+- [x] **Step 6: 验证**：`npm run typecheck`；`npm run test:unit`；`npm run test:e2e`（smoke/ledger-index/reports/editor/sync/ai-entry/update 全绿；ledger-index 的 `menuitem '明细'` 点击依赖平铺菜单 —— 已保持）
+- [x] **Step 7: Commit** `feat(ui-a): HashRouter + ProLayout 应用壳重写（内容区独立滚动 + 路由动画 + 失败兜底）`
 
 ### Task 4: 录入表单 dirty 微 store（B 写 / C 读的契约）
 
@@ -134,23 +134,23 @@ describe('THEME_TOKENS', () => {
 **Interfaces:**
 - Produces: `useEntryFormStore`（zustand，`{ dirty: boolean; setDirty(v: boolean): void }`）——批次 B 在 EntryFormView 的 `onValuesChange`/提交成功处调用 `setDirty`，批次 C 的切换确认只读
 
-- [ ] **Step 1: 失败测试**（初始 dirty=false；setDirty(true) → true；再 setDirty(false) → false）
-- [ ] **Step 2: 跑失败** `npx vitest run src/renderer/src/stores/entry-form.test.ts` → FAIL
-- [ ] **Step 3: 实现**（create + set，≤10 行）
-- [ ] **Step 4: 跑通过** → PASS
-- [ ] **Step 5: Commit** `feat(ui-a): 录入表单 dirty 微 store（B/C 批次契约）`
+- [x] **Step 1: 失败测试**（初始 dirty=false；setDirty(true) → true；再 setDirty(false) → false）
+- [x] **Step 2: 跑失败** `npx vitest run src/renderer/src/stores/entry-form.test.ts` → FAIL
+- [x] **Step 3: 实现**（create + set，≤10 行）
+- [x] **Step 4: 跑通过** → PASS
+- [x] **Step 5: Commit** `feat(ui-a): 录入表单 dirty 微 store（B/C 批次契约）`
 
 ### Task 5: 窗口默认尺寸
 
 **Files:**
 - Modify: `src/main/index.ts:29-33`
 
-- [ ] **Step 1:** `{ width: 1440, height: 900, minWidth: 1280, minHeight: 800, useContentSize: true }`
-- [ ] **Step 2: 验证**：`npm run test:e2e`（smoke 启动断言仍过）
-- [ ] **Step 3: Commit** `feat(ui-a): 窗口默认 1440×900，最小 1280×800`
+- [x] **Step 1:** `{ width: 1440, height: 900, minWidth: 1280, minHeight: 800, useContentSize: true }`
+- [x] **Step 2: 验证**：`npm run test:e2e`（smoke 启动断言仍过）
+- [x] **Step 3: Commit** `feat(ui-a): 窗口默认 1440×900，最小 1280×800`
 
 ### Task 6: 批次收尾
 
-- [ ] **Step 1:** 全量 `npm run typecheck && npm run test:unit && npm run test:e2e` 全绿
-- [ ] **Step 2:** 勾选本文件 checkbox，`git add -A && git commit`（如有遗漏）
-- [ ] **Step 3:** 按总计划 DoD 合并回 `ui-v4` 并移除 worktree
+- [x] **Step 1:** 全量 `npm run typecheck && npm run test:unit && npm run test:e2e` 全绿
+- [x] **Step 2:** 勾选本文件 checkbox，`git add -A && git commit`（如有遗漏）
+- [x] **Step 3:** 按总计划 DoD 合并回 `ui-v4` 并移除 worktree
