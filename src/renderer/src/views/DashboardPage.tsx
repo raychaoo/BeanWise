@@ -173,7 +173,11 @@ export default function DashboardPage() {
             height={280}
             style={{
               lineWidth: 2,
-              lineDash: (d: { series?: string }) => (d.series === '去年同期' ? [4, 4] : [0, 0])
+              // G2 line 的 style 回调入参存在分组/单行两种形态：兼容取 series 字段
+              lineDash: (d: unknown) => {
+                const row = Array.isArray(d) ? (d[0] as { series?: string } | undefined) : (d as { series?: string } | undefined)
+                return row?.series === '去年同期' ? [4, 4] : [0, 0]
+              }
             }}
           />
         )}
