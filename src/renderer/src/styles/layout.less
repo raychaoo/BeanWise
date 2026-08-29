@@ -1,0 +1,108 @@
+// 布局层（方案第三节）：主内容区唯一滚动容器 + 纯 CSS 路由切换动画（尊重 prefers-reduced-motion）。
+// M5/M6 编辑器与合并视图的布局样式自已删除的 styles.css 迁入，类名不变。
+
+// 主内容区唯一滚动容器：高度 = 视口 - Header(56px)，Header/Sider 不随滚动
+.page-scroll {
+  box-sizing: border-box;
+  height: calc(100vh - 56px);
+  overflow-y: auto;
+  padding: 16px 24px;
+}
+
+// 路由切换动画：以 location.pathname 为 key 重挂内容容器触发；仅内容区参与
+.page-enter {
+  height: 100%; // 编辑器/合并视图需要确定高度（Monaco 自滚动），普通页面内容超出时仍由 .page-scroll 滚动
+  animation: bw-page-in 180ms ease-out;
+}
+
+@keyframes bw-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter {
+    animation: none;
+  }
+}
+
+// ---- M4：通用（自 styles.css 迁入）----
+.error-text {
+  color: #cf1322;
+}
+
+// ---- M5：编辑器视图布局 ----
+// position: relative 为 .editor-empty 的 absolute 提供包含块——否则其以初始包含块
+// （视口）为参照，missing 空态会覆盖全窗口并拦截 Sider/Header 点击（Fix round 1）
+.editor-view {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.editor-toolbar {
+  padding-bottom: 8px;
+}
+
+.editor-main {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid #f0f0f0;
+}
+
+.editor-conflict {
+  margin-bottom: 8px;
+}
+
+.editor-diff {
+  height: 320px;
+  border: 1px solid #f0f0f0;
+}
+
+.editor-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+// ---- M6：Header 同步状态区（antd Tag 间留 8px 间距）----
+.sync-status-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+// ---- M6：三路合并冲突视图（上双 Diff + 下 merged 编辑）----
+.conflict-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 8px;
+}
+
+.conflict-buttons {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.conflict-diff {
+  height: 40%;
+  min-height: 240px;
+  border: 1px solid #f0f0f0;
+}
+
+.conflict-merged {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid #f0f0f0;
+}

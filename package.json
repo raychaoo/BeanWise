@@ -36,6 +36,7 @@
     "pdfjs-dist": "^6.2.108",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.3",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
@@ -50,6 +51,7 @@
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^6.0.0-beta.1",
+    "less": "^4.9.0",
     "typescript": "^7.0.2",
     "vite": "^8.2.1",
     "vitest": "^4.1.10"

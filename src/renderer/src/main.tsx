@@ -9,7 +9,9 @@ import { ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import dayjs from 'dayjs'
 import App from './App'
-import './styles.css'
+import './styles/tokens.less'
+import './styles/base.less'
+import './styles/layout.less'
 
 dayjs.locale('zh-cn')
 
