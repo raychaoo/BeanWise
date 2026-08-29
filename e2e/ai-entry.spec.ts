@@ -41,8 +41,9 @@ async function resetAi(win: Page): Promise<void> {
   await win.reload()
 }
 
-/** 展开「AI 辅助录入」折叠面板（antd 默认折叠，折叠态内容不渲染） */
+/** 批次 B：AI 面板移入 Drawer——先点页头「AI 录入」开抽屉，再展开面板自身折叠头 */
 async function openAiPanel(win: Page): Promise<void> {
+  await win.getByRole('button', { name: /AI 录入/ }).click()
   await win.getByRole('button', { name: /AI 辅助录入/ }).click()
 }
 

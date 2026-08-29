@@ -1,16 +1,73 @@
 /**
- * 明细视图（M4）：索引状态卡 + 条目分页表。M3 只读验收面板由此取代。
+ * 明细视图（M4；批次 B 瘦身 + 时间筛选）：页头 = 时间快捷筛选（Segmented + RangePicker，前端过滤
+ * 已加载分页数据，Tooltip 说明能力边界）+「重建索引」（e2e/ledger-index.spec.ts 依赖页头按钮）。
+ * 日期列默认倒序。索引状态卡与「清空账本」本批原样保留（迁移至设置页归批次 D 收口）。
  */
-import { DeleteOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Descriptions, message, Modal, Space, Table, Tag, Tooltip } from 'antd'
+import { DeleteOutlined, QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
+import {
+  Alert,
+  Button,
+  Card,
+  DatePicker,
+  Descriptions,
+  message,
+  Modal,
+  Segmented,
+  Space,
+  Table,
+  Tag,
+  Tooltip
+} from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useState } from 'react'
+import dayjs, { type Dayjs } from 'dayjs'
+import { useMemo, useState } from 'react'
 import type { LedgerEntryRow } from '../../../shared/ipc'
 import { useLedgerStore } from '../stores/ledger'
+import { formatAmount } from '../utils/format'
+import '../styles/views/entries.less'
 
 const PAGE_SIZE = 20
 
 const STATUS_COLOR: Record<string, string> = { ok: 'success', error: 'error', missing: 'default' }
+
+type QuickKey = 'today' | 'week' | '7d' | 'month' | 'all'
+
+const QUICK_OPTIONS: Array<{ label: string; value: QuickKey }> = [
+  { label: '今日', value: 'today' },
+  { label: '本周', value: 'week' },
+  { label: '近7天', value: '7d' },
+  { label: '本月', value: 'month' },
+  { label: '全部', value: 'all' }
+]
+
+/** 快捷段 → [起, 止]（含端点，按日粒度）；'all' → null 不过滤 */
+function quickRange(key: QuickKey): [Dayjs, Dayjs] | null {
+  const now = dayjs()
+  switch (key) {
+    case 'today':
+      return [now.startOf('day'), now.endOf('day')]
+    case 'week':
+      return [now.startOf('week'), now.endOf('week')]
+    case '7d':
+      return [now.subtract(6, 'day').startOf('day'), now.endOf('day')]
+    case 'month':
+      return [now.startOf('month'), now.endOf('month')]
+    case 'all':
+      return null
+  }
+}
+
+/** 日期（YYYY-MM-DD）是否落在 [起, 止] 内（按日粒度，仅用 dayjs 核心方法，零插件依赖） */
+function dateInRange(date: string, range: [Dayjs, Dayjs] | null): boolean {
+  if (!range) return true
+  const d = dayjs(date)
+  return !d.isBefore(range[0], 'day') && !d.isAfter(range[1], 'day')
+}
+
+/** 数值展示（条目数/错误数）：走 formatAmount 统一千分位，空值 '—' */
+function formatCount(n: number | undefined): string {
+  return formatAmount(n === undefined ? null : String(n))
+}
 
 export default function EntriesView() {
   const status = useLedgerStore((s) => s.status)
@@ -24,11 +81,42 @@ export default function EntriesView() {
   const accountOptions = useLedgerStore((s) => s.accountOptions)
   const [page, setPage] = useState(1)
   const [clearing, setClearing] = useState(false)
+  const [quick, setQuick] = useState<QuickKey>('all')
+  const [custom, setCustom] = useState<[Dayjs, Dayjs] | null>(null)
+
+  const activeRange = custom ?? quickRange(quick)
+  const filtering = activeRange !== null
+  const filteredEntries = useMemo(
+    () => (activeRange ? entries.filter((e) => dateInRange(e.date, activeRange)) : entries),
+    [entries, activeRange]
+  )
+  const shownTotal = filtering ? filteredEntries.length : total
+
+  /** 切换筛选后回第一页：分页数据是后端按页拉取的，过滤只作用于当前已加载页 */
+  const handleQuick = (key: string) => {
+    setQuick(key as QuickKey)
+    setCustom(null)
+    setPage(1)
+  }
+
+  const handleCustom = (dates: [Dayjs | null, Dayjs | null] | null) => {
+    const valid = dates && dates[0] && dates[1] ? ([dates[0], dates[1]] as [Dayjs, Dayjs]) : null
+    setCustom(valid)
+    if (valid) setQuick('all')
+    setPage(1)
+  }
 
   const accountNameMap = new Map(accountOptions.map((o) => [o.value, o.label]))
 
   const columns: ColumnsType<LedgerEntryRow> = [
-    { title: '日期', dataIndex: 'date', width: 110 },
+    {
+      title: '日期',
+      dataIndex: 'date',
+      width: 110,
+      // YYYY-MM-DD 字典序即时间序；默认倒序（最新在前）
+      sorter: (a, b) => a.date.localeCompare(b.date),
+      defaultSortOrder: 'descend'
+    },
     { title: '标志', dataIndex: 'flag', width: 60, render: (v: string | null) => v ?? '—' },
     { title: '类型', dataIndex: 'type', width: 90 },
     { title: '交易对象', dataIndex: 'payee', render: (v: string | null) => v ?? '—' },
@@ -92,27 +180,32 @@ export default function EntriesView() {
   }
 
   return (
-    <div>
+    <div className="entries-view">
       {error && (
-        <Alert type="error" message={error} showIcon closable onClose={() => setError(null)} style={{ marginBottom: 16 }} />
+        <Alert type="error" message={error} showIcon closable onClose={() => setError(null)} className="entries-error" />
       )}
-      <Card
-        title="索引状态"
-        style={{ marginBottom: 16 }}
-        extra={
-          <Space>
-            <Button onClick={() => void handleRefreshIndex()}>重建索引</Button>
-            <Button danger icon={<DeleteOutlined />} loading={clearing} onClick={handleClear}>清空账本</Button>
-          </Space>
-        }
-      >
+      <div className="entries-toolbar">
+        <div className="entries-filter">
+          <Segmented options={QUICK_OPTIONS} value={quick} onChange={handleQuick} />
+          <DatePicker.RangePicker value={custom} onChange={handleCustom} placeholder={['开始日期', '结束日期']} />
+          <Tooltip title="筛选作用于已加载分页数据；全量时间筛选需索引查询支持（超 UI 层 #2）">
+            <QuestionCircleOutlined className="entries-filter-hint" />
+          </Tooltip>
+        </div>
+        <Button icon={<ReloadOutlined />} onClick={() => void handleRefreshIndex()}>
+          重建索引
+        </Button>
+      </div>
+      <Card title="索引状态" className="entries-status-card" extra={
+        <Button danger icon={<DeleteOutlined />} loading={clearing} onClick={handleClear}>清空账本</Button>
+      }>
         <Descriptions column={2} size="small">
           <Descriptions.Item label="路径">{status?.path ?? '—'}</Descriptions.Item>
           <Descriptions.Item label="状态">
             <Tag color={STATUS_COLOR[status?.status ?? 'missing']}>{status?.status ?? 'missing'}</Tag>
           </Descriptions.Item>
-          <Descriptions.Item label="条目数">{status?.entryCount ?? 0}</Descriptions.Item>
-          <Descriptions.Item label="错误数">{status?.errorCount ?? 0}</Descriptions.Item>
+          <Descriptions.Item label="条目数"><span className="num">{formatCount(status?.entryCount)}</span></Descriptions.Item>
+          <Descriptions.Item label="错误数"><span className="num">{formatCount(status?.errorCount)}</span></Descriptions.Item>
           <Descriptions.Item label="更新时间" span={2}>
             {status?.updatedAt ? new Date(status.updatedAt).toLocaleString() : '—'}
           </Descriptions.Item>
@@ -123,18 +216,19 @@ export default function EntriesView() {
           )}
         </Descriptions>
       </Card>
-      <Card title={`条目（${total}）`}>
+      <Card title={`条目（${shownTotal}）`}>
         <Table<LedgerEntryRow>
           rowKey="id"
           size="small"
           loading={loading}
-          dataSource={entries}
+          dataSource={filteredEntries}
           columns={columns}
           pagination={{
             pageSize: PAGE_SIZE,
-            total,
+            total: shownTotal,
             current: page,
             showSizeChanger: false,
+            showTotal: (t) => `共 ${t} 条`,
             onChange: (p) => {
               setPage(p)
               void loadEntries(PAGE_SIZE, (p - 1) * PAGE_SIZE)
