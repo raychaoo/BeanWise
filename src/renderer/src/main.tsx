@@ -9,6 +9,7 @@ import { ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import dayjs from 'dayjs'
 import App from './App'
+import { THEME_TOKENS } from './theme/tokens'
 import './styles/tokens.less'
 import './styles/base.less'
 import './styles/layout.less'
@@ -17,7 +18,7 @@ dayjs.locale('zh-cn')
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ConfigProvider locale={zhCN}>
+    <ConfigProvider locale={zhCN} theme={THEME_TOKENS}>
       <App />
     </ConfigProvider>
   </React.StrictMode>
