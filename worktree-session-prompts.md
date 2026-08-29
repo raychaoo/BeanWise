@@ -16,7 +16,7 @@
 
 硬性红线（违反即返工）：仅新增 runtime 依赖 react-router-dom（HashRouter）；e2e 依赖的菜单文本「录入/明细/报表」不得改名；录入写路径与金额 stringMode 链路逻辑零改动；@ant-design/v5-patch-for-react-19 保持 main.tsx 第一行 import；路由切换动画纯 CSS 且尊重 prefers-reduced-motion；主内容区唯一滚动容器。
 
-执行方式：使用 executing-plans 技能按任务顺序执行，每个任务：写测试→跑失败→实现→跑通过→commit。全部完成后运行 npm run typecheck && npm run test:unit && npm run test:e2e（测试账本 F:\BeanWiseData\test；VS Code 终端先 env -u ELECTRON_RUN_AS_NODE），全绿后按 master 计划 DoD 将 ui-v4/a-foundation 以 --no-ff 合并回 ui-v4 并 git worktree remove .worktrees/a-foundation。
+执行方式：使用 executing-plans 技能按任务顺序执行，每个任务：写测试→跑失败→实现→跑通过→commit。全部完成后运行 npm run typecheck && npm run test:unit && npm run test:e2e（测试账本 F:\BeanWiseData\test；VS Code 终端先 env -u ELECTRON_RUN_AS_NODE），全绿后按 master 计划 DoD 将 ui/a-foundation 以 --no-ff 合并回 ui-v4 并 git worktree remove .worktrees/a-foundation。
 ```
 
 ---
@@ -33,7 +33,7 @@
 
 硬性红线（违反即返工）：录入写路径（ProForm → add-entry、nextBalancingNumber 自动平衡、stringMode）逻辑零改动；e2e 表单 label「交易对象/说明/账户/金额/货币」与按钮「写入账本」文本不得改；明细页必须保留「重建索引」按钮（e2e 依赖）；零新增依赖；样式写进 styles/views/*.less 不用内联 style。
 
-执行方式：使用 executing-plans 技能按任务顺序执行，每个任务：写测试→跑失败→实现→跑通过→commit。全部完成后运行 npm run typecheck && npm run test:unit && npm run test:e2e（测试账本 F:\BeanWiseData\test；VS Code 终端先 env -u ELECTRON_RUN_AS_NODE），全绿后按 master 计划 DoD 将 ui-v4/b-transaction 以 --no-ff 合并回 ui-v4 并 git worktree remove .worktrees/b-transaction。
+执行方式：使用 executing-plans 技能按任务顺序执行，每个任务：写测试→跑失败→实现→跑通过→commit。全部完成后运行 npm run typecheck && npm run test:unit && npm run test:e2e（测试账本 F:\BeanWiseData\test；VS Code 终端先 env -u ELECTRON_RUN_AS_NODE），全绿后按 master 计划 DoD 将 ui/b-transaction 以 --no-ff 合并回 ui-v4 并 git worktree remove .worktrees/b-transaction。
 ```
 
 ---
@@ -50,7 +50,7 @@
 
 硬性红线（违反即返工）：切换成功后仍走 window.location.reload()（不做软切换）；不改动任何已有 IPC handler；零新增依赖；脏表单确认仅提示不阻断浏览目录链路。
 
-执行方式：使用 executing-plans 技能按任务顺序执行，每个任务：写测试→跑失败→实现→跑通过→commit。全部完成后运行 npm run typecheck && npm run test:unit && npm run test:e2e（测试账本 F:\BeanWiseData\test；VS Code 终端先 env -u ELECTRON_RUN_AS_NODE），全绿后按 master 计划 DoD 将 ui-v4/c-workspace 以 --no-ff 合并回 ui-v4 并 git worktree remove .worktrees/c-workspace。
+执行方式：使用 executing-plans 技能按任务顺序执行，每个任务：写测试→跑失败→实现→跑通过→commit。全部完成后运行 npm run typecheck && npm run test:unit && npm run test:e2e（测试账本 F:\BeanWiseData\test；VS Code 终端先 env -u ELECTRON_RUN_AS_NODE），全绿后按 master 计划 DoD 将 ui/c-workspace 以 --no-ff 合并回 ui-v4 并 git worktree remove .worktrees/c-workspace。
 ```
 
 ---
@@ -67,7 +67,7 @@
 
 硬性红线（违反即返工）：指标聚合一律 addDecimalStrings（禁 Number/parseFloat/SQL SUM），图表 y 值 Number() 仅显示层；/reports 现有卡片标题（净资产趋势/收支对比/账户余额）与起始年/结束年 Select 不得动（e2e 依赖）；AccountSettingsModal 逻辑原样搬移不重写；零新增依赖。
 
-执行方式：使用 executing-plans 技能按任务顺序执行，每个任务：写测试→跑失败→实现→跑通过→commit。全部完成后运行 npm run typecheck && npm run test:unit && npm run test:e2e（测试账本 F:\BeanWiseData\test；VS Code 终端先 env -u ELECTRON_RUN_AS_NODE），全绿后按 master 计划 DoD 将 ui-v4/d-new-pages 以 --no-ff 合并回 ui-v4 并 git worktree remove .worktrees/d-new-pages。
+执行方式：使用 executing-plans 技能按任务顺序执行，每个任务：写测试→跑失败→实现→跑通过→commit。全部完成后运行 npm run typecheck && npm run test:unit && npm run test:e2e（测试账本 F:\BeanWiseData\test；VS Code 终端先 env -u ELECTRON_RUN_AS_NODE），全绿后按 master 计划 DoD 将 ui/d-new-pages 以 --no-ff 合并回 ui-v4 并 git worktree remove .worktrees/d-new-pages。
 ```
 
 ---
@@ -84,5 +84,5 @@
 
 硬性红线（违反即返工）：Splash 是 index.html 内联纯 CSS，禁止任何 <script>（CSP script-src 严格）；报表默认 Tab 的卡片标题与结构不得动（e2e 依赖）；资产负债表合计校验用 addDecimalStrings/computeBalancingNumber；零新增依赖。
 
-执行方式：使用 executing-plans 技能按任务顺序执行，每个任务：写测试→跑失败→实现→跑通过→commit。全部完成后运行 npm run typecheck && npm run test:unit && npm run test:e2e（测试账本 F:\BeanWiseData\test；VS Code 终端先 env -u ELECTRON_RUN_AS_NODE），全绿后按 master 计划 DoD 将 ui-v4/e-coldstart-reports 以 --no-ff 合并回 ui-v4 并 git worktree remove .worktrees/e-coldstart-reports；最后在本仓库根目录执行 git worktree prune，并确认五批分支是否保留由用户决定。
+执行方式：使用 executing-plans 技能按任务顺序执行，每个任务：写测试→跑失败→实现→跑通过→commit。全部完成后运行 npm run typecheck && npm run test:unit && npm run test:e2e（测试账本 F:\BeanWiseData\test；VS Code 终端先 env -u ELECTRON_RUN_AS_NODE），全绿后按 master 计划 DoD 将 ui/e-coldstart-reports 以 --no-ff 合并回 ui-v4 并 git worktree remove .worktrees/e-coldstart-reports；最后在本仓库根目录执行 git worktree prune，并确认五批分支是否保留由用户决定。
 ```

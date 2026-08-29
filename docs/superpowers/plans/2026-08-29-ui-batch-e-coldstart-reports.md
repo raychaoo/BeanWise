@@ -10,12 +10,12 @@
 
 **Spec:** `ui-optimization-plan.md` 模块 6、9、`docs/superpowers/plans/2026-08-29-ui-optimization-master.md`。
 
-**Worktree:** `.worktrees/e-coldstart-reports`，分支 `ui-v4/e-coldstart-reports`，基于含批次 A-D 的 `ui-v4`。
+**Worktree:** `.worktrees/e-coldstart-reports`，分支 `ui/e-coldstart-reports`，基于含批次 A-D 的 `ui-v4`。
 
 **前置命令（会话开始时执行）：**
 
 ```bash
-cd /f/raychaoo/BeanWise && git checkout ui-v4 && git worktree add .worktrees/e-coldstart-reports -b ui-v4/e-coldstart-reports ui-v4 && cd .worktrees/e-coldstart-reports && npm install
+cd /f/raychaoo/BeanWise && git checkout ui-v4 && git worktree add .worktrees/e-coldstart-reports -b ui/e-coldstart-reports ui-v4 && cd .worktrees/e-coldstart-reports && npm install
 ```
 
 ## Global Constraints

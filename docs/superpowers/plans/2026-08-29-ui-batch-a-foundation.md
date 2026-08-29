@@ -10,7 +10,7 @@
 
 **Spec:** `ui-optimization-plan.md`（第二、三节 + 模块 1、9）、`docs/superpowers/plans/2026-08-29-ui-optimization-master.md`（全局约束 + 契约）、`CLAUDE.md`。
 
-**Worktree:** `.worktrees/a-foundation`，分支 `ui-v4/a-foundation`，基于 `ui-v4`。
+**Worktree:** `.worktrees/a-foundation`，分支 `ui/a-foundation`，基于 `ui-v4`。
 
 ## Global Constraints
 

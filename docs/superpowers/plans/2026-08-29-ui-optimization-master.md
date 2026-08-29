@@ -28,11 +28,11 @@
 
 | 批次 | 分支 | Worktree 路径 | 范围 | 依赖 | 计划文件 |
 |---|---|---|---|---|---|
-| A | `ui-v4/a-foundation` | `.worktrees/a-foundation` | 路由化 + ProLayout 框架 + Token/Less 地基 + 窗口尺寸 | 无（基于 ui-v4 HEAD） | `2026-08-29-ui-batch-a-foundation.md` |
-| B | `ui-v4/b-transaction` | `.worktrees/b-transaction` | 交易域：录入双栏重排 + Excel/AI 抽屉化 + 流水页瘦身 | A | `2026-08-29-ui-batch-b-transaction.md` |
-| C | `ui-v4/c-workspace` | `.worktrees/c-workspace` | 账本切换（recents 全链路 + Dropdown + Ctrl+K）| A（建议在 B 后） | `2026-08-29-ui-batch-c-workspace.md` |
-| D | `ui-v4/d-new-pages` | `.worktrees/d-new-pages` | 新页面：总览 Dashboard + 对账 + 账户 + 设置 | A、B、C | `2026-08-29-ui-batch-d-pages.md` |
-| E | `ui-v4/e-coldstart-reports` | `.worktrees/e-coldstart-reports` | 冷启动 Splash + 报表排版（账户式/报告式）+ 收尾 | A、D | `2026-08-29-ui-batch-e-coldstart-reports.md` |
+| A | `ui/a-foundation` | `.worktrees/a-foundation` | 路由化 + ProLayout 框架 + Token/Less 地基 + 窗口尺寸 | 无（基于 ui-v4 HEAD） | `2026-08-29-ui-batch-a-foundation.md` |
+| B | `ui/b-transaction` | `.worktrees/b-transaction` | 交易域：录入双栏重排 + Excel/AI 抽屉化 + 流水页瘦身 | A | `2026-08-29-ui-batch-b-transaction.md` |
+| C | `ui/c-workspace` | `.worktrees/c-workspace` | 账本切换（recents 全链路 + Dropdown + Ctrl+K）| A（建议在 B 后） | `2026-08-29-ui-batch-c-workspace.md` |
+| D | `ui/d-new-pages` | `.worktrees/d-new-pages` | 新页面：总览 Dashboard + 对账 + 账户 + 设置 | A、B、C | `2026-08-29-ui-batch-d-pages.md` |
+| E | `ui/e-coldstart-reports` | `.worktrees/e-coldstart-reports` | 冷启动 Splash + 报表排版（账户式/报告式）+ 收尾 | A、D | `2026-08-29-ui-batch-e-coldstart-reports.md` |
 
 **串行理由**：五批共享 `App.tsx`/`main.tsx`/`package.json`，并行 worktree 必产生冲突；B、C 理论上可在 A 后并行，但两者都改 App.tsx（B 改路由内容区、C 改 Header），串行成本更低。
 

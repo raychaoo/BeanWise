@@ -10,12 +10,12 @@
 
 **Spec:** `ui-optimization-plan.md` 模块 8、`docs/superpowers/plans/2026-08-29-ui-optimization-master.md`。
 
-**Worktree:** `.worktrees/c-workspace`，分支 `ui-v4/c-workspace`，基于含批次 A（建议 B 亦已合并）的 `ui-v4`。
+**Worktree:** `.worktrees/c-workspace`，分支 `ui/c-workspace`，基于含批次 A（建议 B 亦已合并）的 `ui-v4`。
 
 **前置命令（会话开始时执行）：**
 
 ```bash
-cd /f/raychaoo/BeanWise && git checkout ui-v4 && git worktree add .worktrees/c-workspace -b ui-v4/c-workspace ui-v4 && cd .worktrees/c-workspace && npm install
+cd /f/raychaoo/BeanWise && git checkout ui-v4 && git worktree add .worktrees/c-workspace -b ui/c-workspace ui-v4 && cd .worktrees/c-workspace && npm install
 ```
 
 ## Global Constraints

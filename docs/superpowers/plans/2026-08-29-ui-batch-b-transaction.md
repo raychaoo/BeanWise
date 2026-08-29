@@ -10,12 +10,12 @@
 
 **Spec:** `ui-optimization-plan.md` 模块 3、`docs/superpowers/plans/2026-08-29-ui-optimization-master.md`（约束 + 契约）。
 
-**Worktree:** `.worktrees/b-transaction`，分支 `ui-v4/b-transaction`，基于含批次 A 的 `ui-v4`。
+**Worktree:** `.worktrees/b-transaction`，分支 `ui/b-transaction`，基于含批次 A 的 `ui-v4`。
 
 **前置命令（会话开始时执行）：**
 
 ```bash
-cd /f/raychaoo/BeanWise && git checkout ui-v4 && git pull 2>/dev/null; git worktree add .worktrees/b-transaction -b ui-v4/b-transaction ui-v4 && cd .worktrees/b-transaction && npm install
+cd /f/raychaoo/BeanWise && git checkout ui-v4 && git pull 2>/dev/null; git worktree add .worktrees/b-transaction -b ui/b-transaction ui-v4 && cd .worktrees/b-transaction && npm install
 ```
 
 ## Global Constraints
