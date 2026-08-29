@@ -21,11 +21,21 @@
  */
 import { _electron as electron, expect, test, type Page } from '@playwright/test'
 import { readFileSync, rmSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { createBareRepo, readRemoteFile, seedRemote, seedRemoteInit, startGitServer } from './fixtures/sync'
 import { cleanupFixture, createFixtureCopy } from './fixtures/setup'
 
 // GitHub Actions 的 ubuntu runner 无 user namespaces，需关 Chromium 沙箱；本机 Windows 不用
 const launchArgs = process.env['CI'] ? ['.', '--no-sandbox'] : ['.']
+
+/** E2E 不复用全局工作目录：显式激活临时目录后重载（与 ledger-index 同模式，批次 A 补齐 hermetic） */
+async function activateWorkspace(win: Page, ledgerPath: string): Promise<void> {
+  await win.evaluate(async (path) => {
+    const opened = await window.beanwise.openWorkspace(path)
+    if (!opened.ok) throw new Error(opened.message ?? '打开工作目录失败')
+  }, dirname(ledgerPath))
+  await win.reload()
+}
 
 /** 清掉 electron-store 残留同步配置（跨测试持久化），重载回未配置态 */
 async function resetSync(win: Page): Promise<void> {
@@ -55,6 +65,7 @@ test('M6 绿灯：配置空仓 → 保存自动 push → 裸仓可见', async ()
       env: { ...process.env, BEANWISE_LEDGER_PATH: ledgerPath }
     })
     const win = await app.firstWindow()
+    await activateWorkspace(win, ledgerPath)
     await resetSync(win)
     await configureSync(win, server.url)
     await expect(win.locator('.ant-tag').filter({ hasText: 'main' })).toBeVisible()
@@ -98,6 +109,7 @@ test('M6 冲突：远端已有不同内容 → 配置即冲突 → 采用远端 
       env: { ...process.env, BEANWISE_LEDGER_PATH: ledgerPath }
     })
     const win = await app.firstWindow()
+    await activateWorkspace(win, ledgerPath)
     await resetSync(win)
 
     // 1. 配置同步 → 场景 C 冲突 → store 接管 + warning（configure 返回 false，设置弹窗保持打开）
@@ -153,6 +165,7 @@ test('M6 拉取：远端新增 → 手动拉取 → 文件更新 + 明细联动'
       env: { ...process.env, BEANWISE_LEDGER_PATH: ledgerPath }
     })
     const win = await app.firstWindow()
+    await activateWorkspace(win, ledgerPath)
     await resetSync(win)
     await configureSync(win, server.url)
 

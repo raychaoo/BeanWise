@@ -8,15 +8,13 @@ body {
   margin: 0;
 }
 
-// 主内容区 .page-scroll 是唯一滚动容器（Header/Sider 固定不随滚动），根节点不滚
+// 主内容区 .page-scroll 是唯一滚动容器（Header/Sider 固定不随滚动）。
+// 注意 body 不能 overflow:hidden：antd 下拉/浮层挂 body portal，视口边缘处需要
+// html 可滚动才能被 playwright（及用户）触达——布局本身恰好 100vh，不会产生双滚动条。
 html,
 body,
 #root {
   height: 100%;
-}
-
-body {
-  overflow: hidden;
 }
 
 .num {

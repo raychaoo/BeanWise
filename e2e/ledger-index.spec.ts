@@ -1,5 +1,5 @@
 import { _electron as electron, expect, test, type Page } from '@playwright/test'
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { cleanupFixture, createFixtureCopy } from './fixtures/setup'
@@ -18,7 +18,23 @@ async function activateWorkspace(win: Page, ledgerPath: string): Promise<void> {
     if (!opened.ok) throw new Error(opened.message ?? '打开工作目录失败')
   }, dirname(ledgerPath))
   await win.reload()
+  // 批次 A 路由化：默认路由为总览，先进「录入」页再断言 ProForm 链路
+  await win.getByRole('menuitem', { name: '录入' }).click()
   await expect(win.getByRole('button', { name: '写入账本' })).toBeVisible()
+}
+
+/**
+ * 账户字段下拉点选（批次 A 实测确立）：antd Select 的 fill() 只写搜索文本、
+ * 失焦即丢弃、不落表单值（基线 ui-v4 同样如此）。
+ * 采用键盘选择：点开下拉 → fill 过滤（此处 fill 恰好等价于输入搜索词）→ Enter 选中
+ * 高亮项。不用点 option：表单靠视口底部时下拉被窗口裁剪，点击会无限重试（溢出修复无效，
+ * 弹层绝对定位跟随触发器，滚动改变不了其视口位置）。
+ */
+async function pickAccount(win: Page, row: number, account: string): Promise<void> {
+  const trigger = win.getByLabel('账户').nth(row)
+  await trigger.click()
+  await trigger.fill(account)
+  await win.keyboard.press('Enter')
 }
 
 test('M4 绿灯：录入一笔 → 落文件 → 校验 → 索引更新（端到端）', async () => {
@@ -40,10 +56,10 @@ test('M4 绿灯：录入一笔 → 落文件 → 校验 → 索引更新（端�
     await win.getByRole('menuitem', { name: '录入' }).click()
     await win.getByLabel('交易对象').fill('测试午饭')
     await win.getByLabel('说明').fill('M4 E2E')
-    await win.getByLabel('账户').nth(0).fill('Expenses:Food')
+    await pickAccount(win, 0, 'Expenses:Food')
     await win.getByLabel('金额').nth(0).fill('25.50')
     await win.getByLabel('货币').nth(0).fill('CNY')
-    await win.getByLabel('账户').nth(1).fill('Assets:Bank:CNB')
+    await pickAccount(win, 1, 'Assets:Bank:CNB')
     await win.getByLabel('货币').nth(1).fill('CNY')
 
     // 3. 提交 → 成功提示 → 明细 5→6，新行含「测试午饭」
@@ -75,10 +91,10 @@ test('M4 失败：借贷不平衡 → 错误提示 + 文件不变', async () => 
     await activateWorkspace(win, ledgerPath)
 
     await win.getByLabel('交易对象').fill('不平衡测试')
-    await win.getByLabel('账户').nth(0).fill('Expenses:Food')
+    await pickAccount(win, 0, 'Expenses:Food')
     await win.getByLabel('金额').nth(0).fill('100.00')
     await win.getByLabel('货币').nth(0).fill('CNY')
-    await win.getByLabel('账户').nth(1).fill('Assets:Cash')
+    await pickAccount(win, 1, 'Assets:Bank:CNB') // fixture 仅含 Bank:CNB/Opening-Balances/Food，原 Assets:Cash 无选项可点
     await win.getByLabel('金额').nth(1).fill('-99.00')
     await win.getByLabel('货币').nth(1).fill('CNY')
 
@@ -96,6 +112,23 @@ test('M4 失败：借贷不平衡 → 错误提示 + 文件不变', async () => 
 test('M4 首文件：路径不存在 → 录入自动创建账本（open 行 + 交易块）', async () => {
   const tmpDir = mkdtempSync(join(tmpdir(), 'beanwise-e2e-first-'))
   const ledgerPath = join(tmpDir, 'main.beancount') // 打开目录时创建为空文件
+  // 空账本的索引无历史账户，录入行下拉没有可选项：预置账户库（批次 A 实测：
+  // antd Select 无法输入任意新账户，须从账户库点选）
+  mkdirSync(join(tmpDir, '.beanwise'), { recursive: true })
+  writeFileSync(
+    join(tmpDir, '.beanwise', 'accounts.json'),
+    JSON.stringify(
+      {
+        accounts: [
+          { id: 1, name: 'Expenses:Food', value: 'Expenses:Food' },
+          { id: 2, name: 'Assets:Bank:CNB', value: 'Assets:Bank:CNB' }
+        ]
+      },
+      null,
+      2
+    ),
+    'utf8'
+  )
   try {
     const app = await electron.launch({
       args: launchArgs
@@ -104,10 +137,10 @@ test('M4 首文件：路径不存在 → 录入自动创建账本（open 行 + �
     await activateWorkspace(win, ledgerPath)
 
     await win.getByLabel('交易对象').fill('首笔')
-    await win.getByLabel('账户').nth(0).fill('Expenses:Food')
+    await pickAccount(win, 0, 'Expenses:Food')
     await win.getByLabel('金额').nth(0).fill('10')
     await win.getByLabel('货币').nth(0).fill('CNY')
-    await win.getByLabel('账户').nth(1).fill('Assets:Bank:CNB')
+    await pickAccount(win, 1, 'Assets:Bank:CNB')
     await win.getByLabel('货币').nth(1).fill('CNY')
 
     await win.getByRole('button', { name: '写入账本' }).click()

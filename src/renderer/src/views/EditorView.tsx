@@ -26,7 +26,11 @@ export default function EditorView() {
   const saveRef = useRef(save)
   useEffect(() => { saveRef.current = save })
 
-  useEffect(() => { void useLedgerStore.getState().loadEditorFile() }, [])
+  // 路由化（批次 A）：重挂载时若已有已加载基线则跳过重读——保留未保存内容与冲突检测基线
+  //（旧 display:none 保活语义等价；「重新加载」按钮 / 工作目录切换不受影响）
+  useEffect(() => {
+    if (!useLedgerStore.getState().editorLoaded) void useLedgerStore.getState().loadEditorFile()
+  }, [])
 
   // 创建主编辑器（一次）
   useEffect(() => {
