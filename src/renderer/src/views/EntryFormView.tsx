@@ -6,9 +6,8 @@
  * 写路径（ProForm → add-entry、自动平衡、stringMode）逻辑零改动。
  * 分录行展示拆至 entry/PostingRowCard（纯展示，name/rules 仍由本组件传入）。
  */
-import { SettingOutlined } from '@ant-design/icons'
 import { ProForm, ProFormDatePicker, ProFormRadio, ProFormText } from '@ant-design/pro-components'
-import { Button, Card, Empty, Form, message, Typography } from 'antd'
+import { Card, Empty, Form, message, Typography } from 'antd'
 import type { Rule } from 'antd/es/form'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
@@ -19,6 +18,7 @@ import { useEntryFormStore } from '../stores/entry-form'
 import { useLedgerStore } from '../stores/ledger'
 import '../styles/views/entry.less'
 import AccountSettingsModal from './AccountSettingsModal'
+import EntryActionsBar from './entry/EntryActionsBar'
 import BalanceHint from './entry/BalanceHint'
 import PostingRowCard from './entry/PostingRowCard'
 
@@ -140,9 +140,11 @@ export default function EntryFormView() {
         className="entry-col-form"
         title="录入凭证"
         extra={
-          <Button size="small" icon={<SettingOutlined />} onClick={() => setAccountSettingsOpen(true)}>
-            账户设置
-          </Button>
+          <EntryActionsBar
+            onFillForm={handleFillForm}
+            onImported={() => void loadAccounts()}
+            onOpenAccountSettings={() => setAccountSettingsOpen(true)}
+          />
         }
       >
         <ProForm<EntryFormValues>
