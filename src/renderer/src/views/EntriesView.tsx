@@ -1,21 +1,16 @@
 /**
- * 明细视图（M4；批次 B 瘦身 + 时间筛选）：页头 = 时间快捷筛选（Segmented + RangePicker，前端过滤
- * 已加载分页数据，Tooltip 说明能力边界）+「重建索引」（e2e/ledger-index.spec.ts 依赖页头按钮）。
- * 日期列默认倒序。索引状态卡与「清空账本」本批原样保留（迁移至设置页归批次 D 收口）。
+ * 明细视图（M4；批次 B 瘦身 + 时间筛选；批次 D 迁出索引状态卡与「清空账本」至设置页）：
+ * 页头 = 时间快捷筛选（Segmented + RangePicker，前端过滤已加载分页数据，Tooltip 说明能力边界）
+ * +「重建索引」（e2e/ledger-index.spec.ts 依赖页头按钮）。日期列默认倒序。
  */
-import { DeleteOutlined, QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
+import { QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
 import {
   Alert,
   Button,
   Card,
   DatePicker,
-  Descriptions,
-  message,
-  Modal,
   Segmented,
-  Space,
   Table,
-  Tag,
   Tooltip
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
@@ -23,12 +18,9 @@ import dayjs, { type Dayjs } from 'dayjs'
 import { useMemo, useState } from 'react'
 import type { LedgerEntryRow } from '../../../shared/ipc'
 import { useLedgerStore } from '../stores/ledger'
-import { formatAmount } from '../utils/format'
 import '../styles/views/entries.less'
 
 const PAGE_SIZE = 20
-
-const STATUS_COLOR: Record<string, string> = { ok: 'success', error: 'error', missing: 'default' }
 
 type QuickKey = 'today' | 'week' | '7d' | 'month' | 'all'
 
@@ -64,13 +56,7 @@ function dateInRange(date: string, range: [Dayjs, Dayjs] | null): boolean {
   return !d.isBefore(range[0], 'day') && !d.isAfter(range[1], 'day')
 }
 
-/** 数值展示（条目数/错误数）：走 formatAmount 统一千分位，空值 '—' */
-function formatCount(n: number | undefined): string {
-  return formatAmount(n === undefined ? null : String(n))
-}
-
 export default function EntriesView() {
-  const status = useLedgerStore((s) => s.status)
   const entries = useLedgerStore((s) => s.entries)
   const total = useLedgerStore((s) => s.total)
   const loading = useLedgerStore((s) => s.loading)
@@ -80,7 +66,6 @@ export default function EntriesView() {
   const setError = useLedgerStore((s) => s.setError)
   const accountOptions = useLedgerStore((s) => s.accountOptions)
   const [page, setPage] = useState(1)
-  const [clearing, setClearing] = useState(false)
   const [quick, setQuick] = useState<QuickKey>('all')
   const [custom, setCustom] = useState<[Dayjs, Dayjs] | null>(null)
 
@@ -132,7 +117,7 @@ export default function EntriesView() {
     }
   ]
 
-  /** 重建索引 → 重拉状态与条目（M3 refreshIndex 管线） */
+  /** 重建索引 → 重拉状态与条目（M3 refreshIndex 管线）；索引状态与「清空账本」已迁设置页 */
   const handleRefreshIndex = async () => {
     try {
       await window.beanwise.refreshLedgerIndex()
@@ -140,43 +125,6 @@ export default function EntriesView() {
       setError(String(err))
     }
     await refresh()
-  }
-
-  const handleClear = () => {
-    Modal.confirm({
-      title: '清空账本',
-      content: '将删除账本中的所有交易记录与账户 open 记录，账户设置会保留。此操作不可撤销。',
-      okText: '清空',
-      okButtonProps: { danger: true },
-      cancelText: '取消',
-      onOk: async () => {
-        setClearing(true)
-        try {
-          const result = typeof window.beanwise.clearLedger === 'function'
-            ? await window.beanwise.clearLedger()
-            : await clearViaSaveFile()
-          if (result.ok) {
-            message.success('账本已清空')
-            setPage(1)
-            await refresh()
-            await useLedgerStore.getState().loadAccounts()
-          } else {
-            message.error(result.message ?? '清空失败')
-          }
-        } catch (err) {
-          message.error(String(err))
-        } finally {
-          setClearing(false)
-        }
-      }
-    })
-  }
-
-  /** 旧版 preload 没有 clearLedger 时，复用读取 + 整文件覆盖保存清空账本。 */
-  const clearViaSaveFile = async () => {
-    const read = await window.beanwise.readLedgerFile()
-    if (!read.ok || !read.fingerprint) throw new Error(read.message ?? '读取账本失败')
-    return window.beanwise.saveLedgerFile({ content: '', expectedFingerprint: read.fingerprint })
   }
 
   return (
@@ -196,26 +144,6 @@ export default function EntriesView() {
           重建索引
         </Button>
       </div>
-      <Card title="索引状态" className="entries-status-card" extra={
-        <Button danger icon={<DeleteOutlined />} loading={clearing} onClick={handleClear}>清空账本</Button>
-      }>
-        <Descriptions column={2} size="small">
-          <Descriptions.Item label="路径">{status?.path ?? '—'}</Descriptions.Item>
-          <Descriptions.Item label="状态">
-            <Tag color={STATUS_COLOR[status?.status ?? 'missing']}>{status?.status ?? 'missing'}</Tag>
-          </Descriptions.Item>
-          <Descriptions.Item label="条目数"><span className="num">{formatCount(status?.entryCount)}</span></Descriptions.Item>
-          <Descriptions.Item label="错误数"><span className="num">{formatCount(status?.errorCount)}</span></Descriptions.Item>
-          <Descriptions.Item label="更新时间" span={2}>
-            {status?.updatedAt ? new Date(status.updatedAt).toLocaleString() : '—'}
-          </Descriptions.Item>
-          {status?.lastError && (
-            <Descriptions.Item label="最近错误" span={2}>
-              <span className="error-text">{status.lastError}</span>
-            </Descriptions.Item>
-          )}
-        </Descriptions>
-      </Card>
       <Card title={`条目（${shownTotal}）`}>
         <Table<LedgerEntryRow>
           rowKey="id"
