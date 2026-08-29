@@ -30,7 +30,7 @@
 **Interfaces:**
 - Produces: `tokens.less` 中变量 `@bw-primary: #1d39c4; @bw-inflow: #08979c; @bw-outflow: #d46b08; @bw-negative: #cf1322; @bw-bg-layout: #f5f7fa; @bw-text-base: #0f172a;` 及同名 `--bw-*` CSS 变量；`base.less` 提供 `.num` 类；`layout.less` 提供 `.page-scroll` / `.page-enter`
 
-- [ ] **Step 1: 安装依赖**
+- [ ] **Step 1: 安装依赖**（worktree 创建时已执行 `npm install --ignore-scripts`，基线 typecheck + 329 单测已通过，仅补装两包）
 
 ```bash
 npm i react-router-dom && npm i -D less

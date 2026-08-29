@@ -15,7 +15,7 @@
 **前置命令（会话开始时执行）：**
 
 ```bash
-cd /f/raychaoo/BeanWise && git checkout ui-v4 && git worktree add .worktrees/e-coldstart-reports -b ui/e-coldstart-reports ui-v4 && cd .worktrees/e-coldstart-reports && npm install
+cd /f/raychaoo/BeanWise && git checkout ui-v4 && git worktree add .worktrees/e-coldstart-reports -b ui/e-coldstart-reports ui-v4 && cd .worktrees/e-coldstart-reports && npm install --ignore-scripts
 ```
 
 ## Global Constraints

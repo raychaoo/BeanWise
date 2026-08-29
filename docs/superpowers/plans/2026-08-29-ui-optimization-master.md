@@ -23,6 +23,7 @@
 - E2E 依赖的菜单文本 `录入` / `明细` / `报表` **不得改名**（`e2e/ledger-index.spec.ts`、`e2e/reports.spec.ts` 依赖）
 - 每任务先测后码（纯函数 Vitest TDD；视图层 typecheck + e2e 回归），小步提交
 - 测试账本目录：`F:\BeanWiseData\test`；VS Code 集成终端先 `env -u ELECTRON_RUN_AS_NODE` 再跑 dev/E2E
+- **worktree 内装依赖必须 `npm install --ignore-scripts`**：better-sqlite3 的 node-gyp install 脚本在本机无编译工具链时会失败，但其 N-API prebuild（prebuilds/win32-x64.node）随 tarball 自带、Electron 43 直接加载（CLAUDE.md 约束 7），跳过脚本无损
 
 ## 批次总览与合并顺序
 

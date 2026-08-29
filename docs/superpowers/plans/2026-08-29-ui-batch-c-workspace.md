@@ -15,7 +15,7 @@
 **前置命令（会话开始时执行）：**
 
 ```bash
-cd /f/raychaoo/BeanWise && git checkout ui-v4 && git worktree add .worktrees/c-workspace -b ui/c-workspace ui-v4 && cd .worktrees/c-workspace && npm install
+cd /f/raychaoo/BeanWise && git checkout ui-v4 && git worktree add .worktrees/c-workspace -b ui/c-workspace ui-v4 && cd .worktrees/c-workspace && npm install --ignore-scripts
 ```
 
 ## Global Constraints
