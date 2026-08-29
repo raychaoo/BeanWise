@@ -58,7 +58,7 @@ export default function PostingRowCard({ index, currencyOptions, accountOptions,
         <Form.Item className="posting-row__number" name={[index, 'number']} label="金额" rules={numberRules}>
           {/* stringMode 直取十进制字符串；不设 precision——antd 在 stringMode 下会重格式化
               数值（如 '0' → '0.0000'），破坏金额原样传递（校验以正则为准） */}
-          <InputNumber stringMode placeholder="0.00" style={{ width: '100%' }} controls={false} />
+          <InputNumber stringMode placeholder="0.00" controls={false} />
         </Form.Item>
         <Form.Item
           className="posting-row__currency"
