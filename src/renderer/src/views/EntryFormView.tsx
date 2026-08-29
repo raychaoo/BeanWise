@@ -11,13 +11,13 @@ import { Card, Empty, Form, message, Typography } from 'antd'
 import type { Rule } from 'antd/es/form'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { AddEntryParams } from '../../../shared/ipc'
 import { filterAccountOptions, isEntryAccountPairValid } from '../../../shared/account'
 import { computeBalancingNumber } from '../../../shared/decimal'
 import { useEntryFormStore } from '../stores/entry-form'
 import { useLedgerStore } from '../stores/ledger'
 import '../styles/views/entry.less'
-import AccountSettingsModal from './AccountSettingsModal'
 import EntryActionsBar from './entry/EntryActionsBar'
 import BalanceHint from './entry/BalanceHint'
 import PostingRowCard from './entry/PostingRowCard'
@@ -41,11 +41,11 @@ interface EntryFormValues {
 
 export default function EntryFormView() {
   const [form] = Form.useForm<EntryFormValues>()
+  const navigate = useNavigate()
   const status = useLedgerStore((s) => s.status)
   const loadAccounts = useLedgerStore((s) => s.loadAccounts)
   const accountOptions = useLedgerStore((s) => s.accountOptions)
   const [submitting, setSubmitting] = useState(false)
-  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false)
   const postings = Form.useWatch('postings', form)
 
   useEffect(() => {
@@ -143,7 +143,7 @@ export default function EntryFormView() {
           <EntryActionsBar
             onFillForm={handleFillForm}
             onImported={() => void loadAccounts()}
-            onOpenAccountSettings={() => setAccountSettingsOpen(true)}
+            onOpenAccountSettings={() => navigate('/accounts')}
           />
         }
       >
@@ -213,7 +213,6 @@ export default function EntryFormView() {
       <Card className="entry-col-side" title="最近流水">
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="最近流水（批次 D 接入总览联动）" />
       </Card>
-      <AccountSettingsModal open={accountSettingsOpen} onClose={() => setAccountSettingsOpen(false)} />
     </div>
   )
 }
