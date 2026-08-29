@@ -5,6 +5,7 @@ dist-python/
 .vite/
 *.log
 test-results/
+.worktrees/
 
 # Python
 build/
