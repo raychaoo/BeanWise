@@ -4,6 +4,7 @@ import type { MenuProps } from 'antd'
 import { useEffect, useState } from 'react'
 import { useEntryFormStore } from '../stores/entry-form'
 import { basenamePath } from '../utils/path'
+import QuickSwitchModal from './QuickSwitchModal'
 
 /**
  * 浏览并打开其他工作目录：choose → open → 整页 reload（CLAUDE.md 约束 9，不新增软切换路径）。
@@ -65,6 +66,7 @@ export async function switchWorkspace(path: string): Promise<void> {
 export default function LedgerSwitcher({ current }: { current: string }) {
   const [switching, setSwitching] = useState(false)
   const [recents, setRecents] = useState<string[]>([])
+  const [quickOpen, setQuickOpen] = useState(false)
   const { token } = theme.useToken()
   const currentBase = basenamePath(current)
 
@@ -73,6 +75,18 @@ export default function LedgerSwitcher({ current }: { current: string }) {
       .getWorkspaceRecents()
       .then(setRecents)
       .catch(() => setRecents([]))
+  }, [])
+
+  // Ctrl+K / Cmd+K 快捷切换弹层：本组件常驻 Header，等价全局快捷键（不改 App.tsx）
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setQuickOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
   const recentItems: MenuProps['items'] = recents
@@ -113,24 +127,32 @@ export default function LedgerSwitcher({ current }: { current: string }) {
   ]
 
   return (
-    <Dropdown
-      menu={{
-        items,
-        onClick: ({ key }) => {
-          if (key === current) return
-          if (key === 'browse') {
-            setSwitching(true)
-            void browseAndOpenWorkspace().finally(() => setSwitching(false))
-            return
+    <>
+      <Dropdown
+        menu={{
+          items,
+          onClick: ({ key }) => {
+            if (key === current) return
+            if (key === 'browse') {
+              setSwitching(true)
+              void browseAndOpenWorkspace().finally(() => setSwitching(false))
+              return
+            }
+            void switchWorkspace(key)
           }
-          void switchWorkspace(key)
-        }
-      }}
-    >
-      {/* 完整路径用原生 title 悬停展示（Dropdown 直接子元素必须持有 ref，不能再包 Tooltip） */}
-      <Button type="text" size="large" loading={switching} title={current} icon={<SwapOutlined />}>
-        {currentBase}
-      </Button>
-    </Dropdown>
+        }}
+      >
+        {/* 完整路径用原生 title 悬停展示（Dropdown 直接子元素必须持有 ref，不能再包 Tooltip） */}
+        <Button type="text" size="large" loading={switching} title={current} icon={<SwapOutlined />}>
+          {currentBase}
+        </Button>
+      </Dropdown>
+      <QuickSwitchModal
+        open={quickOpen}
+        onClose={() => setQuickOpen(false)}
+        recents={recents.filter((p) => p !== current)}
+        onPick={(path) => void switchWorkspace(path)}
+      />
+    </>
   )
 }
