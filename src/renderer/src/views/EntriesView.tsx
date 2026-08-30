@@ -1,24 +1,18 @@
 /**
- * 明细视图（M4；批次 B 瘦身 + 时间筛选；批次 D 迁出索引状态卡与「清空账本」至设置页）：
- * 页头 = 时间快捷筛选（Segmented + RangePicker，前端过滤已加载分页数据，Tooltip 说明能力边界）
- * +「重建索引」（e2e/ledger-index.spec.ts 依赖页头按钮）。
- * 数据策略（总体排序）：列表为标准服务端分页查询——后端按 order（默认 desc，最新在前）对全库
- * ORDER BY date,id 后 LIMIT/OFFSET，翻页/列头排序切换均重新查询，排序天然作用于总体数据。
+ * 明细视图（M4；批次 B 瘦身；批次 D 迁出索引状态卡与「清空账本」至设置页）：
+ * 页头 = 时间快捷筛选（Segmented）+ 自定义范围（RangePicker）+ 关键词搜索 +「重建索引」
+ * （e2e/ledger-index.spec.ts 依赖页头按钮）。
+ * 数据策略（超 UI 层 #2 落地）：筛选/搜索/排序全部为服务端查询参数——后端对全库 WHERE +
+ * ORDER BY date,id 后 LIMIT/OFFSET 分页返回，total 同条件计数；排序方向（正/倒序）由日期列头
+ * 切换，翻页/筛选/搜索/排序变化均重新查询，天然作用于总体数据。
  */
 import { QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
-import {
-  Alert,
-  Button,
-  Card,
-  DatePicker,
-  Segmented,
-  Table,
-  Tooltip
-} from 'antd'
+import { Alert, Button, Card, DatePicker, Input, Segmented, Table, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import dayjs, { type Dayjs } from 'dayjs'
-import { useEffect, useMemo, useState } from 'react'
-import type { LedgerEntryRow } from '../../../shared/ipc'
+import type { Dayjs } from 'dayjs'
+import dayjs from 'dayjs'
+import { useEffect, useState } from 'react'
+import type { LedgerEntryRow, ListEntriesFilters } from '../../../shared/ipc'
 import { useLedgerStore } from '../stores/ledger'
 import '../styles/views/entries.less'
 
@@ -34,28 +28,21 @@ const QUICK_OPTIONS: Array<{ label: string; value: QuickKey }> = [
   { label: '全部', value: 'all' }
 ]
 
-/** 快捷段 → [起, 止]（含端点，按日粒度）；'all' → null 不过滤 */
-function quickRange(key: QuickKey): [Dayjs, Dayjs] | null {
+/** 快捷段 → [起, 止]（含端点，YYYY-MM-DD）；'all' → null 不过滤（周起始随 zh-cn locale 为周一） */
+function quickRange(key: QuickKey): [string, string] | null {
   const now = dayjs()
   switch (key) {
     case 'today':
-      return [now.startOf('day'), now.endOf('day')]
+      return [now.format('YYYY-MM-DD'), now.format('YYYY-MM-DD')]
     case 'week':
-      return [now.startOf('week'), now.endOf('week')]
+      return [now.startOf('week').format('YYYY-MM-DD'), now.endOf('week').format('YYYY-MM-DD')]
     case '7d':
-      return [now.subtract(6, 'day').startOf('day'), now.endOf('day')]
+      return [now.subtract(6, 'day').format('YYYY-MM-DD'), now.format('YYYY-MM-DD')]
     case 'month':
-      return [now.startOf('month'), now.endOf('month')]
+      return [now.startOf('month').format('YYYY-MM-DD'), now.endOf('month').format('YYYY-MM-DD')]
     case 'all':
       return null
   }
-}
-
-/** 日期（YYYY-MM-DD）是否落在 [起, 止] 内（按日粒度，仅用 dayjs 核心方法，零插件依赖） */
-function dateInRange(date: string, range: [Dayjs, Dayjs] | null): boolean {
-  if (!range) return true
-  const d = dayjs(date)
-  return !d.isBefore(range[0], 'day') && !d.isAfter(range[1], 'day')
 }
 
 export default function EntriesView() {
@@ -70,28 +57,44 @@ export default function EntriesView() {
   const [page, setPage] = useState(1)
   const [quick, setQuick] = useState<QuickKey>('all')
   const [custom, setCustom] = useState<[Dayjs, Dayjs] | null>(null)
+  // 已应用的搜索词（Input.Search 回车/按钮触发，避免逐键查询）
+  const [appliedKeyword, setAppliedKeyword] = useState('')
   // 日期列服务端排序方向（受控）：切换 = 改查询参数重查后端，而非本地排当前页
   const [dateOrder, setDateOrder] = useState<'ascend' | 'descend'>('descend')
 
-  // 挂载拉第一页（dateOrder 初始恒为 descend → desc）：分页查询语义，entries 归位为当前页数据
+  /** 当前筛选状态 → 服务端过滤参数（quick 与自定义范围互斥：custom 优先） */
+  const filtersOf = (q: QuickKey, c: [Dayjs, Dayjs] | null, keyword: string): ListEntriesFilters => {
+    const range: [string, string] | null = c
+      ? [c[0].format('YYYY-MM-DD'), c[1].format('YYYY-MM-DD')]
+      : quickRange(q)
+    return {
+      ...(range ? { dateFrom: range[0], dateTo: range[1] } : {}),
+      ...(keyword.trim() ? { keyword: keyword.trim() } : {})
+    }
+  }
+
+  const runQuery = (p: number, order: 'ascend' | 'descend', filters: ListEntriesFilters) => {
+    void loadEntries({
+      limit: PAGE_SIZE,
+      offset: (p - 1) * PAGE_SIZE,
+      order: order === 'descend' ? 'desc' : 'asc',
+      ...filters
+    })
+  }
+
+  // 挂载拉第一页（dateOrder 初始恒为 descend → desc）
   useEffect(() => {
-    void loadEntries(PAGE_SIZE, 0, 'desc')
+    void loadEntries({ limit: PAGE_SIZE, offset: 0, order: 'desc' })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const activeRange = custom ?? quickRange(quick)
-  const filtering = activeRange !== null
-  const filteredEntries = useMemo(
-    () => (activeRange ? entries.filter((e) => dateInRange(e.date, activeRange)) : entries),
-    [entries, activeRange]
-  )
-  const shownTotal = filtering ? filteredEntries.length : total
-
-  /** 切换筛选后回第一页：分页数据是后端按页拉取的，过滤只作用于当前已加载页 */
+  /** 任何筛选变化后回第一页重新查询 */
   const handleQuick = (key: string) => {
-    setQuick(key as QuickKey)
+    const q = key as QuickKey
+    setQuick(q)
     setCustom(null)
     setPage(1)
+    runQuery(1, dateOrder, filtersOf(q, null, appliedKeyword))
   }
 
   const handleCustom = (dates: [Dayjs | null, Dayjs | null] | null) => {
@@ -99,6 +102,18 @@ export default function EntriesView() {
     setCustom(valid)
     if (valid) setQuick('all')
     setPage(1)
+    runQuery(1, dateOrder, filtersOf(valid ? 'all' : quick, valid, appliedKeyword))
+  }
+
+  const handleSearch = (raw: string) => {
+    setAppliedKeyword(raw.trim())
+    setPage(1)
+    runQuery(1, dateOrder, filtersOf(quick, custom, raw))
+  }
+
+  /** allowClear 点 × 清空不触发 onSearch：这里补一次清空重查 */
+  const handleSearchChange = (raw: string) => {
+    if (raw === '' && appliedKeyword !== '') handleSearch('')
   }
 
   const accountNameMap = new Map(accountOptions.map((o) => [o.value, o.label]))
@@ -108,9 +123,10 @@ export default function EntriesView() {
       title: '日期',
       dataIndex: 'date',
       width: 110,
-      // 服务端排序：ORDER BY date,id 由后端执行；sorter: true 仅提供列头交互，不本地排序
+      // 服务端排序（非受控）：antd 管理列头轮换（默认 descend 起），onChange 给出真实 next 方向，
+      // 此处按新方向重查后端；受控 sortOrder + sorter:true 组合下点击只会发出空 sorter（实测），不可用
       sorter: true,
-      sortOrder: dateOrder
+      defaultSortOrder: 'descend'
     },
     { title: '标志', dataIndex: 'flag', width: 60, render: (v: string | null) => v ?? '—' },
     { title: '类型', dataIndex: 'type', width: 90 },
@@ -127,7 +143,7 @@ export default function EntriesView() {
     }
   ]
 
-  /** 重建索引 → 重拉状态与第一页（M3 refreshIndex 管线）；索引状态与「清空账本」已迁设置页 */
+  /** 重建索引 → 重拉状态与当前条件第一页（M3 refreshIndex 管线）；索引状态与「清空账本」已迁设置页 */
   const handleRefreshIndex = async () => {
     try {
       await window.beanwise.refreshLedgerIndex()
@@ -136,7 +152,7 @@ export default function EntriesView() {
     }
     setPage(1)
     await refresh()
-    await loadEntries(PAGE_SIZE, 0, dateOrder === 'descend' ? 'desc' : 'asc')
+    runQuery(1, dateOrder, filtersOf(quick, custom, appliedKeyword))
   }
 
   return (
@@ -148,7 +164,14 @@ export default function EntriesView() {
         <div className="entries-filter">
           <Segmented options={QUICK_OPTIONS} value={quick} onChange={handleQuick} />
           <DatePicker.RangePicker value={custom} onChange={handleCustom} placeholder={['开始日期', '结束日期']} />
-          <Tooltip title="排序为全库排序（服务端执行）；筛选作用于已加载分页数据，全量时间筛选需索引查询支持（超 UI 层 #2）">
+          <Input.Search
+            allowClear
+            className="entries-search"
+            placeholder="搜索交易对象 / 说明 / 账户"
+            onSearch={handleSearch}
+            onChange={(e) => handleSearchChange(e.target.value)}
+          />
+          <Tooltip title="筛选、搜索与排序均为全库查询（服务端执行，翻页取数）">
             <QuestionCircleOutlined className="entries-filter-hint" />
           </Tooltip>
         </div>
@@ -156,30 +179,30 @@ export default function EntriesView() {
           重建索引
         </Button>
       </div>
-      <Card title={`条目（${shownTotal}）`}>
+      <Card title={`条目（${total}）`}>
         <Table<LedgerEntryRow>
           rowKey="id"
           size="small"
           loading={loading}
-          dataSource={filteredEntries}
+          dataSource={entries}
           columns={columns}
           onChange={(_pagination, _filters, sorter) => {
             const s = Array.isArray(sorter) ? sorter[0] : sorter
-            if (s && (s.order === 'ascend' || s.order === 'descend') && s.order !== dateOrder) {
+            if (s?.field === 'date' && (s.order === 'ascend' || s.order === 'descend') && s.order !== dateOrder) {
               setDateOrder(s.order)
               setPage(1)
-              void loadEntries(PAGE_SIZE, 0, s.order === 'descend' ? 'desc' : 'asc')
+              runQuery(1, s.order, filtersOf(quick, custom, appliedKeyword))
             }
           }}
           pagination={{
             pageSize: PAGE_SIZE,
-            total: shownTotal,
+            total,
             current: page,
             showSizeChanger: false,
             showTotal: (t) => `共 ${t} 条`,
             onChange: (p) => {
               setPage(p)
-              void loadEntries(PAGE_SIZE, (p - 1) * PAGE_SIZE, dateOrder === 'descend' ? 'desc' : 'asc')
+              runQuery(p, dateOrder, filtersOf(quick, custom, appliedKeyword))
             }
           }}
         />

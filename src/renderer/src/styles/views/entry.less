@@ -168,3 +168,13 @@
   white-space: nowrap;
   color: @bw-text-secondary;
 }
+
+// 交易金额（超 UI 层 #1）：资产流视角（支出负/收入正），右对齐等宽数字 + 负数红
+.entry-recent-amount {
+  flex: none;
+  color: @bw-text-base;
+
+  &.num-negative {
+    color: inherit; // 负数红色由 .num-negative 接管（覆盖上一行的正色）
+  }
+}

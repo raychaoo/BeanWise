@@ -55,7 +55,16 @@ function fileEndsWithLf(path: string, size: number): boolean {
   }
 }
 
-function validateListParams(params: unknown): { limit: number; offset: number; order: 'asc' | 'desc' } {
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+function validateListParams(params: unknown): {
+  limit: number
+  offset: number
+  order: 'asc' | 'desc'
+  dateFrom?: string
+  dateTo?: string
+  keyword?: string
+} {
   const raw = (params ?? {}) as Partial<ListEntriesParams>
   if (raw.limit !== undefined && (typeof raw.limit !== 'number' || !Number.isInteger(raw.limit) || raw.limit < 1 || raw.limit > MAX_LIMIT)) {
     throw new Error(`limit 必须是 1~${MAX_LIMIT} 的整数`)
@@ -66,10 +75,23 @@ function validateListParams(params: unknown): { limit: number; offset: number; o
   if (raw.order !== undefined && raw.order !== 'asc' && raw.order !== 'desc') {
     throw new Error('order 必须是 asc 或 desc')
   }
+  if (raw.dateFrom !== undefined && (typeof raw.dateFrom !== 'string' || !ISO_DATE_RE.test(raw.dateFrom))) {
+    throw new Error('dateFrom 必须是 YYYY-MM-DD 日期')
+  }
+  if (raw.dateTo !== undefined && (typeof raw.dateTo !== 'string' || !ISO_DATE_RE.test(raw.dateTo))) {
+    throw new Error('dateTo 必须是 YYYY-MM-DD 日期')
+  }
+  if (raw.keyword !== undefined && (typeof raw.keyword !== 'string' || raw.keyword.length > 200)) {
+    throw new Error('keyword 必须是不超过 200 字的字符串')
+  }
+  const keyword = raw.keyword?.trim() || undefined
   return {
     limit: raw.limit ?? DEFAULT_LIMIT,
     offset: raw.offset ?? 0,
-    order: raw.order ?? 'asc'
+    order: raw.order ?? 'asc',
+    dateFrom: raw.dateFrom,
+    dateTo: raw.dateTo,
+    keyword
   }
 }
 
@@ -120,8 +142,8 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
   // async 而非同步返回：校验抛错转为 rejected promise，测试与 ipcMain.handle 语义一致
   // （ipcMain.handle 对同步 throw 同样转为 invoke 拒绝，两者对调用方无差别）
   ipc.handle('ledger:list-entries', async (_event: unknown, params: unknown) => {
-    const { limit, offset, order } = validateListParams(params)
-    return listEntries(deps.db, limit, offset, order)
+    const { limit, offset, order, dateFrom, dateTo, keyword } = validateListParams(params)
+    return listEntries(deps.db, limit, offset, order, { dateFrom, dateTo, keyword })
   })
 
   // M4：录入一笔交易。数据流铁律（先落文件 → 校验 → 重建索引）：

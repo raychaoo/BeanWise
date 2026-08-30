@@ -7,7 +7,7 @@
  */
 import { message } from 'antd'
 import { create } from 'zustand'
-import type { AccountEntry, LedgerEntryRow, LedgerStatus } from '../../../shared/ipc'
+import type { AccountEntry, LedgerEntryRow, LedgerStatus, ListEntriesParams } from '../../../shared/ipc'
 import { useSyncStore } from './sync' // M6：与 sync.ts → ledger.ts 构成运行时安全的循环引用（双方仅 action 体内引用）
 
 export interface EditorConflict {
@@ -32,7 +32,7 @@ interface LedgerState {
   loading: boolean
   error: string | null
   refresh(): Promise<void>
-  loadEntries(limit: number, offset: number, order?: 'asc' | 'desc'): Promise<void>
+  loadEntries(params: ListEntriesParams): Promise<void>
   loadAccounts(): Promise<void>
   saveAccountConfig(accounts: AccountEntry[]): Promise<boolean>
   setError(error: string | null): void
@@ -119,10 +119,10 @@ export const useLedgerStore = create<LedgerState>((set, get) => {
       }
     },
 
-    loadEntries: async (limit, offset, order) => {
+    loadEntries: async (params) => {
       set({ loading: true, error: null })
       try {
-        const r = await window.beanwise.listLedgerEntries({ limit, offset, ...(order ? { order } : {}) })
+        const r = await window.beanwise.listLedgerEntries(params)
         set({ entries: r.entries, total: r.total })
       } catch (err) {
         set({ error: String(err) })

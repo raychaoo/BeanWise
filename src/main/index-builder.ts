@@ -1,8 +1,11 @@
 import { createHash } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
-import { asc, desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm'
+import type { SQL } from 'drizzle-orm'
 import type { DrizzleDb } from './db'
 import { entries, ledgerMeta, postings } from './db/schema'
+import { accountType, isPnlAccountType } from '../shared/account'
+import { addDecimalStrings, negateDecimal } from '../shared/decimal'
 import type { PythonSvc } from './python-svc'
 
 export type LedgerIndexStatus = 'ok' | 'error' | 'missing'
@@ -36,6 +39,10 @@ export interface LedgerEntryRow {
   narration: string | null
   account: string | null
   lineno: number | null
+  /** 交易金额（超 UI 层 #1）：主币种下 PL 侧（Income/Expenses）金额和取反——资产流视角
+   * （收入 +、支出 -，十进制字符串）；无 PL posting（转账/Open 等）或运算异常 → null */
+  amount: string | null
+  currency: string | null
 }
 
 export interface ListEntriesParams {
@@ -43,6 +50,17 @@ export interface ListEntriesParams {
   offset?: number // 默认 0，>= 0
   /** date 排序方向（ORDER BY date,id 同向）；默认 'asc' 保持既有语义，明细页传 'desc' 实现全库倒序分页 */
   order?: 'asc' | 'desc'
+  /** 起止日期（含端点，YYYY-MM-DD）；超 UI 层 #2：服务端时间过滤 */
+  dateFrom?: string
+  dateTo?: string
+  /** 搜索词：payee/narration/账户（entry 自身 account 或 postings.account）任一命中即整笔交易命中 */
+  keyword?: string
+}
+
+export interface ListEntriesFilters {
+  dateFrom?: string
+  dateTo?: string
+  keyword?: string
 }
 
 export interface ListEntriesResult {
@@ -210,24 +228,78 @@ export function getLedgerStatus(db: DrizzleDb): LedgerStatus | null {
   }
 }
 
+/** 交易金额计算（超 UI 层 #1）：主币种（运营货币优先，缺省取首笔 posting 币种）下 PL 侧
+ * 金额和取反——资产流视角（支出 → 负、收入 → 正）；无 PL posting（转账/Open）→ null。
+ * 求和走 shared/decimal 十进制字符串运算（禁浮点），异常兜底 null 不阻塞列表。 */
+function entryAmount(
+  ps: Array<{ account: string; unitsNumber: string; unitsCurrency: string }>,
+  primaryCurrency: string | null
+): { amount: string | null; currency: string | null } {
+  if (ps.length === 0) return { amount: null, currency: null }
+  const currency = primaryCurrency ?? ps[0]!.unitsCurrency
+  const pl = ps.filter((p) => p.unitsCurrency === currency && isPnlAccountType(accountType(p.account)))
+  if (pl.length === 0) return { amount: null, currency }
+  try {
+    const sum = pl.reduce((acc, p) => addDecimalStrings(acc, p.unitsNumber), '0')
+    return { amount: negateDecimal(sum), currency }
+  } catch {
+    return { amount: null, currency }
+  }
+}
+
 export function listEntries(
   db: DrizzleDb,
   limit: number,
   offset: number,
-  order: 'asc' | 'desc' = 'asc'
+  order: 'asc' | 'desc' = 'asc',
+  filters?: ListEntriesFilters
 ): ListEntriesResult {
-  // total 用全表计数：M3 账本量级小可接受；大账本（>5 万笔）优化点见 roadmap 待定项
-  const total = db.select().from(entries).all().length
+  // 过滤条件（超 UI 层 #2）：日期含端点（YYYY-MM-DD 字典序即时间序）+ 关键词交易级命中。
+  // LIKE 手工转义 % _ \，ESCAPE '\' 保证搜索词按字面匹配。
+  const conds: SQL[] = []
+  if (filters?.dateFrom) conds.push(gte(entries.date, filters.dateFrom))
+  if (filters?.dateTo) conds.push(lte(entries.date, filters.dateTo))
+  if (filters?.keyword) {
+    const kw = `%${filters.keyword.replace(/[\\%_]/g, '\\$&')}%`
+    conds.push(
+      sql`(${entries.payee} LIKE ${kw} ESCAPE '\\' OR ${entries.narration} LIKE ${kw} ESCAPE '\\' OR ${entries.account} LIKE ${kw} ESCAPE '\\' OR EXISTS (SELECT 1 FROM postings WHERE postings.entry_id = ${entries.id} AND postings.account LIKE ${kw} ESCAPE '\\'))`
+    )
+  }
+  const where = conds.length > 0 ? and(...conds) : undefined
+
+  // total 与数据同条件计数：分页器展示过滤后的真实总数
+  const total = db.select({ n: sql<number>`count(*)` }).from(entries).where(where).get()?.n ?? 0
+
   // date 与 id 同向排序：倒序时同日条目也按写入先后倒排（分页语义在任意方向下均稳定）
   const dir = order === 'desc' ? desc : asc
   const rows = db
     .select()
     .from(entries)
+    .where(where)
     .orderBy(dir(entries.date), dir(entries.id))
     .limit(limit)
     .offset(offset)
     .all()
-  return { entries: rows as LedgerEntryRow[], total }
+
+  // 金额增强：本页 entries 的 postings 一次取回，内存按 entry 分组计算（页大小 ≤1000，开销可忽略）
+  const ids = rows.map((r) => r.id)
+  const pagePostings = ids.length > 0 ? db.select().from(postings).where(inArray(postings.entryId, ids)).all() : []
+  const byEntry = new Map<number, Array<{ account: string; unitsNumber: string; unitsCurrency: string }>>()
+  for (const p of pagePostings) {
+    const list = byEntry.get(p.entryId)
+    const item = { account: p.account, unitsNumber: p.unitsNumber, unitsCurrency: p.unitsCurrency }
+    if (list) list.push(item)
+    else byEntry.set(p.entryId, [item])
+  }
+  const primaryCurrency = parseJsonArray(
+    db.select().from(ledgerMeta).where(eq(ledgerMeta.id, 1)).get()?.operatingCurrency ?? null
+  )[0] ?? null
+
+  const out = rows.map((r) => {
+    const { amount, currency } = entryAmount(byEntry.get(r.id) ?? [], primaryCurrency)
+    return { ...r, amount, currency }
+  })
+  return { entries: out as LedgerEntryRow[], total }
 }
 
 function parseJsonArray(raw: string | null): string[] {

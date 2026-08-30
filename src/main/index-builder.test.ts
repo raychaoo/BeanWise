@@ -126,4 +126,44 @@ describe('索引重建管线（M3）', () => {
       expect(prev.date > cur.date || (prev.date === cur.date && prev.id > cur.id)).toBe(true)
     }
   }, 30_000)
+
+  it('listEntries 金额增强：Transaction 行带 amount/currency（PL 侧和取反 = 资产流），Open 行为 null', async () => {
+    copyFileSync(MAIN_FIXTURE, workFile)
+    await refreshIndex(drizzle, engine, workFile)
+    const listed = listEntries(drizzle, 100, 0)
+    const txs = listed.entries.filter((e) => e.type === 'Transaction')
+    expect(txs).toHaveLength(2)
+    const breakfast = txs.find((e) => e.narration === 'Breakfast')!
+    // Expenses 15.00（隐式推平）→ PL 侧和取反 = -15（资产流出）
+    expect(breakfast.amount).toBe('-15')
+    expect(breakfast.currency).toBe('CNY')
+    const opens = listed.entries.filter((e) => e.type === 'Open')
+    expect(opens.every((e) => e.amount === null && e.currency === null)).toBe(true)
+  }, 30_000)
+
+  it('listEntries dateFrom/dateTo 过滤（含端点）且 total 同步', async () => {
+    copyFileSync(MAIN_FIXTURE, workFile)
+    await refreshIndex(drizzle, engine, workFile)
+    const oneDay = listEntries(drizzle, 100, 0, 'asc', { dateFrom: '2026-01-02', dateTo: '2026-01-02' })
+    expect(oneDay.total).toBe(1)
+    expect(oneDay.entries.map((e) => e.narration)).toEqual(['Breakfast'])
+    const from = listEntries(drizzle, 100, 0, 'asc', { dateFrom: '2026-01-02' })
+    expect(from.total).toBe(2)
+  }, 30_000)
+
+  it('listEntries keyword 交易级命中（payee/narration/账户，LIKE 转义）', async () => {
+    copyFileSync(MAIN_FIXTURE, workFile)
+    await refreshIndex(drizzle, engine, workFile)
+    const byNarration = listEntries(drizzle, 100, 0, 'asc', { keyword: 'Breakfast' })
+    expect(byNarration.total).toBe(1)
+    // posting 账户 Assets:Bank:CNB 命中 2 笔交易；Open 行 account 列同样命中 → 共 3
+    const byAccount = listEntries(drizzle, 100, 0, 'asc', { keyword: 'Bank' })
+    expect(byAccount.total).toBe(3)
+    const none = listEntries(drizzle, 100, 0, 'asc', { keyword: '不存在XYZ' })
+    expect(none.total).toBe(0)
+    expect(none.entries).toHaveLength(0)
+    // LIKE 通配符按字面匹配：'%' 不应放大命中
+    const literal = listEntries(drizzle, 100, 0, 'asc', { keyword: '%' })
+    expect(literal.total).toBe(0)
+  }, 30_000)
 })

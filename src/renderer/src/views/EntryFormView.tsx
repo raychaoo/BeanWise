@@ -1,7 +1,7 @@
 /**
  * 录入视图（M4；批次 B 双栏重排；批次 D 补收最近流水卡）：左栏凭证卡（凭证头 2 列栅格 + 借贷分录卡
- * + 平衡指示条 + 提交区），右栏「最近流水」卡 = 最近 8 条分录（日期/对象/账户），录入成功随
- * refresh() 即时刷新；无金额列（LedgerEntryRow 数据层无 amount，超 UI 层 #1）。
+ * + 平衡指示条 + 提交区），右栏「最近流水」卡 = 最近 8 条分录（日期/对象/账户/交易金额），录入成功
+ * 随 refresh() 即时刷新；金额来自 listEntries 的 amount 增强字段（超 UI 层 #1，资产流视角：支出负/收入正）。
  * ProForm + Form.List 固定两行 postings + 自动平衡。金额一律十进制字符串（InputNumber stringMode
  * 直取字符串，禁浮点）；自动平衡决策抽为纯函数 nextBalancingNumber（见文件底部，单测覆盖）——
  * 写路径（ProForm → add-entry、自动平衡、stringMode）逻辑零改动。
@@ -18,6 +18,7 @@ import { filterAccountOptions, isEntryAccountPairValid } from '../../../shared/a
 import { computeBalancingNumber } from '../../../shared/decimal'
 import { useEntryFormStore } from '../stores/entry-form'
 import { useLedgerStore } from '../stores/ledger'
+import { formatAmount } from '../utils/format'
 import '../styles/views/entry.less'
 import EntryActionsBar from './entry/EntryActionsBar'
 import BalanceHint from './entry/BalanceHint'
@@ -235,6 +236,11 @@ export default function EntryFormView() {
                   </span>
                   <span className="entry-recent-account" title={account ?? undefined}>
                     {label ?? '—'}
+                  </span>
+                  <span
+                    className={`entry-recent-amount num${e.amount !== null && e.amount.startsWith('-') ? ' num-negative' : ''}`}
+                  >
+                    {e.amount !== null ? `${formatAmount(e.amount)} ${e.currency ?? ''}`.trimEnd() : '—'}
                   </span>
                 </li>
               )

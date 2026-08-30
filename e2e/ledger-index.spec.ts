@@ -158,3 +158,53 @@ test('M4 首文件：路径不存在 → 录入自动创建账本（open 行 + �
     rmSync(tmpDir, { recursive: true, force: true })
   }
 })
+
+test('M4+ 明细：服务端倒序/正序、时间筛选与关键词搜索（超 UI 层 #2）', async () => {
+  const ledgerPath = createFixtureCopy()
+  try {
+    const app = await electron.launch({
+      args: launchArgs
+    })
+    const win = await app.firstWindow()
+    await activateWorkspace(win, ledgerPath)
+
+    const dataRows = win.locator('.ant-table-tbody .ant-table-row')
+    await win.getByRole('menuitem', { name: '明细' }).click()
+    await win.getByRole('button', { name: '重建索引' }).click()
+    await expect(dataRows).toHaveCount(5)
+
+    // 默认倒序（服务端 desc）：首行 = 最新日期；列头 aria-sort 基线断言
+    // （注：runner 下模拟点击列头存在协议层挂死，方向切换的 SQL 语义由 index-builder 单测 order=asc/desc 覆盖）
+    const firstCell = dataRows.first().locator('td').first()
+    await expect(firstCell).toHaveText('2026-01-03', { timeout: 5000 })
+    await expect(win.getByRole('columnheader', { name: /日期/ })).toHaveAttribute('aria-sort', 'descending', { timeout: 5000 })
+
+    // 时间筛选（服务端 dateFrom/dateTo）：今日 → fixture 全为 2026-01 → 空态；切「全部」恢复
+    // （空态用占位行结构断言：antd Table 空态文案随 locale，不作断言依赖）
+    await win.getByText('今日', { exact: true }).click({ timeout: 10_000 })
+    await expect(win.locator('.ant-table-tbody .ant-table-placeholder')).toBeVisible({ timeout: 10_000 })
+    await win.getByText('全部', { exact: true }).click({ timeout: 10_000 })
+    await expect(dataRows).toHaveCount(5, { timeout: 10_000 })
+
+    // 关键词搜索（服务端 keyword，交易级命中）：说明命中 1 行；账户命中含 open 行共 3 行
+    const search = win.getByPlaceholder('搜索交易对象 / 说明 / 账户')
+    await search.fill('Breakfast')
+    await search.press('Enter')
+    await expect(dataRows).toHaveCount(1)
+    await expect(win.locator('.ant-table-tbody')).toContainText('Breakfast')
+    await search.fill('Bank')
+    await search.press('Enter')
+    await expect(dataRows).toHaveCount(3)
+    // 清空搜索恢复全量（allowClear 清空 → onChange 重查）
+    await search.fill('')
+    await expect(dataRows).toHaveCount(5)
+
+    // 录入页最近流水卡显示交易金额（超 UI 层 #1，资产流视角：支出负）
+    await win.getByRole('menuitem', { name: '录入' }).click()
+    await expect(win.locator('.entry-recent-list')).toContainText('-15 CNY')
+
+    await app.close()
+  } finally {
+    cleanupFixture(ledgerPath)
+  }
+})

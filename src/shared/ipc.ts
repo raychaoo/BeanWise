@@ -9,6 +9,7 @@ import type {
   LedgerEntryRow,
   LedgerIndexStatus,
   LedgerStatus,
+  ListEntriesFilters,
   ListEntriesParams,
   ListEntriesResult,
   RefreshResult
@@ -18,6 +19,7 @@ export type {
   LedgerEntryRow,
   LedgerIndexStatus,
   LedgerStatus,
+  ListEntriesFilters,
   ListEntriesParams,
   ListEntriesResult,
   RefreshResult
