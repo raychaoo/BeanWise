@@ -1,14 +1,20 @@
 /**
- * M8 报表视图（T4）：粒度 Segmented + 起止年筛选 + 三面板（净资产趋势 Line / 收支对比 Column /
- * 账户余额树表格）。图表 y 值 Number() 仅显示层，精确金额由余额表十进制字符串提供。
+ * M8 报表视图（T4）+ 批次 E Task 3 三表排版：外层 Tabs（趋势图表 / 资产负债表 / 利润表）。
+ * 默认 Tab「趋势图表」保持既有 DOM（粒度 Segmented + 起止年 Select + 三卡片——
+ * e2e/reports.spec.ts 依赖，不得移动）；资产负债表/利润表见 views/reports/*。
+ * 图表 y 值 Number() 仅显示层，精确金额由报表 Tab 十进制字符串提供。
+ * destroyInactiveTabPane=false 保切换状态；图表懒加载（LazyLine/LazyColumn）。
  */
-import { Alert, Card, Empty, Segmented, Select, Spin, Table, Tooltip, Typography } from 'antd'
+import { Alert, Card, Empty, Segmented, Select, Spin, Table, Tabs, Tooltip, Typography } from 'antd'
 import { useEffect } from 'react'
 import type { AccountBalance, IncomeExpensePoint, NetWorthPoint } from '../../../shared/ipc'
 import LazyColumn from '../components/LazyColumn'
 import LazyLine from '../components/LazyLine'
 import { useLedgerStore } from '../stores/ledger'
 import { useReportsStore } from '../stores/reports'
+import BalanceSheetTable from './reports/BalanceSheetTable'
+import IncomeStatementTable from './reports/IncomeStatementTable'
+import '../styles/views/reports.less'
 
 /** 趋势点 → 图数据（三序列展开） */
 function toTrendSeries(points: NetWorthPoint[]): Array<{ period: string; series: string; value: number }> {
@@ -33,7 +39,8 @@ function BalanceCell({ balances }: { balances: Array<{ currency: string; number:
   )
 }
 
-export default function ReportsView() {
+/** 默认 Tab：粒度/起止年筛选 + 三卡片（净资产趋势 / 收支对比 / 账户余额）——结构与标题不动（e2e 依赖） */
+function TrendPane() {
   const granularity = useReportsStore((s) => s.granularity)
   const setGranularity = useReportsStore((s) => s.setGranularity)
   const startYear = useReportsStore((s) => s.startYear)
@@ -157,5 +164,19 @@ export default function ReportsView() {
         )}
       </Spin>
     </div>
+  )
+}
+
+export default function ReportsView() {
+  return (
+    <Tabs
+      defaultActiveKey="trend"
+      destroyInactiveTabPane={false}
+      items={[
+        { key: 'trend', label: '趋势图表', children: <TrendPane /> },
+        { key: 'balance', label: '资产负债表', children: <BalanceSheetTable /> },
+        { key: 'income', label: '利润表', children: <IncomeStatementTable /> }
+      ]}
+    />
   )
 }

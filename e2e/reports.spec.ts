@@ -99,6 +99,37 @@ test('M8 报表：真实数据渲染（IPC 聚合 + 余额表 + 图表容器）'
     await expect(win.locator('.ant-card', { hasText: '净资产趋势' }).locator('canvas').first()).toBeVisible({ timeout: 15_000 })
     await expect(win.locator('.ant-alert-error')).toHaveCount(0)
 
+    // 6. 批次 E：资产负债表（账户式）——双栏 + 会计恒等式校验通过
+    // （fixture：资产 19960 = 负债 20（翻转正显示）+ 未分配利润 19940；inactive pane 仍挂载
+    // destroyInactiveTabPane=false → 断言收敛到 .ant-tabs-tabpane-active）
+    await win.locator('.ant-tabs-tab', { hasText: '资产负债表' }).click()
+    const balancePane = win.locator('.ant-tabs-tabpane-active')
+    await expect(balancePane.getByText('资产负债表').first()).toBeVisible()
+    await expect(balancePane.getByText('Assets:Bank:CNB')).toBeVisible()
+    await expect(balancePane.locator('tr', { hasText: 'Liabilities:CreditCard' })).toContainText('20')
+    await expect(balancePane.getByText('资产合计')).toBeVisible()
+    await expect(balancePane.getByText('负债和所有者权益合计')).toBeVisible()
+    await expect(balancePane.getByText(/校验通过：资产 = 负债 \+ 权益/)).toBeVisible()
+    await expect(balancePane.locator('.ant-tag-error')).toHaveCount(0)
+
+    // 7. 批次 E：利润表（报告式）——本月汇总 + 累计明细（累计值与运行日期无关，可精确断言；
+    // 本月行随运行日期变化，仅断言结构存在）
+    await win.locator('.ant-tabs-tab', { hasText: '利润表' }).click()
+    const incomePane = win.locator('.ant-tabs-tabpane-active')
+    const thisYear = new Date().getFullYear()
+    await expect(incomePane.getByText('利润表').first()).toBeVisible()
+    await expect(incomePane.getByText(/本月（\d{4}年\d{2}月）/)).toBeVisible()
+    await expect(incomePane.getByText(`收入明细（截至 ${thisYear} 年末累计）`)).toBeVisible()
+    await expect(incomePane.locator('tr', { hasText: 'Income:Salary' })).toContainText('20,000')
+    await expect(incomePane.locator('tr', { hasText: 'Expenses:Food' })).toContainText('55')
+    await expect(incomePane.locator('tr', { hasText: '收入小计' })).toContainText('20,000')
+    await expect(incomePane.locator('tr', { hasText: '支出小计' })).toContainText('60')
+    await expect(incomePane.locator('tr', { hasText: `净利润（累计至 ${thisYear} 年末）` })).toContainText('19,940')
+    // 切走再切回：destroyInactiveTabPane=false 保状态（趋势 Tab 图表容器仍在 DOM）
+    await win.locator('.ant-tabs-tab', { hasText: '趋势图表' }).click()
+    await expect(win.locator('.ant-card', { hasText: '净资产趋势' }).locator('canvas').first()).toBeVisible()
+    await expect(win.locator('.ant-alert-error')).toHaveCount(0)
+
     await app.close()
   } finally {
     cleanupFixture(ledgerPath)
