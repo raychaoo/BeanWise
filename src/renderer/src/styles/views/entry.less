@@ -125,3 +125,46 @@
     background: fade(@bw-negative, 8%);
   }
 }
+
+// 最近流水卡（批次 D 补收）：最近 8 条分录，录入成功后随 refresh() 即时刷新
+.entry-recent-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry-recent-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 13px;
+  border-bottom: 1px solid #f0f0f0;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.entry-recent-date {
+  flex: none;
+  color: @bw-text-secondary;
+  font-variant-numeric: tabular-nums;
+}
+
+.entry-recent-main {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entry-recent-account {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: @bw-text-secondary;
+}

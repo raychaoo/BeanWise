@@ -1,6 +1,7 @@
 /**
- * 录入视图（M4；批次 B 双栏重排）：左栏凭证卡（凭证头 2 列栅格 + 借贷分录卡 + 平衡指示条 + 提交区），
- * 右栏「最近流水」占位卡（批次 D 接入总览联动）。
+ * 录入视图（M4；批次 B 双栏重排；批次 D 补收最近流水卡）：左栏凭证卡（凭证头 2 列栅格 + 借贷分录卡
+ * + 平衡指示条 + 提交区），右栏「最近流水」卡 = 最近 8 条分录（日期/对象/账户），录入成功随
+ * refresh() 即时刷新；无金额列（LedgerEntryRow 数据层无 amount，超 UI 层 #1）。
  * ProForm + Form.List 固定两行 postings + 自动平衡。金额一律十进制字符串（InputNumber stringMode
  * 直取字符串，禁浮点）；自动平衡决策抽为纯函数 nextBalancingNumber（见文件底部，单测覆盖）——
  * 写路径（ProForm → add-entry、自动平衡、stringMode）逻辑零改动。
@@ -11,7 +12,7 @@ import { Card, Empty, Form, message, Typography } from 'antd'
 import type { Rule } from 'antd/es/form'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import type { AddEntryParams } from '../../../shared/ipc'
 import { filterAccountOptions, isEntryAccountPairValid } from '../../../shared/account'
 import { computeBalancingNumber } from '../../../shared/decimal'
@@ -45,8 +46,10 @@ export default function EntryFormView() {
   const status = useLedgerStore((s) => s.status)
   const loadAccounts = useLedgerStore((s) => s.loadAccounts)
   const accountOptions = useLedgerStore((s) => s.accountOptions)
+  const recentEntries = useLedgerStore((s) => s.entries)
   const [submitting, setSubmitting] = useState(false)
   const postings = Form.useWatch('postings', form)
+  const accountNameMap = new Map(accountOptions.map((o) => [o.value, o.label]))
 
   useEffect(() => {
     void loadAccounts()
@@ -210,8 +213,32 @@ export default function EntryFormView() {
           <BalanceHint rows={postings} />
         </ProForm>
       </Card>
-      <Card className="entry-col-side" title="最近流水">
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="最近流水（批次 D 接入总览联动）" />
+      <Card
+        className="entry-col-side"
+        title="最近流水"
+        extra={recentEntries.length > 0 ? <Link to="/entries">查看全部</Link> : undefined}
+      >
+        {recentEntries.length === 0 ? (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无流水，录入后即时显示" />
+        ) : (
+          <ul className="entry-recent-list">
+            {recentEntries.slice(0, 8).map((e) => {
+              const account = e.account
+              const label = account !== null ? (accountNameMap.get(account) ?? account) : null
+              return (
+                <li key={e.id} className="entry-recent-item">
+                  <span className="entry-recent-date">{e.date}</span>
+                  <span className="entry-recent-main" title={e.narration ?? undefined}>
+                    {e.payee ?? e.narration ?? '—'}
+                  </span>
+                  <span className="entry-recent-account" title={account ?? undefined}>
+                    {label ?? '—'}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        )}
       </Card>
     </div>
   )
