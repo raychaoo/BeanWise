@@ -130,9 +130,19 @@ test('期初余额：账户页录入 → 走 add-entry 落账本（Equity 配对
       .poll(() => readFileSync(ledgerPath, 'utf8'), { timeout: 30000 })
       .toMatch(/  Assets:Cash  50 CNY\n  Equity:Opening-Balances  -50 CNY\n/)
 
-    // 总账平衡：明细页重建索引成功且流水出现期初余额行
+    // 总账平衡：明细页重建索引成功且流水出现期初余额行。
+    // python 引擎子进程在 Windows 会弹可见控制台抢前台（python-svc spawn 无 windowsHide，
+    // 基础设施移交修复），可能吞掉一次菜单点击：同 launchWithWorkspace 做一次重试。
     await win.getByRole('menuitem', { name: '明细' }).click()
-    await win.getByRole('button', { name: '重建索引' }).click()
+    let rebuild = win.getByRole('button', { name: '重建索引' })
+    try {
+      await expect(rebuild).toBeVisible({ timeout: 8000 })
+    } catch {
+      await win.getByRole('menuitem', { name: '明细' }).click()
+      rebuild = win.getByRole('button', { name: '重建索引' })
+      await expect(rebuild).toBeVisible({ timeout: 20000 })
+    }
+    await rebuild.click()
     await expect(win.locator('.ant-table-tbody')).toContainText('期初余额', { timeout: 30000 })
     await app.close()
   } finally {
