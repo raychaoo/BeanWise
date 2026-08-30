@@ -2,14 +2,14 @@
  * 总览页（批次 D Task 3，方案模块 2）：4 × 指标卡（总资产/总负债/净资产/本月收支，运营货币）+
  * 净资产趋势卡（本期实线 + 去年同期虚线，图顶统一筛选条）。指标聚合走 useDashboardStore
  * （decimal 精确累加），Number() 仅图表 y 值显示层；每卡独立 Skeleton 防跳变。
- * 图表直接引入 @ant-design/charts Line（与 ReportsView 同款；批次 E 的 LazyLine 懒加载
- * 组件未合并，E 落地后可替换，不影响本页逻辑）。
+ * 图表经批次 E 的 LazyLine 懒加载（G2 体积大头不进首屏 chunk，原计划「D 复用 E 的
+ * LazyLine」——E 合并后由直接引入 Line 切换而来）。
  */
-import { Line } from '@ant-design/charts'
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons'
 import { Alert, Button, Card, Col, Empty, Row, Skeleton, Statistic, Typography } from 'antd'
 import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import LazyLine from '../components/LazyLine'
 import TimeRangeBar from '../components/TimeRangeBar'
 import { useTimeRange } from '../hooks/useTimeRange'
 import type { TimeRangeValue } from '../hooks/useTimeRange'
@@ -165,7 +165,7 @@ export default function DashboardPage() {
         {loading && series.length === 0 ? (
           <Skeleton active title={false} paragraph={{ rows: 5 }} className="dashboard-trend-skeleton" />
         ) : (
-          <Line
+          <LazyLine
             data={buildTrendData(series, prevYearSeries)}
             xField="period"
             yField="value"
