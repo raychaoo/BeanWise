@@ -116,16 +116,16 @@ describe('workspace rename/archive/delete IPC（批次 H，白名单 + 磁盘操
     expect(onChanged).not.toHaveBeenCalled()
   })
 
-  it('rename current：current 联动更新 + onWorkspaceChanged(newPath) 重建运行时', async () => {
+  it('rename current → 拒绝（当前账本 index.db 被运行时占用，Windows 下 renameSync 必败）', async () => {
     const { store, handlers, onChanged } = setup()
-    const newPath = join(parent, 'A2')
-    const result = (await handlers['workspace:rename'](undefined, { path: dirA, newName: 'A2' })) as { ok: boolean; newPath?: string }
+    const result = (await handlers['workspace:rename'](undefined, { path: dirA, newName: 'A2' })) as { ok: boolean; message?: string }
 
-    expect(result.ok).toBe(true)
-    expect(result.newPath).toBe(newPath)
-    expect(store.loadCurrent()).toBe(newPath)
-    expect(store.loadRecents()).toEqual([newPath, dirB, dirC])
-    expect(onChanged).toHaveBeenCalledWith(newPath)
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('当前')
+    expect(existsSync(dirA)).toBe(true)
+    expect(store.loadCurrent()).toBe(dirA)
+    expect(store.loadRecents()).toEqual([dirA, dirB, dirC])
+    expect(onChanged).not.toHaveBeenCalled()
   })
 
   it('rename 同父目录已存在重名 → 拒绝且磁盘不变', async () => {
@@ -173,14 +173,15 @@ describe('workspace rename/archive/delete IPC（批次 H，白名单 + 磁盘操
     expect(store.loadCurrent()).toBe(dirA)
   })
 
-  it('archive current：允许，store 清空 current（渲染端 reload 后回门控）', async () => {
+  it('archive current → 拒绝（同 rename，运行时占用）', async () => {
     const { store, handlers } = setup()
-    const result = (await handlers['workspace:archive'](undefined, { path: dirA })) as { ok: boolean }
+    const result = (await handlers['workspace:archive'](undefined, { path: dirA })) as { ok: boolean; message?: string }
 
-    expect(result.ok).toBe(true)
-    expect(existsSync(dirA)).toBe(false)
-    expect(store.loadCurrent()).toBeNull()
-    expect(store.loadRecents()).toEqual([dirB, dirC])
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('当前')
+    expect(existsSync(dirA)).toBe(true)
+    expect(store.loadCurrent()).toBe(dirA)
+    expect(store.loadRecents()).toEqual([dirA, dirB, dirC])
   })
 
   it('archive 白名单外路径 → 拒绝', async () => {

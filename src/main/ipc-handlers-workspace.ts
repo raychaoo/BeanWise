@@ -105,6 +105,8 @@ export function registerWorkspaceHandlers(ipc: IpcRegistrar, deps: WorkspaceDeps
     const newName = typeof p.newName === 'string' ? p.newName.trim() : ''
     if (path.length === 0) return { ok: false, message: '路径不能为空' }
     if (!isRegisteredPath(deps.store, path)) return { ok: false, message: '仅允许操作已登记的账本目录' }
+    // 当前账本被运行时占用（index.db 由 SQLite 持有打开句柄），Windows 下 renameSync 必败，提前拒绝
+    if (deps.store.loadCurrent() === path) return { ok: false, message: '当前账本正在使用中，无法重命名；请先切换到其他账本' }
     if (!WORKSPACE_NAME_PATTERN.test(newName)) {
       return { ok: false, message: '名称仅允许中文、字母、数字、下划线与连字符（1-100 字符）' }
     }
@@ -127,13 +129,14 @@ export function registerWorkspaceHandlers(ipc: IpcRegistrar, deps: WorkspaceDeps
     const path = typeof p.path === 'string' ? p.path.trim() : ''
     if (path.length === 0) return { ok: false, message: '路径不能为空' }
     if (!isRegisteredPath(deps.store, path)) return { ok: false, message: '仅允许操作已登记的账本目录' }
+    // 同 rename：当前账本被运行时占用，提前拒绝
+    if (deps.store.loadCurrent() === path) return { ok: false, message: '当前账本正在使用中，无法归档；请先切换到其他账本' }
     if (!existsSync(path)) return { ok: false, message: `目录不存在：${path}` }
     try {
       const archiveRoot = join(dirname(path), '.beanwise-archive')
       mkdirSync(archiveRoot, { recursive: true })
       const target = join(archiveRoot, `${basename(path)}-${archiveStamp(new Date())}`)
       renameSync(path, target)
-      // 是 current 时 store 内部联动清空 current → 渲染端 reload 后回门控
       deps.store.removeRecent(path)
       return { ok: true, newPath: target }
     } catch (err) {
