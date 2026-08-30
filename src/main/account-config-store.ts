@@ -1,6 +1,7 @@
 /**
  * 每个工作目录一份通用账户库。账户属于当前账本工作区，
  * 因此保存在 <workspace>/.beanwise/accounts.json。
+ * 保存/读取均为整体序列化（非字段映射），AccountEntry 的可选字段（enabled 等）原样透传。
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'

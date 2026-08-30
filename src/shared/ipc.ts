@@ -122,6 +122,8 @@ export interface AccountEntry {
   value: string
   /** 用途说明（账户设置列表中展示） */
   description?: string
+  /** 停用后不进录入下拉；缺省视为启用（批次 I：过滤发生在渲染端 mergeAccountOptions） */
+  enabled?: boolean
 }
 
 /** accounts:save 入参 */

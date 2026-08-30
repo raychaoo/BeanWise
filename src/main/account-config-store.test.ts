@@ -31,6 +31,17 @@ describe('JsonAccountConfigStore', () => {
     ])
   })
 
+  it('enabled 停用标记保存后读回保持；未设置时读回 undefined（批次 I）', () => {
+    const store = createStore()
+    store.save([
+      { id: 1, name: '储蓄卡', value: 'Assets:Bank:Savings', description: '', enabled: false },
+      { id: 2, name: '现金', value: 'Assets:Cash', description: '' }
+    ])
+    const loaded = store.load()
+    expect(loaded.find((a) => a.id === 1)?.enabled).toBe(false)
+    expect(loaded.find((a) => a.id === 2)).not.toHaveProperty('enabled')
+  })
+
   it('损坏的配置文件降级为空，不阻断录入页', () => {
     const dir = mkdtempSync(join(tmpdir(), 'beanwise-account-config-'))
     dirs.push(dir)
