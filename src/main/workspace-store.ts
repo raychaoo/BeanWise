@@ -11,6 +11,10 @@ export interface WorkspaceStore {
   clearCurrent(): void
   loadRecents(): string[]
   addRecent(path: string): void
+  /** 从 recents 移除；若是 current 同时清空 current（批次 H 归档/删除） */
+  removeRecent(path: string): void
+  /** recents 原位替换；若是 current 同时更新 current（批次 H 重命名） */
+  replaceRecent(oldPath: string, newPath: string): void
 }
 
 const MAX_RECENTS = 10
@@ -26,5 +30,21 @@ export class ElectronWorkspaceStore implements WorkspaceStore {
     const list = (this.store.get('recents') ?? []).filter((p) => p !== path)
     list.unshift(path)
     this.store.set('recents', list.slice(0, MAX_RECENTS))
+  }
+
+  removeRecent(path: string): void {
+    this.store.set('recents', this.loadRecents().filter((p) => p !== path))
+    if (this.loadCurrent() === path) this.clearCurrent()
+  }
+
+  replaceRecent(oldPath: string, newPath: string): void {
+    const list = this.loadRecents()
+    const idx = list.indexOf(oldPath)
+    if (idx >= 0) {
+      list[idx] = newPath
+      this.store.set('recents', list)
+    }
+    // 不走 setCurrent：原位替换语义，不得把新路径挪到队首
+    if (this.loadCurrent() === oldPath) this.store.set('current', newPath)
   }
 }
