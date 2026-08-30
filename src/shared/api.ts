@@ -43,6 +43,7 @@ import type {
   UpdateCheckResult,
   UpdateInstallResult,
   UpdateState,
+  WorkspaceOpResult,
   WorkspaceStatus
 } from './ipc'
 
@@ -57,6 +58,12 @@ export interface BeanWiseApi {
   openWorkspace(path: string): Promise<{ ok: boolean; message?: string; status?: WorkspaceStatus }>
   /** 最近打开的工作目录（绝对路径，最新在前，上限 10——由 WorkspaceStore.loadRecents() 保证） */
   getWorkspaceRecents(): Promise<string[]>
+  /** 重命名账本目录（白名单校验 + newName 校验；current 联动重建运行时） */
+  renameWorkspace(path: string, newName: string): Promise<WorkspaceOpResult>
+  /** 归档账本目录：移动到 <父目录>/.beanwise-archive/（current 归档后 reload 回门控） */
+  archiveWorkspace(path: string): Promise<WorkspaceOpResult>
+  /** 删除账本目录（当前账本拒绝，需 UI 输入目录名确认） */
+  deleteWorkspace(path: string): Promise<WorkspaceOpResult>
   /** 触发索引重建（主进程持有账本路径，渲染进程不传路径——防目录穿越） */
   refreshLedgerIndex(): Promise<RefreshResult>
   getLedgerStatus(): Promise<LedgerStatus | null>
