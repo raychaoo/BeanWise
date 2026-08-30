@@ -84,13 +84,18 @@ export const useLedgerStore = create<LedgerState>((set, get) => {
 
   /** 合并配置账户 + 账本历史账户为下拉选项和值列表 */
   function mergeAccountOptions(configAccounts: AccountEntry[], ledgerAccounts: string[]): { accountOptions: AccountOption[]; accountValues: string[] } {
+    // 批次 I 语义边界：只有账户库配置条目可停用（enabled === false 排除，缺省视为启用）；
+    // 账本中存在但账户库没有的账户（历史交易产生）无停用载体，始终出现。
+    // 停用配置账户即使账本有历史交易也不回灌下拉（configuredValues 按全量去重防其以
+    // 历史账户身份再次入选）；停用不影响明细/报表展示与账户设置页编辑。
+    const activeEntries = configAccounts.filter((e) => e.enabled !== false)
     const configuredValues = new Set(configAccounts.map((e) => e.value))
-    const options: AccountOption[] = configAccounts.map((e) => ({ label: e.name || e.value, value: e.value }))
+    const options: AccountOption[] = activeEntries.map((e) => ({ label: e.name || e.value, value: e.value }))
     for (const v of ledgerAccounts) {
       if (!configuredValues.has(v)) options.push({ label: v, value: v })
     }
     options.sort((a, b) => a.label.localeCompare(b.label))
-    const values = [...new Set([...configAccounts.map((e) => e.value), ...ledgerAccounts])]
+    const values = [...new Set([...activeEntries.map((e) => e.value), ...ledgerAccounts])]
     return { accountOptions: options, accountValues: values }
   }
 
