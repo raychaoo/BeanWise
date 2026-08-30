@@ -55,12 +55,16 @@ export interface ListEntriesParams {
   dateTo?: string
   /** 搜索词：payee/narration/账户（entry 自身 account 或 postings.account）任一命中即整笔交易命中 */
   keyword?: string
+  /** 账户精确过滤（超 UI 层 #2 收尾）：精确匹配 postings.account，不做前缀展开（层级聚合是余额表职责）；
+   * 明细账视角 = 该账户自身分录流，命中交易的其他 posting 行不自动带出；与 keyword/date* 叠加为 AND 语义 */
+  account?: string
 }
 
 export interface ListEntriesFilters {
   dateFrom?: string
   dateTo?: string
   keyword?: string
+  account?: string
 }
 
 export interface ListEntriesResult {
@@ -254,11 +258,21 @@ export function listEntries(
   order: 'asc' | 'desc' = 'asc',
   filters?: ListEntriesFilters
 ): ListEntriesResult {
-  // 过滤条件（超 UI 层 #2）：日期含端点（YYYY-MM-DD 字典序即时间序）+ 关键词交易级命中。
+  // 过滤条件（超 UI 层 #2）：日期含端点（YYYY-MM-DD 字典序即时间序）+ 关键词交易级命中 + 账户精确过滤。
   // LIKE 手工转义 % _ \，ESCAPE '\' 保证搜索词按字面匹配。
   const conds: SQL[] = []
   if (filters?.dateFrom) conds.push(gte(entries.date, filters.dateFrom))
   if (filters?.dateTo) conds.push(lte(entries.date, filters.dateTo))
+  if (filters?.account !== undefined) {
+    // 入参校验：非空字符串、长度上限 200（与 keyword 上限一致）
+    if (typeof filters.account !== 'string' || filters.account.length === 0 || filters.account.length > 200) {
+      throw new Error('account 必须是不超过 200 字的非空字符串')
+    }
+    // 精确匹配（drizzle 参数化，无注入面）：postings 逐行 EXISTS，命中行的同笔交易其他 posting 行不自动带出
+    conds.push(
+      sql`EXISTS (SELECT 1 FROM postings WHERE postings.entry_id = ${entries.id} AND postings.account = ${filters.account})`
+    )
+  }
   if (filters?.keyword) {
     const kw = `%${filters.keyword.replace(/[\\%_]/g, '\\$&')}%`
     conds.push(

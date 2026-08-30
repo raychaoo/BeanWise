@@ -151,6 +151,29 @@ describe('索引重建管线（M3）', () => {
     expect(from.total).toBe(2)
   }, 30_000)
 
+  it('listEntries account 精确过滤（postings 逐行，无前缀展开）且 total 同步、可与日期叠加', async () => {
+    copyFileSync(MAIN_FIXTURE, workFile)
+    await refreshIndex(drizzle, engine, workFile)
+    // Breakfast + Coffee 两笔交易均含 Expenses:Food posting；Open 行无 posting 不命中
+    const food = listEntries(drizzle, 100, 0, 'asc', { account: 'Expenses:Food' })
+    expect(food.total).toBe(2)
+    expect(food.entries.map((e) => e.narration)).toEqual(['Breakfast', 'Coffee'])
+    // 精确匹配：不做前缀展开（层级聚合是余额表职责）
+    const prefix = listEntries(drizzle, 100, 0, 'asc', { account: 'Expenses' })
+    expect(prefix.total).toBe(0)
+    // 与 dateFrom 叠加（AND 语义）
+    const overlaid = listEntries(drizzle, 100, 0, 'asc', { account: 'Expenses:Food', dateFrom: '2026-01-03' })
+    expect(overlaid.total).toBe(1)
+    expect(overlaid.entries.map((e) => e.narration)).toEqual(['Coffee'])
+    // 未知账户 → 空
+    const none = listEntries(drizzle, 100, 0, 'asc', { account: 'Assets:NoSuch' })
+    expect(none.total).toBe(0)
+    expect(none.entries).toHaveLength(0)
+    // 入参校验：非空字符串、长度上限 200
+    expect(() => listEntries(drizzle, 100, 0, 'asc', { account: '' })).toThrow()
+    expect(() => listEntries(drizzle, 100, 0, 'asc', { account: 'x'.repeat(201) })).toThrow()
+  }, 30_000)
+
   it('listEntries keyword 交易级命中（payee/narration/账户，LIKE 转义）', async () => {
     copyFileSync(MAIN_FIXTURE, workFile)
     await refreshIndex(drizzle, engine, workFile)
