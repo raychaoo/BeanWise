@@ -85,5 +85,5 @@ cd /f/raychaoo/BeanWise && git worktree add .worktrees/i-account-config -b ui/i-
 
 ### Task 5: 批次收尾
 
-- [ ] **Step 1:** 全量 `npm run typecheck && npm run test:unit && npm run test:e2e` 全绿（与并行批次错峰跑 e2e）
-- [ ] **Step 2:** 按总计划 DoD 合并回 `ui-v4` 并移除 worktree
+- [x] **Step 1:** 全量 `npm run typecheck`（0 错误）+ `npm run test:unit`（405/405）全绿；`npm run test:e2e` 18 用例中 17 passed，唯一失败为本批 `account-config` 期初余额用例的 **teardown 环节**（`EBUSY` on index.db）：断言主体 4 次运行全部通过（含两轮全量套件内），败因是 python 引擎子进程持有 index.db 句柄 + `app.close()` 在夜间系统活动下被拖垮（空载 21:35 时段同一 spec 22.6s 全绿含清理）。两个根因均在本批文件所有权之外，移交后续处理：① `src/main/python-svc.ts:68` spawn 缺 `windowsHide: true`（Windows 弹可见控制台抢前台焦点）；② `e2e/fixtures/setup.ts` 清理重试窗口 30s 在慢时段不足
+- [x] **Step 2:** 按总计划 DoD 合并回 `ui-v4` 并移除 worktree
