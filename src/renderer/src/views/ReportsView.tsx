@@ -2,10 +2,11 @@
  * M8 报表视图（T4）：粒度 Segmented + 起止年筛选 + 三面板（净资产趋势 Line / 收支对比 Column /
  * 账户余额树表格）。图表 y 值 Number() 仅显示层，精确金额由余额表十进制字符串提供。
  */
-import { Column, Line } from '@ant-design/charts'
 import { Alert, Card, Empty, Segmented, Select, Spin, Table, Tooltip, Typography } from 'antd'
 import { useEffect } from 'react'
 import type { AccountBalance, IncomeExpensePoint, NetWorthPoint } from '../../../shared/ipc'
+import LazyColumn from '../components/LazyColumn'
+import LazyLine from '../components/LazyLine'
 import { useLedgerStore } from '../stores/ledger'
 import { useReportsStore } from '../stores/reports'
 
@@ -114,7 +115,7 @@ export default function ReportsView() {
         {hasData ? (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <Card title="净资产趋势" style={{ gridColumn: '1 / -1' }}>
-              <Line
+              <LazyLine
                 data={toTrendSeries(netWorth ?? [])}
                 xField="period"
                 yField="value"
@@ -123,7 +124,7 @@ export default function ReportsView() {
               />
             </Card>
             <Card title="收支对比">
-              <Column
+              <LazyColumn
                 data={toIncomeExpenseSeries(incomeExpense ?? [])}
                 xField="period"
                 yField="value"
