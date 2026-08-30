@@ -34,9 +34,9 @@ cd /f/raychaoo/BeanWise && git worktree add .worktrees/e-coldstart-reports -b ui
 **Interfaces:**
 - Produces: 约定——splash 节点 `id="splash"`，`position: fixed; inset: 0; pointer-events: none;`（始终不拦截交互，e2e 与用户点击均不受影响），`animation: bw-splash-out 0.4s ease-out 1.2s forwards`（ forwards 保持 `opacity:0; visibility:hidden` 终态）；`@keyframes bw-splash-out` 与 `prefers-reduced-motion` 覆写（直接终态）
 
-- [ ] **Step 1: index.html splash** —— `<div id="splash">` 内：居中字标「BeanWise · 豆账」（`color: var(--bw-primary)` 回退 `#1d39c4`）+ 三点呼吸动画（`@keyframes` opacity 循环）；底色 `#f5f7fa`；按 Interfaces 约定实现自淡出；**禁止任何 `<script>`**
-- [ ] **Step 2: 验证**：`npm run build` 后 `npx electron out/main/index.js` 手动观察冷启动无白屏（或 `npm run dev` 观察 splash 1.2s 后自动淡出，框架骨架在其下已可交互）；typecheck；`npm run test:e2e`（splash `pointer-events:none` 且在 root 外，不挡任何断言）
-- [ ] **Step 3: Commit** `feat(ui-e): index.html 纯 CSS 自淡出 Splash，冷启动零白屏零 JS`
+- [x] **Step 1: index.html splash** —— `<div id="splash">` 内：居中字标「BeanWise · 豆账」（`color: var(--bw-primary)` 回退 `#1d39c4`）+ 三点呼吸动画（`@keyframes` opacity 循环）；底色 `#f5f7fa`；按 Interfaces 约定实现自淡出；**禁止任何 `<script>`**
+- [x] **Step 2: 验证**：`npm run build` 后 `npx electron out/main/index.js` 手动观察冷启动无白屏（或 `npm run dev` 观察 splash 1.2s 后自动淡出，框架骨架在其下已可交互）；typecheck；`npm run test:e2e`（splash `pointer-events:none` 且在 root 外，不挡任何断言）
+- [x] **Step 3: Commit** `feat(ui-e): index.html 纯 CSS 自淡出 Splash，冷启动零白屏零 JS`
 
 ### Task 2: 图表懒加载（产出 D 批消费的契约）
 
@@ -48,10 +48,10 @@ cd /f/raychaoo/BeanWise && git worktree add .worktrees/e-coldstart-reports -b ui
 - Produces: `LazyLine` / `LazyColumn`（`React.lazy(() => import('@ant-design/charts').then(m => ({ default: m.Line })))` 模式，props 透传，类型收窄为保持 typecheck 通过的最小面）——**批次 D 的 DashboardPage 直接复用**
 - 边界：DashboardPage 归批次 D（占位文件），本批不动
 
-- [ ] **Step 1: LazyLine/LazyColumn 封装**
-- [ ] **Step 2: ReportsView 替换** + Suspense
-- [ ] **Step 3: 验证**：typecheck + `npm run test:e2e -- --grep "报表"`（canvas 可见断言仍过）
-- [ ] **Step 4: Commit** `perf(ui-e): 图表懒加载 LazyLine/LazyColumn（D 批复用）`
+- [x] **Step 1: LazyLine/LazyColumn 封装**
+- [x] **Step 2: ReportsView 替换** + Suspense
+- [x] **Step 3: 验证**：typecheck + `npm run test:e2e -- --grep "报表"`（canvas 可见断言仍过）
+- [x] **Step 4: Commit** `perf(ui-e): 图表懒加载 LazyLine/LazyColumn（D 批复用）`
 
 ### Task 3: 报表页三表排版
 
@@ -63,16 +63,16 @@ cd /f/raychaoo/BeanWise && git worktree add .worktrees/e-coldstart-reports -b ui
 **Interfaces:**
 - Consumes: `getBalancesReport`（含起止参数）、`getIncomeExpenseReport`、`formatAmount`、`accountNameMap` 模式
 
-- [ ] **Step 1: BalanceSheetTable（账户式）** —— 双栏 `Table` 布局：左栏标题「资产」列 `Assets:*` 逐账户（名称 + `.num` 余额）+ 合计行；右栏「负债与所有者权益」列 `Liabilities:*` + `Equity:*` + 合计行；底部校验行「资产 = 负债 + 权益」——两侧合计用 `addDecimalStrings` 比对，相等显示绿色对勾 Tag，不等红色差额（`computeBalancingNumber` 取反）；期间选择 `TimeRangeBar`（granularity）
-- [ ] **Step 2: IncomeStatementTable（报告式）** —— 上下一栏：收入账户逐行（`.num`）→ 小计 → 支出账户逐行 → 「净利润」强调行（正负按 `.num-negative` 规则）；月份 `DatePicker picker="month"` 单选传参
-- [ ] **Step 3: Tabs 接线** —— 默认 Tab `趋势图表` 保持现有 DOM（e2e 依赖）；destroyInactiveTabPane=false 保切换状态
-- [ ] **Step 4: 验证**：typecheck + unit + `npm run test:e2e -- --grep "报表"` 全绿
-- [ ] **Step 5: Commit** `feat(ui-e): 报表页资产负债表（账户式）与利润表（报告式）`
+- [x] **Step 1: BalanceSheetTable（账户式）** —— 双栏 `Table` 布局：左栏标题「资产」列 `Assets:*` 逐账户（名称 + `.num` 余额）+ 合计行；右栏「负债与所有者权益」列 `Liabilities:*` + `Equity:*` + 合计行；底部校验行「资产 = 负债 + 权益」——两侧合计用 `addDecimalStrings` 比对，相等显示绿色对勾 Tag，不等红色差额（`computeBalancingNumber` 取反）；期间选择 `TimeRangeBar`（granularity）
+- [x] **Step 2: IncomeStatementTable（报告式）** —— 上下一栏：收入账户逐行（`.num`）→ 小计 → 支出账户逐行 → 「净利润」强调行（正负按 `.num-negative` 规则）；月份 `DatePicker picker="month"` 单选传参
+- [x] **Step 3: Tabs 接线** —— 默认 Tab `趋势图表` 保持现有 DOM（e2e 依赖）；destroyInactiveTabPane=false 保切换状态
+- [x] **Step 4: 验证**：typecheck + unit + `npm run test:e2e -- --grep "报表"` 全绿
+- [x] **Step 5: Commit** `feat(ui-e): 报表页资产负债表（账户式）与利润表（报告式）`
 
 ### Task 4: 全量回归与收尾
 
-- [ ] **Step 1: reduced-motion 审计** —— 全局 grep `animation`：所有 keyframes 均有 `@media (prefers-reduced-motion: reduce)` 覆写
-- [ ] **Step 2: 清理** —— 删除 `styles.css` 残留（若存在）；`grep -r "styles.css" src/renderer` 为空。占位页（DashboardPage 等）**保留**——批次 D 收口时重写
-- [ ] **Step 3: 文档** —— `CLAUDE.md` 技术栈 UI 行补一句「样式：Less 分层（styles/）+ antd token 单源（theme/tokens.ts）」与路由说明
-- [ ] **Step 4:** 全量 `npm run typecheck && npm run test:unit && npm run test:e2e` 全绿
-- [ ] **Step 5:** 按总计划 DoD 合并回 `ui-v4` 并移除 worktree；五批次完成后在 `ui-v4` 上 `git worktree prune` 并可删除各批次分支
+- [x] **Step 1: reduced-motion 审计** —— 全局 grep `animation`：所有 keyframes 均有 `@media (prefers-reduced-motion: reduce)` 覆写
+- [x] **Step 2: 清理** —— 删除 `styles.css` 残留（若存在）；`grep -r "styles.css" src/renderer` 为空。占位页（DashboardPage 等）**保留**——批次 D 收口时重写
+- [x] **Step 3: 文档** —— `CLAUDE.md` 技术栈 UI 行补一句「样式：Less 分层（styles/）+ antd token 单源（theme/tokens.ts）」与路由说明
+- [x] **Step 4:** 全量 `npm run typecheck && npm run test:unit && npm run test:e2e` 全绿
+- [x] **Step 5:** 按总计划 DoD 合并回 `ui-v4` 并移除 worktree；五批次完成后在 `ui-v4` 上 `git worktree prune` 并可删除各批次分支
