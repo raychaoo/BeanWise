@@ -14,6 +14,7 @@ import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import type { LedgerEntryRow, ListEntriesFilters } from '../../../shared/ipc'
 import { useLedgerStore } from '../stores/ledger'
+import { formatAmount } from '../utils/format'
 import '../styles/views/entries.less'
 
 const PAGE_SIZE = 20
@@ -140,6 +141,21 @@ export default function EntriesView() {
         const label = accountNameMap.get(v) ?? v
         return label === v ? v : <Tooltip title={v}>{label}</Tooltip>
       }
+    },
+    {
+      title: '金额',
+      dataIndex: 'amount',
+      width: 120,
+      // 交易金额（超 UI 层 #1）：资产流视角（收入 +、支出 -），千分位 + 负数红；转账/Open 行无金额
+      render: (v: string | null, row) =>
+        v === null ? (
+          '—'
+        ) : (
+          <span className={`num${v.startsWith('-') ? ' num-negative' : ''}`}>
+            {formatAmount(v)}
+            {row.currency ? ` ${row.currency}` : ''}
+          </span>
+        )
     }
   ]
 

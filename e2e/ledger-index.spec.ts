@@ -177,6 +177,8 @@ test('M4+ 明细：服务端倒序/正序、时间筛选与关键词搜索（超
     // （注：runner 下模拟点击列头存在协议层挂死，方向切换的 SQL 语义由 index-builder 单测 order=asc/desc 覆盖）
     const firstCell = dataRows.first().locator('td').first()
     await expect(firstCell).toHaveText('2026-01-03', { timeout: 5000 })
+    // 金额列（资产流视角：支出负、收入正，千分位格式化）
+    await expect(dataRows.first()).toContainText('-25 CNY')
     await expect(win.getByRole('columnheader', { name: /日期/ })).toHaveAttribute('aria-sort', 'descending', { timeout: 5000 })
 
     // 时间筛选（服务端 dateFrom/dateTo）：今日 → fixture 全为 2026-01 → 空态；切「全部」恢复
@@ -192,6 +194,7 @@ test('M4+ 明细：服务端倒序/正序、时间筛选与关键词搜索（超
     await search.press('Enter')
     await expect(dataRows).toHaveCount(1)
     await expect(win.locator('.ant-table-tbody')).toContainText('Breakfast')
+    await expect(dataRows.first()).toContainText('-15 CNY')
     await search.fill('Bank')
     await search.press('Enter')
     await expect(dataRows).toHaveCount(3)
