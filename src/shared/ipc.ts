@@ -30,6 +30,7 @@ export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list
   | 'accounts:get' | 'accounts:save'
   | 'excel:choose' | 'excel:parse' | 'excel:preview' | 'excel:import' | 'excel:get-templates' | 'excel:save-template' | 'excel:delete-template'
   | 'workspace:get-status' | 'workspace:choose' | 'workspace:open' | 'workspace:recents'
+  | 'workspace:rename' | 'workspace:archive' | 'workspace:delete'
   | 'sync:get-status' | 'sync:configure' | 'sync:push' | 'sync:pull'
   | 'sync:resolve-conflict' | 'sync:clear'
   | 'ai:get-status' | 'ai:save-config' | 'ai:clear-config' | 'ai:parse'
@@ -575,5 +576,23 @@ export interface OpenWorkspaceResult {
   ok: boolean
   message?: string
   status?: WorkspaceStatus
+}
+
+/** workspace:rename 入参（newName 仅中文/字母/数字/下划线/连字符，主进程二次校验） */
+export interface WorkspaceRenameParams {
+  path: string
+  newName: string
+}
+
+/** workspace:archive / workspace:delete 入参（仅允许 current/recents 已登记路径） */
+export interface WorkspacePathParams {
+  path: string
+}
+
+/** workspace:rename / archive / delete 结果（成功时 newPath 为新路径 / 归档目标路径） */
+export interface WorkspaceOpResult {
+  ok: boolean
+  message?: string
+  newPath?: string
 }
 
