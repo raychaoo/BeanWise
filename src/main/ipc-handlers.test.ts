@@ -67,4 +67,17 @@ describe('IPC handlers（M3）', () => {
     await expect(handlers['ledger:list-entries']({}, { limit: 5000 })).rejects.toThrow()
     await expect(handlers['ledger:list-entries']({}, { limit: '100' })).rejects.toThrow()
   }, 30_000)
+
+  it('ledger:list-entries account 参数透传与非法值拒绝', async () => {
+    const listed = (await handlers['ledger:list-entries']({}, { account: 'Expenses:Food' })) as {
+      entries: Array<{ narration: string | null }>
+      total: number
+    }
+    expect(listed.total).toBe(2)
+    expect(listed.entries.map((e) => e.narration)).toEqual(['Breakfast', 'Coffee'])
+
+    await expect(handlers['ledger:list-entries']({}, { account: '' })).rejects.toThrow()
+    await expect(handlers['ledger:list-entries']({}, { account: 123 })).rejects.toThrow()
+    await expect(handlers['ledger:list-entries']({}, { account: 'x'.repeat(201) })).rejects.toThrow()
+  }, 30_000)
 })
