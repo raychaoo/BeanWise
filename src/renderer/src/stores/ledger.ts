@@ -32,7 +32,7 @@ interface LedgerState {
   loading: boolean
   error: string | null
   refresh(): Promise<void>
-  loadEntries(limit: number, offset: number): Promise<void>
+  loadEntries(limit: number, offset: number, order?: 'asc' | 'desc'): Promise<void>
   loadAccounts(): Promise<void>
   saveAccountConfig(accounts: AccountEntry[]): Promise<boolean>
   setError(error: string | null): void
@@ -108,7 +108,8 @@ export const useLedgerStore = create<LedgerState>((set, get) => {
       try {
         const [s, r] = await Promise.all([
           window.beanwise.getLedgerStatus(),
-          window.beanwise.listLedgerEntries({ limit: 100 })
+          // entries 统一「最近优先」语义：录入页最近流水卡取前 8 条、明细页总体倒序
+          window.beanwise.listLedgerEntries({ limit: 100, order: 'desc' })
         ])
         set({ status: s, entries: r.entries, total: r.total })
       } catch (err) {
@@ -118,10 +119,10 @@ export const useLedgerStore = create<LedgerState>((set, get) => {
       }
     },
 
-    loadEntries: async (limit, offset) => {
+    loadEntries: async (limit, offset, order) => {
       set({ loading: true, error: null })
       try {
-        const r = await window.beanwise.listLedgerEntries({ limit, offset })
+        const r = await window.beanwise.listLedgerEntries({ limit, offset, ...(order ? { order } : {}) })
         set({ entries: r.entries, total: r.total })
       } catch (err) {
         set({ error: String(err) })

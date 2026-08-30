@@ -53,6 +53,8 @@ export default function EntryFormView() {
 
   useEffect(() => {
     void loadAccounts()
+    // 最近流水卡数据自愈：明细页分页查询会把共享 entries 覆盖为单页，进录入页时重拉最近 100 条
+    void useLedgerStore.getState().refresh()
   }, [loadAccounts])
 
   // 自动平衡：末行金额为空时，按前 n-1 行之和补差（始终写入，含 '0'——

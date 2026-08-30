@@ -113,4 +113,17 @@ describe('索引重建管线（M3）', () => {
     expect(page.total).toBe(5)
     expect(page.entries[0].date >= '2026-01-01').toBe(true) // 按 date, id 升序
   }, 30_000)
+
+  it('listEntries order=desc → date,id 总体倒序（明细页默认，排序作用于全库）', async () => {
+    copyFileSync(MAIN_FIXTURE, workFile)
+    await refreshIndex(drizzle, engine, workFile)
+    const page = listEntries(drizzle, 5, 0, 'desc')
+    expect(page.entries).toHaveLength(5)
+    expect(page.total).toBe(5)
+    for (let i = 1; i < page.entries.length; i++) {
+      const prev = page.entries[i - 1]!
+      const cur = page.entries[i]!
+      expect(prev.date > cur.date || (prev.date === cur.date && prev.id > cur.id)).toBe(true)
+    }
+  }, 30_000)
 })

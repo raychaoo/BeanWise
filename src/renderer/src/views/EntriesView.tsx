@@ -1,7 +1,9 @@
 /**
  * 明细视图（M4；批次 B 瘦身 + 时间筛选；批次 D 迁出索引状态卡与「清空账本」至设置页）：
  * 页头 = 时间快捷筛选（Segmented + RangePicker，前端过滤已加载分页数据，Tooltip 说明能力边界）
- * +「重建索引」（e2e/ledger-index.spec.ts 依赖页头按钮）。日期列默认倒序。
+ * +「重建索引」（e2e/ledger-index.spec.ts 依赖页头按钮）。
+ * 数据策略（总体排序）：列表为标准服务端分页查询——后端按 order（默认 desc，最新在前）对全库
+ * ORDER BY date,id 后 LIMIT/OFFSET，翻页/列头排序切换均重新查询，排序天然作用于总体数据。
  */
 import { QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
 import {
@@ -15,7 +17,7 @@ import {
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import dayjs, { type Dayjs } from 'dayjs'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { LedgerEntryRow } from '../../../shared/ipc'
 import { useLedgerStore } from '../stores/ledger'
 import '../styles/views/entries.less'
@@ -68,6 +70,14 @@ export default function EntriesView() {
   const [page, setPage] = useState(1)
   const [quick, setQuick] = useState<QuickKey>('all')
   const [custom, setCustom] = useState<[Dayjs, Dayjs] | null>(null)
+  // 日期列服务端排序方向（受控）：切换 = 改查询参数重查后端，而非本地排当前页
+  const [dateOrder, setDateOrder] = useState<'ascend' | 'descend'>('descend')
+
+  // 挂载拉第一页（dateOrder 初始恒为 descend → desc）：分页查询语义，entries 归位为当前页数据
+  useEffect(() => {
+    void loadEntries(PAGE_SIZE, 0, 'desc')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const activeRange = custom ?? quickRange(quick)
   const filtering = activeRange !== null
@@ -98,9 +108,9 @@ export default function EntriesView() {
       title: '日期',
       dataIndex: 'date',
       width: 110,
-      // YYYY-MM-DD 字典序即时间序；默认倒序（最新在前）
-      sorter: (a, b) => a.date.localeCompare(b.date),
-      defaultSortOrder: 'descend'
+      // 服务端排序：ORDER BY date,id 由后端执行；sorter: true 仅提供列头交互，不本地排序
+      sorter: true,
+      sortOrder: dateOrder
     },
     { title: '标志', dataIndex: 'flag', width: 60, render: (v: string | null) => v ?? '—' },
     { title: '类型', dataIndex: 'type', width: 90 },
@@ -117,14 +127,16 @@ export default function EntriesView() {
     }
   ]
 
-  /** 重建索引 → 重拉状态与条目（M3 refreshIndex 管线）；索引状态与「清空账本」已迁设置页 */
+  /** 重建索引 → 重拉状态与第一页（M3 refreshIndex 管线）；索引状态与「清空账本」已迁设置页 */
   const handleRefreshIndex = async () => {
     try {
       await window.beanwise.refreshLedgerIndex()
     } catch (err) {
       setError(String(err))
     }
+    setPage(1)
     await refresh()
+    await loadEntries(PAGE_SIZE, 0, dateOrder === 'descend' ? 'desc' : 'asc')
   }
 
   return (
@@ -136,7 +148,7 @@ export default function EntriesView() {
         <div className="entries-filter">
           <Segmented options={QUICK_OPTIONS} value={quick} onChange={handleQuick} />
           <DatePicker.RangePicker value={custom} onChange={handleCustom} placeholder={['开始日期', '结束日期']} />
-          <Tooltip title="筛选作用于已加载分页数据；全量时间筛选需索引查询支持（超 UI 层 #2）">
+          <Tooltip title="排序为全库排序（服务端执行）；筛选作用于已加载分页数据，全量时间筛选需索引查询支持（超 UI 层 #2）">
             <QuestionCircleOutlined className="entries-filter-hint" />
           </Tooltip>
         </div>
@@ -151,6 +163,14 @@ export default function EntriesView() {
           loading={loading}
           dataSource={filteredEntries}
           columns={columns}
+          onChange={(_pagination, _filters, sorter) => {
+            const s = Array.isArray(sorter) ? sorter[0] : sorter
+            if (s && (s.order === 'ascend' || s.order === 'descend') && s.order !== dateOrder) {
+              setDateOrder(s.order)
+              setPage(1)
+              void loadEntries(PAGE_SIZE, 0, s.order === 'descend' ? 'desc' : 'asc')
+            }
+          }}
           pagination={{
             pageSize: PAGE_SIZE,
             total: shownTotal,
@@ -159,7 +179,7 @@ export default function EntriesView() {
             showTotal: (t) => `共 ${t} 条`,
             onChange: (p) => {
               setPage(p)
-              void loadEntries(PAGE_SIZE, (p - 1) * PAGE_SIZE)
+              void loadEntries(PAGE_SIZE, (p - 1) * PAGE_SIZE, dateOrder === 'descend' ? 'desc' : 'asc')
             }
           }}
         />

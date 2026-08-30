@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
-import { asc, eq } from 'drizzle-orm'
+import { asc, desc, eq } from 'drizzle-orm'
 import type { DrizzleDb } from './db'
 import { entries, ledgerMeta, postings } from './db/schema'
 import type { PythonSvc } from './python-svc'
@@ -41,6 +41,8 @@ export interface LedgerEntryRow {
 export interface ListEntriesParams {
   limit?: number // 默认 100，上限 1000
   offset?: number // 默认 0，>= 0
+  /** date 排序方向（ORDER BY date,id 同向）；默认 'asc' 保持既有语义，明细页传 'desc' 实现全库倒序分页 */
+  order?: 'asc' | 'desc'
 }
 
 export interface ListEntriesResult {
@@ -208,13 +210,20 @@ export function getLedgerStatus(db: DrizzleDb): LedgerStatus | null {
   }
 }
 
-export function listEntries(db: DrizzleDb, limit: number, offset: number): ListEntriesResult {
+export function listEntries(
+  db: DrizzleDb,
+  limit: number,
+  offset: number,
+  order: 'asc' | 'desc' = 'asc'
+): ListEntriesResult {
   // total 用全表计数：M3 账本量级小可接受；大账本（>5 万笔）优化点见 roadmap 待定项
   const total = db.select().from(entries).all().length
+  // date 与 id 同向排序：倒序时同日条目也按写入先后倒排（分页语义在任意方向下均稳定）
+  const dir = order === 'desc' ? desc : asc
   const rows = db
     .select()
     .from(entries)
-    .orderBy(asc(entries.date), asc(entries.id))
+    .orderBy(dir(entries.date), dir(entries.id))
     .limit(limit)
     .offset(offset)
     .all()
