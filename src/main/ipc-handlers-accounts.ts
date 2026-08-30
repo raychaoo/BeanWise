@@ -37,7 +37,15 @@ export function normalizeAccounts(raw: unknown): AccountEntry[] {
     const value = typeof e.value === 'string' ? e.value.trim() : ''
     if (!value || !ACCOUNT_RE.test(value)) throw new Error(`accounts[${idx}].value 非法：${e.value}`)
     if (value.length > MAX_ACCOUNT_LEN) throw new Error(`accounts[${idx}].value 长度不能超过 ${MAX_ACCOUNT_LEN} 字符`)
-    return { id: e.id, name: e.name.trim(), value, description }
+    // 批次 I：enabled 停用标记透传（非 boolean 视为未设置；undefined 序列化时省略）
+    const enabled = typeof e.enabled === 'boolean' ? e.enabled : undefined
+    return {
+      id: e.id,
+      name: e.name.trim(),
+      value,
+      description,
+      ...(enabled === undefined ? {} : { enabled })
+    }
   })
   const values = entries.map((e) => e.value)
   if (new Set(values).size !== values.length) throw new Error('账户路径不能重复')
