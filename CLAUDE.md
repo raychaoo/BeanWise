@@ -29,7 +29,7 @@ pytest python/tests  # Python Beancount 引擎测试
 ## 技术栈
 
 - **桌面框架**：Electron · Vite · React + TypeScript（strict）
-- **UI**：Ant Design（antd 5.x，**禁 v6**：@ant-design/pro-components 2.8.x peer 仅 `^4 || ^5`，v6 迁移评估留 M8；必须配 @ant-design/v5-patch-for-react-19，main.tsx 首行导入）+ ProComponents（ProForm 录入）· Ant Charts · Monaco Editor（裸 monaco-editor，worker 经 Vite `?worker` 本地打包，自研 monarch beancount 语言——M5 定稿，集成细节见「常见坑」）· Zustand 5
+- **UI**：Ant Design（antd 5.x，**禁 v6**：@ant-design/pro-components 2.8.x peer 仅 `^4 || ^5`，v6 迁移评估留 M8；必须配 @ant-design/v5-patch-for-react-19，main.tsx 首行导入）+ ProComponents（ProForm 录入）· Ant Charts · Monaco Editor（裸 monaco-editor，worker 经 Vite `?worker` 本地打包，自研 monarch beancount 语言——M5 定稿，集成细节见「常见坑」）· Zustand 5 · 路由 react-router-dom 7（HashRouter，App.tsx ProLayout 承载；e2e 依赖菜单文本 `录入`/`明细`/`报表` 与报表默认 Tab 卡片标题，不得改名）；样式：Less 分层（`src/renderer/src/styles/`：tokens.less + base.less + layout.less + views/*.less）+ antd token 单源（`theme/tokens.ts`，与 `styles/tokens.less` 头部互指同步）
 - **数据**：better-sqlite3 + Drizzle ORM（索引库每工作目录一份 `.beanwise/index.db`，可随时重建）· electron-log · electron-store（工作目录 current/recents 与 PAT/Key 密文）· Electron safeStorage · 工作目录 JSON 配置（`JsonSyncConfigStore` / `JsonAccountConfigStore`，见「工作目录数据模型」）
 - **同步**：isomorphic-git（1.41.3 纯 JS，GitSync 封装——工作目录即 git 工作区、只追踪账本文件、分支固定 main；仅 http/https 传输，不支持 file:// 本地传输，测试/E2E 走进程内 smart-HTTP 服务器 `src/main/git-test-server.ts`）+ ElectronWorkspaceTokenStore（PAT 密文，按工作目录路径键隔离，仅主进程持有）+ JsonSyncConfigStore（同步配置 repoUrl/branch/adopted/lastSyncAt/lastError）
 - **AI 辅助**：DeepSeek API（deepseek-v4-flash，主进程代理）+ zod 4（tool schema 单源三用：`z.toJSONSchema` → function calling parameters、`zod.parse` 本地校验、`z.infer` TS 类型）——M7 定稿，集成细节见「常见坑」；未配置 Key 时 AiEntryPanel 整入口隐藏（`rs.config` 读取 ai:get-status）
