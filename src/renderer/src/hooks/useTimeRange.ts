@@ -7,14 +7,15 @@
 import dayjs, { type Dayjs } from 'dayjs'
 import isoWeek from 'dayjs/plugin/isoWeek'
 import { useState } from 'react'
+import type { ReportGranularity } from '../../../shared/ipc'
 
 // 'week' 以周一为一周起点：isoWeek 插件不依赖运行环境 locale（dayjs 默认 en 周日起）
 dayjs.extend(isoWeek)
 
 export type TimePreset = 'today' | 'week' | '7d' | 'month' | 'custom' | 'all'
 
-/** 报表口径粒度（ReportGranularity 同款，仅月/年——日/周需扩展 report 通道，超 UI 层 #4） */
-export type TimeGranularity = 'month' | 'year'
+/** 报表口径粒度（批次 G：随 ReportGranularity 放开日/周，超 UI 层 #4 落地） */
+export type TimeGranularity = ReportGranularity
 
 export interface TimeRangeValue {
   preset: TimePreset

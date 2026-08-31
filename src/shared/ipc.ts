@@ -34,7 +34,7 @@ export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list
   | 'sync:get-status' | 'sync:configure' | 'sync:push' | 'sync:pull'
   | 'sync:resolve-conflict' | 'sync:clear'
   | 'ai:get-status' | 'ai:save-config' | 'ai:clear-config' | 'ai:parse'
-  | 'report:net-worth' | 'report:balances' | 'report:income-expense' | 'report:years'
+  | 'report:net-worth' | 'report:balances' | 'report:income-expense' | 'report:years' | 'report:trial-balance' | 'report:cash-flow' | 'report:export-pdf'
   | 'update:check' | 'update:status' | 'update:install'
 
 /** ledger:read-file 结果（ENOENT → ok:false + message，编辑器 Empty 态） */
@@ -451,8 +451,8 @@ export interface AiParseResult {
 
 /** M8：报表域（数据源 = SQLite 索引行 → 主进程 decimal.ts 精确聚合，SQL 不 SUM） */
 
-/** 报表粒度（月 YYYY-MM / 年 YYYY） */
-export type ReportGranularity = 'month' | 'year'
+/** 报表粒度（日 YYYY-MM-DD / 周 YYYY-Www（ISO）/ 月 YYYY-MM / 年 YYYY；批次 G 放开日/周） */
+export type ReportGranularity = 'day' | 'week' | 'month' | 'year'
 
 /** 报表年份范围（缺省 = 不设边界，全量数据；startYear > endYear 由 handler 校验拒绝） */
 export interface ReportYearRange {
@@ -519,6 +519,61 @@ export interface ReportIncomeExpenseResult {
 export interface ReportYearsResult {
   min: number
   max: number
+}
+
+/** report:trial-balance 入参（dateFrom/dateTo 均为 YYYY-MM-DD，缺省全量；dateFrom 不含——期初为之前累计） */
+export interface ReportTrialBalanceParams {
+  dateFrom?: string
+  dateTo?: string
+}
+
+/** 三栏单元格：金额（decimal 字符串）+ 币种（每账户每币种一行，故单币种） */
+export interface TrialBalanceCell {
+  number: string
+  currency: string
+}
+
+/** 三栏式科目余额表行：opening = dateFrom 前累计净额 / period = 区间净发生额 / closing = opening + period（Income 正显示） */
+export interface TrialBalanceRow {
+  name: string
+  opening: TrialBalanceCell
+  period: TrialBalanceCell
+  closing: TrialBalanceCell
+}
+
+/** report:trial-balance 结果 */
+export interface ReportTrialBalanceResult {
+  rows: TrialBalanceRow[]
+  message?: string
+}
+
+/** report:cash-flow 入参（granularity 必传；dateFrom/dateTo 为 YYYY-MM-DD 区间，缺省全量） */
+export interface ReportCashFlowParams {
+  granularity: ReportGranularity
+  dateFrom?: string
+  dateTo?: string
+}
+
+/** 现金流量点：inflow = 区间内非 Assets→Assets 流入；outflow = Assets→非 Assets 流出；net = inflow - outflow（decimal 字符串） */
+export interface CashFlowPoint {
+  period: string
+  inflow: string
+  outflow: string
+  net: string
+}
+
+/** report:cash-flow 结果（currency 为运营货币——口径 = Assets 顶层组全部账户视为资金池，按运营货币计） */
+export interface ReportCashFlowResult {
+  series: CashFlowPoint[]
+  currency: string
+  message?: string
+}
+
+/** report:export-pdf 结果（取消保存 → ok:true 无 path；打印/写盘异常 → ok:false + message） */
+export interface ExportReportPdfResult {
+  ok: boolean
+  path?: string
+  message?: string
 }
 
 /** M8：更新域（electron-updater 状态机，主进程持有） */

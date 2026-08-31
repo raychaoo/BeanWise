@@ -44,3 +44,38 @@
   background: fade(@bw-primary, 6%);
   border-top: 1px solid rgba(15, 23, 42, 0.35);
 }
+
+
+// 批次 G #8：PDF 导出打印隔离（webContents.printToPDF 走 @media print）。
+// 隐藏 ProLayout 侧栏/Header/Tabs 导航/导出按钮自身/筛选工具栏（粒度/年份/月份等 antd 控件）
+// 与非激活 Tab；主内容区 .page-scroll 高度 auto、overflow visible（不滚动截断）。
+// 仅激活 Tab 的 .print-area 报表区输出。
+@media print {
+  .ant-layout-sider,
+  .ant-layout-header,
+  .ant-tabs-nav,
+  .report-export-btn,
+  .report-filter-bar {
+    display: none !important;
+  }
+
+  .ant-tabs-tabpane:not(.ant-tabs-tabpane-active) {
+    display: none !important;
+  }
+
+  // 报表 Tab 各自表头的期间选择控件（Segmented/Select/DatePicker）不输出，保留标题
+  .ant-tabs-tabpane-active .ant-segmented,
+  .ant-tabs-tabpane-active .ant-select,
+  .ant-tabs-tabpane-active .ant-picker {
+    display: none !important;
+  }
+
+  .page-scroll {
+    height: auto;
+    overflow: visible;
+  }
+
+  .ant-tabs-tabpane-active .print-area {
+    display: block;
+  }
+}

@@ -1,6 +1,6 @@
 import { _electron as electron, expect, test, type Page } from '@playwright/test'
 import { dirname } from 'node:path'
-import { cleanupFixture, createFixtureCopy } from './fixtures/setup'
+import { waitForLedgerReady, cleanupFixture, createFixtureCopy } from './fixtures/setup'
 
 // GitHub Actions 的 ubuntu runner 无 user namespaces，需关 Chromium 沙箱；本机 Windows 不用
 const launchArgs = process.env['CI'] ? ['.', '--no-sandbox'] : ['.']
@@ -14,6 +14,7 @@ async function activateWorkspace(win: Page, ledgerPath: string): Promise<void> {
     const opened = await window.beanwise.openWorkspace(path)
     if (!opened.ok) throw new Error(opened.message ?? '打开工作目录失败')
   }, dirname(ledgerPath))
+  await waitForLedgerReady(win)
   await win.reload()
 }
 

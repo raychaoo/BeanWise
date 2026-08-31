@@ -17,6 +17,8 @@ const PRESET_OPTIONS: Array<{ label: string; value: TimePreset }> = [
 ]
 
 const GRANULARITY_OPTIONS: Array<{ label: string; value: TimeGranularity }> = [
+  { label: '日', value: 'day' },
+  { label: '周', value: 'week' },
   { label: '月', value: 'month' },
   { label: '年', value: 'year' }
 ]

@@ -18,6 +18,17 @@ async function activateWorkspace(win: Page, ledgerPath: string): Promise<void> {
     const opened = await window.beanwise.openWorkspace(path)
     if (!opened.ok) throw new Error(opened.message ?? '打开工作目录失败')
   }, dirname(ledgerPath))
+  // 批次 G 回归修复：workspace:open 的索引刷新是 fire-and-forget，reload 前不等待会让
+  // reload 后触发的 loadAccounts 读到空 postings → 对账页 Tab② 账户树「No data」。
+  // 显式等 postings 就绪（listLedgerAccounts 非空）再 reload，账户下拉随新索引刷新。
+  await win.evaluate(async () => {
+    for (let i = 0; i < 100; i++) {
+      const r = await window.beanwise.listLedgerAccounts()
+      if (r.accounts.length > 0) return
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    }
+    throw new Error('等待索引就绪超时')
+  })
   await win.reload()
   await win.getByRole('menuitem', { name: '录入' }).click()
   await expect(win.getByRole('button', { name: '写入账本' })).toBeVisible()

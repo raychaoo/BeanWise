@@ -2,7 +2,7 @@ import { _electron as electron, expect, test, type Page } from '@playwright/test
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { cleanupFixture, createFixtureCopy } from './fixtures/setup'
+import { waitForLedgerReady, cleanupFixture, createFixtureCopy } from './fixtures/setup'
 
 // GitHub Actions 的 ubuntu runner 无 user namespaces，需关 Chromium 沙箱；本机 Windows 不用
 const launchArgs = process.env['CI'] ? ['.', '--no-sandbox'] : ['.']
@@ -17,6 +17,7 @@ async function activateWorkspace(win: Page, ledgerPath: string): Promise<void> {
     const opened = await window.beanwise.openWorkspace(path)
     if (!opened.ok) throw new Error(opened.message ?? '打开工作目录失败')
   }, dirname(ledgerPath))
+  await waitForLedgerReady(win)
   await win.reload()
   // 批次 A 路由化：默认路由为总览，先进「录入」页再断言 ProForm 链路
   await win.getByRole('menuitem', { name: '录入' }).click()

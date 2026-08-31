@@ -3,20 +3,45 @@
  * 金额累计一律 addDecimalStrings 精确字符串运算——SQLite SUM() 转 REAL 丢精度，禁用。
  * 口径：趋势图按运营货币过滤；余额树多币种分行 + 子树 rollup（余额树中 Income 账户同样正显示）；收支正显示（income=-ΣIncome:*）。
  */
+import dayjs from 'dayjs'
+import isoWeek from 'dayjs/plugin/isoWeek'
 import { addDecimalStrings, negateDecimal } from '../shared/decimal'
-import type { AccountBalance, IncomeExpensePoint, NetWorthPoint, ReportYearRange } from '../shared/ipc'
+import type { AccountBalance, CashFlowPoint, IncomeExpensePoint, NetWorthPoint, ReportGranularity, ReportYearRange, TrialBalanceRow } from '../shared/ipc'
 
-/** 索引行快照（ipc-handlers-report 查询产出） */
+dayjs.extend(isoWeek)
+
+/** 索引行快照（ipc-handlers-report 查询产出）；entryId 为所属分录 id（现金流量表按分录配对用） */
 export interface PostingRow {
+  entryId?: number
   date: string // YYYY-MM-DD
   account: string
   number: string // 十进制字符串
   currency: string
 }
 
-/** 期间桶：month → 'YYYY-MM'，year → 'YYYY' */
-export function periodOf(date: string, granularity: 'month' | 'year'): string {
-  return granularity === 'year' ? date.slice(0, 4) : date.slice(0, 7)
+/** 现金流量表输入行：PostingRow + 必带 entryId（loadRows 恒产出，跨分录判定流入/流出必需） */
+export interface CashFlowPostingRow extends PostingRow {
+  entryId: number
+}
+
+/**
+ * 期间桶：day → 日期原值；week → ISO 周标签 `YYYY-Www`（周一起始，跨年周界按 ISO 周年归属，
+ * 如 2027-01-01 属 2026-W53——用 dayjs isoWeek 插件，主进程/单测同为 node 环境可用）；
+ * month → 'YYYY-MM'；year → 'YYYY'。
+ */
+export function periodKey(date: string, granularity: ReportGranularity): string {
+  switch (granularity) {
+    case 'day':
+      return date
+    case 'week': {
+      const d = dayjs(date)
+      return `${d.isoWeekYear()}-W${String(d.isoWeek()).padStart(2, '0')}`
+    }
+    case 'year':
+      return date.slice(0, 4)
+    default:
+      return date.slice(0, 7)
+  }
 }
 
 /** 期间是否落在年份范围内（period 前 4 位即年份，month/year 粒度通用）；无范围 → 恒 true */
@@ -38,13 +63,13 @@ function inYearRange(period: string, range?: ReportYearRange): boolean {
  */
 export function computeNetWorth(
   rows: PostingRow[],
-  granularity: 'month' | 'year',
+  granularity: ReportGranularity,
   currency: string,
   range?: ReportYearRange
 ): NetWorthPoint[] {
   const buckets = new Map<string, { assets: string; liabilities: string }>()
   for (const r of rows) {
-    const period = periodOf(r.date, granularity)
+    const period = periodKey(r.date, granularity)
     const b = buckets.get(period) ?? { assets: '0', liabilities: '0' }
     if (r.currency === currency) {
       if (r.account.startsWith('Assets:')) b.assets = addDecimalStrings(b.assets, r.number)
@@ -129,7 +154,7 @@ export function buildAccountTree(rows: PostingRow[]): AccountBalance[] {
  */
 export function computeIncomeExpense(
   rows: PostingRow[],
-  granularity: 'month' | 'year',
+  granularity: ReportGranularity,
   currency: string,
   range?: ReportYearRange
 ): IncomeExpensePoint[] {
@@ -140,7 +165,7 @@ export function computeIncomeExpense(
     const year = Number(r.date.slice(0, 4))
     if (range?.startYear !== undefined && year < range.startYear) continue
     if (range?.endYear !== undefined && year > range.endYear) continue
-    const period = periodOf(r.date, granularity)
+    const period = periodKey(r.date, granularity)
     if (r.account.startsWith('Income:')) incomeMap.set(period, addDecimalStrings(incomeMap.get(period) ?? '0', r.number))
     else if (r.account.startsWith('Expenses:')) expenseMap.set(period, addDecimalStrings(expenseMap.get(period) ?? '0', r.number))
   }
@@ -169,4 +194,95 @@ export function computeIncomeExpense(
     income: negateDecimal(incomeMap.get(period) ?? '0'),
     expense: expenseMap.get(period) ?? '0'
   }))
+}
+
+/**
+ * 三栏式科目余额表：每账户每币种一行。opening = dateFrom 之前（不含）该账户累计净额；
+ * period = [dateFrom, dateTo] 区间净发生额；closing = opening + period（addDecimalStrings）。
+ * 无 dateFrom → opening = 0；无 dateTo → 至最新。Income 账户取反聚合（与 buildAccountTree 同口径：
+ * 收入正显示，便于与报表页净资产勾稽）。currency 缺省 = 全部币种分行。行须按日期升序（handler 排序）。
+ */
+export function computeTrialBalance(
+  rows: PostingRow[],
+  opts: { dateFrom?: string; dateTo?: string; currency?: string } = {}
+): TrialBalanceRow[] {
+  const sums = new Map<string, Map<string, { opening: string; period: string }>>()
+  for (const r of rows) {
+    if (opts.currency !== undefined && r.currency !== opts.currency) continue
+    if (opts.dateTo !== undefined && r.date > opts.dateTo) continue
+    const delta = r.account.startsWith('Income:') ? negateDecimal(r.number) : r.number
+    let byCurrency = sums.get(r.account)
+    if (!byCurrency) {
+      byCurrency = new Map()
+      sums.set(r.account, byCurrency)
+    }
+    let cell = byCurrency.get(r.currency)
+    if (!cell) {
+      cell = { opening: '0', period: '0' }
+      byCurrency.set(r.currency, cell)
+    }
+    if (opts.dateFrom !== undefined && r.date < opts.dateFrom) {
+      cell.opening = addDecimalStrings(cell.opening, delta)
+    } else {
+      cell.period = addDecimalStrings(cell.period, delta)
+    }
+    byCurrency.set(r.currency, cell)
+  }
+  const out: TrialBalanceRow[] = []
+  for (const [account, byCurrency] of [...sums.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    for (const [currency, cell] of [...byCurrency.entries()].sort()) {
+      out.push({
+        name: account,
+        opening: { number: cell.opening, currency },
+        period: { number: cell.period, currency },
+        closing: { number: addDecimalStrings(cell.opening, cell.period), currency }
+      })
+    }
+  }
+  return out
+}
+
+/**
+ * 现金流量表（批次 G #7）。口径（与 UI 说明一致）：现金池 = `Assets:` 顶层组全部账户
+ * （个人记账语境的资金池假设；后续如需精确圈定现金账户再立需求）。
+ * 按分录（entryId）配对：池内互转（分录全为 Assets）不计；涉及池外的分录按池净变化判定——
+ * assetsDelta > 0 → 流入（收入/对方转入），< 0 → 流出（支出/还款），= 0 → 不计；
+ * net = inflow - outflow（addDecimalStrings + negateDecimal，字符串精确运算）。
+ * 期间按 periodKey 分组；currency 缺省不按币种过滤（handler 一律传运营货币，多币种不混计）。
+ */
+export function computeCashFlow(
+  rows: CashFlowPostingRow[],
+  opts: { granularity: ReportGranularity; currency?: string; dateFrom?: string; dateTo?: string }
+): CashFlowPoint[] {
+  const groups = new Map<number, CashFlowPostingRow[]>()
+  for (const r of rows) {
+    if (opts.currency !== undefined && r.currency !== opts.currency) continue
+    if (opts.dateFrom !== undefined && r.date < opts.dateFrom) continue
+    if (opts.dateTo !== undefined && r.date > opts.dateTo) continue
+    const list = groups.get(r.entryId)
+    if (list) list.push(r)
+    else groups.set(r.entryId, [r])
+  }
+  const inflow = new Map<string, string>()
+  const outflow = new Map<string, string>()
+  for (const group of groups.values()) {
+    const assetsDelta = group
+      .filter((r) => r.account.startsWith('Assets:'))
+      .reduce((acc, r) => addDecimalStrings(acc, r.number), '0')
+    const hasExternal = group.some((r) => !r.account.startsWith('Assets:'))
+    if (assetsDelta === '0' || !hasExternal) continue // 池内互转（含仅 Assets 的分录）不计
+    const period = periodKey(group[0].date, opts.granularity)
+    if (assetsDelta.startsWith('-')) {
+      const amount = negateDecimal(assetsDelta)
+      outflow.set(period, addDecimalStrings(outflow.get(period) ?? '0', amount))
+    } else {
+      inflow.set(period, addDecimalStrings(inflow.get(period) ?? '0', assetsDelta))
+    }
+  }
+  const periods = [...new Set([...inflow.keys(), ...outflow.keys()])].sort()
+  return periods.map((period) => {
+    const inAmt = inflow.get(period) ?? '0'
+    const outAmt = outflow.get(period) ?? '0'
+    return { period, inflow: inAmt, outflow: outAmt, net: addDecimalStrings(inAmt, negateDecimal(outAmt)) }
+  })
 }

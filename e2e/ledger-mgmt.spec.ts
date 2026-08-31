@@ -14,7 +14,7 @@ import { _electron as electron, expect, test, type Page } from '@playwright/test
 import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
-import { FIXTURE_SOURCE } from './fixtures/setup'
+import { waitForLedgerReady, FIXTURE_SOURCE } from './fixtures/setup'
 
 // GitHub Actions 的 ubuntu runner 无 user namespaces，需关 Chromium 沙箱；本机 Windows 不用
 const launchArgs = process.env['CI'] ? ['.', '--no-sandbox'] : ['.']
@@ -25,6 +25,7 @@ async function activateWorkspace(win: Page, dir: string): Promise<void> {
     const opened = await window.beanwise.openWorkspace(d)
     if (!opened.ok) throw new Error(opened.message ?? '打开工作目录失败')
   }, dir)
+  await waitForLedgerReady(win)
   await win.reload()
 }
 

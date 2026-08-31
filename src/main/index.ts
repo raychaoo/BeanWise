@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { join, resolve } from 'path'
 import { existsSync, mkdirSync } from 'fs'
+import { writeFile } from 'fs/promises'
 import electronUpdater from 'electron-updater' // CJS（autoUpdater 为 getter 重导出，ESM 命名导入会 SyntaxError）
 import { APP_NAME } from '../shared/app'
 import { UPDATE_STATUS_CHANNEL, type UpdateState } from '../shared/ipc'
@@ -231,8 +232,13 @@ app.whenReady().then(() => {
     }
   })
 
-  // M8：report 域三通道（报表只读聚合，复用 M3 索引）
-  registerReportHandlers(ipcMain, { get db() { return runtime.db! } })
+  // M8：report 域通道（报表只读聚合，复用 M3 索引）+ 批次 G PDF 导出（printToPDF + 保存对话框）
+  registerReportHandlers(ipcMain, {
+    get db() { return runtime.db! },
+    getWindow: () => BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null,
+    showSaveDialog: (options) => dialog.showSaveDialog(options),
+    writeFile: (filePath, data) => writeFile(filePath, data)
+  })
 
   // 启动引擎（不自动激活 workspace——由渲染端通过 workspace:get-status 决定是否需要选择界面）
   void pythonSvc.start().catch((err: unknown) => {

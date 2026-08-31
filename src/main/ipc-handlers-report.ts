@@ -4,22 +4,35 @@
  * 运营货币取 ledger_meta.operating_currency[0]；无 option 时按 postings 币种频次兜底识别主币
  * （2026-08-23 回归修复：清空/重建后缺 option 会导致图表按 '' 过滤恒空），再无 → ''（空集）。
  */
-import { asc, count, desc, eq, like, lte, max, min, or, type SQL } from 'drizzle-orm'
-import type { ReportBalancesParams, ReportBalancesResult, ReportGranularity, ReportIncomeExpenseParams, ReportIncomeExpenseResult, ReportNetWorthParams, ReportNetWorthResult, ReportYearRange, ReportYearsResult } from '../shared/ipc'
+import { and, asc, count, desc, eq, gte, like, lte, max, min, or, type SQL } from 'drizzle-orm'
+import type { SaveDialogOptions, WebContents } from 'electron'
+import type { ExportReportPdfResult, ReportBalancesParams, ReportBalancesResult, ReportCashFlowParams, ReportCashFlowResult, ReportGranularity, ReportIncomeExpenseParams, ReportIncomeExpenseResult, ReportNetWorthParams, ReportNetWorthResult, ReportTrialBalanceParams, ReportTrialBalanceResult, ReportYearRange, ReportYearsResult } from '../shared/ipc'
 import type { DrizzleDb } from './db'
 import { entries, postings } from './db/schema'
 import { getLedgerStatus } from './index-builder'
-import { buildAccountTree, computeIncomeExpense, computeNetWorth, type PostingRow } from './report-aggregation'
+import { buildAccountTree, computeCashFlow, computeIncomeExpense, computeNetWorth, computeTrialBalance, type CashFlowPostingRow, type PostingRow } from './report-aggregation'
 import type { IpcRegistrar } from './ipc-handlers'
 
-export interface ReportDeps {
+/** PDF 导出依赖（index.ts 注入真实实现；测试注入 mock——模块不直接 import electron 运行时） */
+export interface ReportPdfDeps {
+  /** 当前窗口提供者：主进程取 BrowserWindow.getFocusedWindow() ?? getAllWindows()[0] */
+  getWindow?: () => { webContents: Pick<WebContents, 'printToPDF'> } | null
+  /** 保存对话框（dialog.showSaveDialog；取消 → canceled:true） */
+  showSaveDialog?: (options: SaveDialogOptions) => Promise<{ canceled: boolean; filePath?: string }>
+  /** 写 PDF 字节到文件（fs.promises.writeFile） */
+  writeFile?: (filePath: string, data: Uint8Array) => Promise<void>
+}
+
+export interface ReportDeps extends ReportPdfDeps {
   db: DrizzleDb
 }
 
 const YEAR_RE = /^\d{4}$/
 
 function validateGranularity(raw: unknown, label: string): ReportGranularity {
-  if (raw !== 'month' && raw !== 'year') throw new Error(`${label} 必须是 month 或 year`)
+  if (raw !== 'day' && raw !== 'week' && raw !== 'month' && raw !== 'year') {
+    throw new Error(`${label} 必须是 day/week/month/year`)
+  }
   return raw
 }
 
@@ -42,6 +55,15 @@ function validateYearRange(raw: unknown): ReportYearRange {
   return { startYear, endYear }
 }
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+/** 解析 YYYY-MM-DD 日期（缺省 undefined）；非法 → throw */
+function validateDate(raw: unknown, label: string): string | undefined {
+  if (raw === undefined) return undefined
+  if (typeof raw !== 'string' || !ISO_DATE_RE.test(raw)) throw new Error(`${label} 必须是 YYYY-MM-DD 日期`)
+  return raw
+}
+
 /**
  * 加载 postings 行（join entries 取日期，按日期升序——累计口径依赖行序）。
  * where 传 SQL 表达式或 undefined（全量）：drizzle 实测 or(like, like) 与 like(..., '%')
@@ -51,6 +73,7 @@ function validateYearRange(raw: unknown): ReportYearRange {
 function loadRows(db: DrizzleDb, where: SQL | undefined): PostingRow[] {
   return db
     .select({
+      entryId: entries.id,
       date: entries.date,
       account: postings.account,
       number: postings.unitsNumber,
@@ -109,6 +132,21 @@ export function registerReportHandlers(ipc: IpcRegistrar, deps: ReportDeps): voi
     return { accounts: buildAccountTree(rows) }
   })
 
+  // report:trial-balance：三栏式科目余额表（批次 G #5）。opening 需 dateFrom 前全历史，
+  // 故 SQL 仅按 dateTo 封顶（禁 SUM，JS 端 addDecimalStrings 切分区间）；无 dateTo → 全量。
+  ipc.handle('report:trial-balance', async (_event: unknown, raw: unknown): Promise<ReportTrialBalanceResult> => {
+    const db = deps.db
+    const params = (raw ?? {}) as ReportTrialBalanceParams
+    const dateFrom = validateDate(params.dateFrom, 'dateFrom')
+    const dateTo = validateDate(params.dateTo, 'dateTo')
+    if (dateFrom !== undefined && dateTo !== undefined && dateFrom > dateTo) {
+      throw new Error('dateFrom 不能大于 dateTo')
+    }
+    const where = dateTo !== undefined ? lte(entries.date, dateTo) : undefined
+    const rows = loadRows(db, where)
+    return { rows: computeTrialBalance(rows, { dateFrom, dateTo }) }
+  })
+
   ipc.handle('report:income-expense', async (_event: unknown, raw: unknown): Promise<ReportIncomeExpenseResult> => {
     const db = deps.db
     const params = (raw ?? {}) as ReportIncomeExpenseParams
@@ -134,6 +172,55 @@ export function registerReportHandlers(ipc: IpcRegistrar, deps: ReportDeps): voi
     return {
       series: computeIncomeExpense(rows, granularity, currency, { startYear: start, endYear: end }),
       currency
+    }
+  })
+
+  // report:cash-flow（批次 G #7）：口径 = Assets 顶层组全部账户视为资金池（池内互转不计），
+  // 按运营货币计（避免多币种混计）；dateFrom/dateTo 参与 SQL 行筛选，期间在纯函数内按
+  // day/week/month/year 分组——金额全链路 addDecimalStrings，禁 SQL SUM。
+  ipc.handle('report:cash-flow', async (_event: unknown, raw: unknown): Promise<ReportCashFlowResult> => {
+    const db = deps.db
+    const params = (raw ?? {}) as ReportCashFlowParams
+    const granularity = validateGranularity(params.granularity, 'granularity')
+    const dateFrom = validateDate(params.dateFrom, 'dateFrom')
+    const dateTo = validateDate(params.dateTo, 'dateTo')
+    if (dateFrom !== undefined && dateTo !== undefined && dateFrom > dateTo) {
+      throw new Error('dateFrom 不能大于 dateTo')
+    }
+    const currency = operatingCurrency(db)
+    const conds: SQL[] = []
+    if (dateFrom !== undefined) conds.push(gte(entries.date, dateFrom))
+    if (dateTo !== undefined) conds.push(lte(entries.date, dateTo))
+    const rows = loadRows(db, conds.length > 0 ? and(...conds) : undefined)
+    // loadRows 恒含 entryId（select 显式取 entries.id），此处收窄类型供 computeCashFlow 配对
+    return {
+      series: computeCashFlow(rows as CashFlowPostingRow[], { granularity, currency, dateFrom, dateTo }),
+      currency
+    }
+  })
+
+  // report:export-pdf（批次 G #8）：webContents.printToPDF → dialog.showSaveDialog → writeFile。
+  // 打印样式由渲染端 @media print 隔离（隐藏侧栏/Header/工具栏，.page-scroll 高度 auto）。
+  ipc.handle('report:export-pdf', async (): Promise<ExportReportPdfResult> => {
+    if (!deps.getWindow || !deps.showSaveDialog || !deps.writeFile) {
+      return { ok: false, message: 'PDF 导出依赖未注入（主进程配置缺失）' }
+    }
+    const win = deps.getWindow()
+    if (!win) return { ok: false, message: '未找到应用窗口，无法导出 PDF' }
+    try {
+      const data = await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4' })
+      const now = new Date()
+      const pad = (n: number): string => String(n).padStart(2, '0')
+      const defaultPath = `BeanWise-报表-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}.pdf`
+      const save = await deps.showSaveDialog({
+        defaultPath,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }]
+      })
+      if (save.canceled || !save.filePath) return { ok: true }
+      await deps.writeFile(save.filePath, data)
+      return { ok: true, path: save.filePath }
+    } catch (err) {
+      return { ok: false, message: String(err) }
     }
   })
 
