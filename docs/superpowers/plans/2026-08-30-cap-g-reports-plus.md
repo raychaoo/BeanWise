@@ -116,4 +116,4 @@ cd /f/raychaoo/BeanWise && git worktree add .worktrees/g-reports-plus -b ui/g-re
 ### Task 6: 批次收尾
 
 - [x] **Step 1:** 全量 `npm run typecheck && npm run test:unit && npm run test:e2e` 全绿（typecheck 0 错误 / unit 454 / e2e 19 全绿）
-- [ ] **Step 2:** 按总计划 DoD 合并回 `ui-v4` 并移除 worktree；至此「超 UI 层清单」全部落地，在 `CLAUDE.md` IPC 域表格补三通道说明（report:trial-balance / report:cash-flow / report:export-pdf）
+- [x] **Step 2:** 按总计划 DoD 合并回 `ui-v4` 并移除 worktree（merge bb245e2 + worktree 已删）；至此「超 UI 层清单」全部落地，已在 `CLAUDE.md` IPC 域表格补三通道说明（report:trial-balance / report:cash-flow / report:export-pdf）

@@ -63,7 +63,7 @@ pytest python/tests  # Python Beancount 引擎测试
 | workspace | `get-status` / `choose` / `open` | 工作目录门控与切换（路径由主进程持有，防目录穿越） |
 | sync | `get-status` / `configure` / `push` / `pull` / `resolve-conflict` / `clear` | GitHub 同步 + diff3 合并 + 三路冲突 UI |
 | ai | `get-status` / `save-config` / `clear-config` / `parse` | DeepSeek 代理；Key 经 safeStorage，渲染端永不接触 |
-| report | `net-worth` / `balances` / `income-expense` | SQLite 行 → decimal.ts 精确聚合（禁 SQL SUM） |
+| report | `net-worth` / `balances` / `income-expense` / `years` / `trial-balance` / `cash-flow` / `export-pdf` | SQLite 行 → decimal.ts 精确聚合（禁 SQL SUM）；批次 G 三通道：三栏余额表（期初/发生/期末，`trial-balance`）、现金流量表（Assets 资金池口径，池内互转不计，`cash-flow`）、PDF 导出（printToPDF + 保存对话框 + @media print 隔离，`export-pdf`） |
 | update | `check` / `status` / `install` | electron-updater 状态机；事件 `update:status-changed` main→renderer |
 
 ## 关键约束（违反即 bug）
