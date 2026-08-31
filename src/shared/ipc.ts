@@ -34,7 +34,7 @@ export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list
   | 'sync:get-status' | 'sync:configure' | 'sync:push' | 'sync:pull'
   | 'sync:resolve-conflict' | 'sync:clear'
   | 'ai:get-status' | 'ai:save-config' | 'ai:clear-config' | 'ai:parse'
-  | 'report:net-worth' | 'report:balances' | 'report:income-expense' | 'report:years'
+  | 'report:net-worth' | 'report:balances' | 'report:income-expense' | 'report:years' | 'report:trial-balance'
   | 'update:check' | 'update:status' | 'update:install'
 
 /** ledger:read-file 结果（ENOENT → ok:false + message，编辑器 Empty 态） */
@@ -519,6 +519,32 @@ export interface ReportIncomeExpenseResult {
 export interface ReportYearsResult {
   min: number
   max: number
+}
+
+/** report:trial-balance 入参（dateFrom/dateTo 均为 YYYY-MM-DD，缺省全量；dateFrom 不含——期初为之前累计） */
+export interface ReportTrialBalanceParams {
+  dateFrom?: string
+  dateTo?: string
+}
+
+/** 三栏单元格：金额（decimal 字符串）+ 币种（每账户每币种一行，故单币种） */
+export interface TrialBalanceCell {
+  number: string
+  currency: string
+}
+
+/** 三栏式科目余额表行：opening = dateFrom 前累计净额 / period = 区间净发生额 / closing = opening + period（Income 正显示） */
+export interface TrialBalanceRow {
+  name: string
+  opening: TrialBalanceCell
+  period: TrialBalanceCell
+  closing: TrialBalanceCell
+}
+
+/** report:trial-balance 结果 */
+export interface ReportTrialBalanceResult {
+  rows: TrialBalanceRow[]
+  message?: string
 }
 
 /** M8：更新域（electron-updater 状态机，主进程持有） */

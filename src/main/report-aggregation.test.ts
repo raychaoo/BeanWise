@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AccountBalance } from '../shared/ipc'
 import type { PostingRow } from './report-aggregation'
-import { buildAccountTree, computeIncomeExpense, computeNetWorth, periodKey } from './report-aggregation'
+import { buildAccountTree, computeIncomeExpense, computeNetWorth, computeTrialBalance, periodKey } from './report-aggregation'
 
 const rows: PostingRow[] = [
   // 2025-03 收入 + 支出
@@ -252,3 +252,66 @@ describe('computeIncomeExpense（日/周粒度）', () => {
   })
 })
 
+describe('computeTrialBalance（三栏：期初/发生/期末，每账户每币种一行，Income 正显示）', () => {
+  const tbRows: PostingRow[] = [
+    { date: '2025-03-01', account: 'Assets:Bank:CNB', number: '10000', currency: 'CNY' },
+    { date: '2025-03-01', account: 'Income:Salary', number: '-10000', currency: 'CNY' },
+    { date: '2025-06-10', account: 'Expenses:Food', number: '35', currency: 'CNY' },
+    { date: '2025-06-10', account: 'Assets:Bank:CNB', number: '-35', currency: 'CNY' },
+    { date: '2026-01-05', account: 'Expenses:Food', number: '20', currency: 'CNY' },
+    { date: '2026-01-05', account: 'Liabilities:CreditCard', number: '-20', currency: 'CNY' },
+    { date: '2026-02-01', account: 'Assets:Bank:USD', number: '100', currency: 'USD' },
+    { date: '2026-02-01', account: 'Income:Salary', number: '-100', currency: 'USD' }
+  ]
+
+  it('跨区间：opening = dateFrom 前净额，period = 区间净发生额，closing = opening + period', () => {
+    const rows = computeTrialBalance(tbRows, { dateFrom: '2026-01-01', dateTo: '2026-12-31' })
+    const cnb = rows.find((r) => r.name === 'Assets:Bank:CNB' && r.opening.currency === 'CNY')!
+    // 2025-03-01 +10000、2025-06-10 -35 → opening 9965；区间内无发生
+    expect(cnb.opening).toEqual({ number: '9965', currency: 'CNY' })
+    expect(cnb.period).toEqual({ number: '0', currency: 'CNY' })
+    expect(cnb.closing).toEqual({ number: '9965', currency: 'CNY' })
+    const food = rows.find((r) => r.name === 'Expenses:Food' && r.opening.currency === 'CNY')!
+    expect(food.opening).toEqual({ number: '35', currency: 'CNY' })
+    expect(food.period).toEqual({ number: '20', currency: 'CNY' })
+    expect(food.closing).toEqual({ number: '55', currency: 'CNY' })
+    const cc = rows.find((r) => r.name === 'Liabilities:CreditCard')!
+    expect(cc.opening).toEqual({ number: '0', currency: 'CNY' })
+    expect(cc.period).toEqual({ number: '-20', currency: 'CNY' })
+    expect(cc.closing).toEqual({ number: '-20', currency: 'CNY' })
+    // Income 正显示（与余额树同口径：Income 行取反聚合）
+    const salary = rows.find((r) => r.name === 'Income:Salary' && r.opening.currency === 'CNY')!
+    expect(salary.opening).toEqual({ number: '10000', currency: 'CNY' })
+    expect(salary.period).toEqual({ number: '0', currency: 'CNY' })
+    expect(salary.closing).toEqual({ number: '10000', currency: 'CNY' })
+  })
+
+  it('无 dateFrom：opening 全为 0，period = 全量净额（dateTo 封顶）', () => {
+    const rows = computeTrialBalance(tbRows, { dateTo: '2026-12-31' })
+    const cnb = rows.find((r) => r.name === 'Assets:Bank:CNB' && r.opening.currency === 'CNY')!
+    expect(cnb.opening).toEqual({ number: '0', currency: 'CNY' })
+    expect(cnb.period).toEqual({ number: '9965', currency: 'CNY' })
+    expect(cnb.closing).toEqual({ number: '9965', currency: 'CNY' })
+  })
+
+  it('多币种：每账户每币种一行', () => {
+    const rows = computeTrialBalance(tbRows)
+    const salary = rows.filter((r) => r.name === 'Income:Salary')
+    expect(salary).toHaveLength(2)
+    expect(salary.find((r) => r.opening.currency === 'CNY')!.closing).toEqual({ number: '10000', currency: 'CNY' })
+    expect(salary.find((r) => r.opening.currency === 'USD')!.closing).toEqual({ number: '100', currency: 'USD' })
+    const assets = rows.filter((r) => r.name === 'Assets:Bank:CNB')
+    expect(assets).toHaveLength(1)
+    expect(assets[0].closing).toEqual({ number: '9965', currency: 'CNY' })
+  })
+
+  it('currency 过滤：仅输出该币种行', () => {
+    const rows = computeTrialBalance(tbRows, { currency: 'USD' })
+    expect(rows).toHaveLength(2)
+    expect(rows.every((r) => r.opening.currency === 'USD')).toBe(true)
+  })
+
+  it('空输入 → 空数组', () => {
+    expect(computeTrialBalance([])).toEqual([])
+  })
+})

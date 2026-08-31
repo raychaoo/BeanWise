@@ -64,13 +64,13 @@ cd /f/raychaoo/BeanWise && git worktree add .worktrees/g-reports-plus -b ui/g-re
 - Produces: 三栏语义——`opening` = dateFrom 之前（不含）该账户累计净额；`period` = [dateFrom, dateTo] 区间内净发生额；`closing` = opening + period（`addDecimalStrings`）；无 dateFrom 时 opening 从账本首笔起算；资产/负债方向按账户类型展示正负（Assets/Expenses 余额为正方向，Liabilities/Equity/Income 取负债视角正值——与方案「红色仅负数」一致，方向语义写注释）
 - Tab① UI：保留现有范围筛选，表格列 = 账户（层级缩进，中文映射）/ 期初 / 发生 / 期末（全部 `.num` 右对齐，负数 `.num-negative`）；币种筛选 Tag；空态保留
 
-- [ ] **Step 1: 失败测试**（跨区间行集：opening/period/closing 三值与手算一致；无 dateFrom 时 opening=0；多币种分行；空区间安全）
-- [ ] **Step 2: 跑失败** → FAIL
-- [ ] **Step 3: 实现聚合**（复用既有 rows 读取模式；**禁 SQL SUM**，JS 端 `addDecimalStrings`）
-- [ ] **Step 4: 跑通过**；handler + preload 接线；`npm run typecheck`
-- [ ] **Step 5: ReconcilePage Tab① 三栏表格**
-- [ ] **Step 6: 验证**：unit + `npm run dev` 手动核对（期初+发生=期末；与报表页净资产勾稽）
-- [ ] **Step 7: Commit** `feat(cap-g): 三栏式科目余额表（report:trial-balance）`
+- [x] **Step 1: 失败测试**（跨区间行集：opening/period/closing 三值与手算一致；无 dateFrom 时 opening=0；多币种分行；空区间安全）
+- [x] **Step 2: 跑失败** → FAIL
+- [x] **Step 3: 实现聚合**（复用既有 rows 读取模式；**禁 SQL SUM**，JS 端 `addDecimalStrings`）
+- [x] **Step 4: 跑通过**；handler + preload 接线；`npm run typecheck`
+- [x] **Step 5: ReconcilePage Tab① 三栏表格**
+- [x] **Step 6: 验证**：unit + `npm run dev` 手动核对（期初+发生=期末；与报表页净资产勾稽）
+- [x] **Step 7: Commit** `feat(cap-g): 三栏式科目余额表（report:trial-balance）`
 
 ### Task 4: 现金流量表
 

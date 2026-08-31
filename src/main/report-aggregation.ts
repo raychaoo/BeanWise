@@ -6,7 +6,7 @@
 import dayjs from 'dayjs'
 import isoWeek from 'dayjs/plugin/isoWeek'
 import { addDecimalStrings, negateDecimal } from '../shared/decimal'
-import type { AccountBalance, IncomeExpensePoint, NetWorthPoint, ReportGranularity, ReportYearRange } from '../shared/ipc'
+import type { AccountBalance, IncomeExpensePoint, NetWorthPoint, ReportGranularity, ReportYearRange, TrialBalanceRow } from '../shared/ipc'
 
 dayjs.extend(isoWeek)
 
@@ -188,4 +188,50 @@ export function computeIncomeExpense(
     income: negateDecimal(incomeMap.get(period) ?? '0'),
     expense: expenseMap.get(period) ?? '0'
   }))
+}
+
+/**
+ * 三栏式科目余额表：每账户每币种一行。opening = dateFrom 之前（不含）该账户累计净额；
+ * period = [dateFrom, dateTo] 区间净发生额；closing = opening + period（addDecimalStrings）。
+ * 无 dateFrom → opening = 0；无 dateTo → 至最新。Income 账户取反聚合（与 buildAccountTree 同口径：
+ * 收入正显示，便于与报表页净资产勾稽）。currency 缺省 = 全部币种分行。行须按日期升序（handler 排序）。
+ */
+export function computeTrialBalance(
+  rows: PostingRow[],
+  opts: { dateFrom?: string; dateTo?: string; currency?: string } = {}
+): TrialBalanceRow[] {
+  const sums = new Map<string, Map<string, { opening: string; period: string }>>()
+  for (const r of rows) {
+    if (opts.currency !== undefined && r.currency !== opts.currency) continue
+    if (opts.dateTo !== undefined && r.date > opts.dateTo) continue
+    const delta = r.account.startsWith('Income:') ? negateDecimal(r.number) : r.number
+    let byCurrency = sums.get(r.account)
+    if (!byCurrency) {
+      byCurrency = new Map()
+      sums.set(r.account, byCurrency)
+    }
+    let cell = byCurrency.get(r.currency)
+    if (!cell) {
+      cell = { opening: '0', period: '0' }
+      byCurrency.set(r.currency, cell)
+    }
+    if (opts.dateFrom !== undefined && r.date < opts.dateFrom) {
+      cell.opening = addDecimalStrings(cell.opening, delta)
+    } else {
+      cell.period = addDecimalStrings(cell.period, delta)
+    }
+    byCurrency.set(r.currency, cell)
+  }
+  const out: TrialBalanceRow[] = []
+  for (const [account, byCurrency] of [...sums.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    for (const [currency, cell] of [...byCurrency.entries()].sort()) {
+      out.push({
+        name: account,
+        opening: { number: cell.opening, currency },
+        period: { number: cell.period, currency },
+        closing: { number: addDecimalStrings(cell.opening, cell.period), currency }
+      })
+    }
+  }
+  return out
 }

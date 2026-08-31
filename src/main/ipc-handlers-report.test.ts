@@ -239,3 +239,49 @@ describe('report:years', () => {
     expect(r).toEqual({ min: 0, max: 0 })
   })
 })
+
+describe('report:trial-balance', () => {
+  it('三栏：opening = dateFrom 前累计，period = 区间净额，closing = opening + period', async () => {
+    const { handlers } = setupMultiYear()
+    const r = (await handlers.get('report:trial-balance')!({}, { dateFrom: '2026-01-01', dateTo: '2026-12-31' })) as {
+      rows: Array<{ name: string; opening: { number: string; currency: string }; period: { number: string; currency: string }; closing: { number: string; currency: string } }>
+    }
+    const cnb = r.rows.find((x) => x.name === 'Assets:Bank:CNB' && x.opening.currency === 'CNY')!
+    // 2025 全量：+10000 -5 = 9995 → opening；2026 区间无发生 → period 0
+    expect(cnb.opening).toEqual({ number: '9995', currency: 'CNY' })
+    expect(cnb.period).toEqual({ number: '0', currency: 'CNY' })
+    expect(cnb.closing).toEqual({ number: '9995', currency: 'CNY' })
+    const food = r.rows.find((x) => x.name === 'Expenses:Food' && x.opening.currency === 'CNY')!
+    expect(food.opening).toEqual({ number: '0', currency: 'CNY' })
+    expect(food.period).toEqual({ number: '20', currency: 'CNY' })
+    expect(food.closing).toEqual({ number: '20', currency: 'CNY' })
+    const cc = r.rows.find((x) => x.name === 'Liabilities:CreditCard')!
+    expect(cc.period).toEqual({ number: '-20', currency: 'CNY' })
+    expect(cc.closing).toEqual({ number: '-20', currency: 'CNY' })
+    // Income 正显示（与余额树同口径）
+    const salary = r.rows.find((x) => x.name === 'Income:Salary')!
+    expect(salary.closing).toEqual({ number: '10000', currency: 'CNY' })
+  })
+
+  it('缺省参数：全量，opening = 0、period = 全部净额', async () => {
+    const { handlers } = setup()
+    const r = (await handlers.get('report:trial-balance')!({})) as {
+      rows: Array<{ name: string; opening: { number: string; currency: string }; period: { number: string; currency: string }; closing: { number: string; currency: string } }>
+    }
+    const cnb = r.rows.find((x) => x.name === 'Assets:Bank:CNB' && x.opening.currency === 'CNY')!
+    expect(cnb.opening).toEqual({ number: '0', currency: 'CNY' })
+    expect(cnb.period).toEqual({ number: '10000', currency: 'CNY' })
+    expect(cnb.closing).toEqual({ number: '10000', currency: 'CNY' })
+    // 多币种分行（USD 单独一行）
+    const usd = r.rows.find((x) => x.name === 'Assets:Bank:USD')!
+    expect(usd.closing).toEqual({ number: '100', currency: 'USD' })
+  })
+
+  it('非法日期 / dateFrom > dateTo → throw', async () => {
+    const { handlers } = setup()
+    await expect(handlers.get('report:trial-balance')!({}, { dateFrom: '2026/01/01' })).rejects.toThrow('dateFrom')
+    await expect(
+      handlers.get('report:trial-balance')!({}, { dateFrom: '2026-02-01', dateTo: '2026-01-01' })
+    ).rejects.toThrow('dateFrom 不能大于 dateTo')
+  })
+})

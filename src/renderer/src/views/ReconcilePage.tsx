@@ -1,39 +1,29 @@
 /**
- * 对账页：Tab① 科目余额表（report:balances 树形表格，顶部年份 RangePicker →
- * ReportBalancesParams 既有参数；余额为期末快照，仅 endYear 参与过滤；批次 G 范围）
+ * 对账页：Tab① 三栏式科目余额表（批次 G #5：report:trial-balance，期初/发生/期末，
+ * 每账户每币种一行；顶部日期 RangePicker → dateFrom/dateTo；币种 CheckableTag 筛选）
  * + Tab② 明细账（批次 F）：账户 TreeSelect（五大类分组）→ listEntries 服务端 account
  * 精确过滤 + order desc 分页查询；本地查询状态（不经共享 store entries 槽，防跨页串扰）。
  * 金额 formatAmount 千分位 + .num 右对齐，负数 .num-negative（红色语义唯一化）。
  */
-import { Alert, Button, DatePicker, Empty, Spin, Table, Tabs, Tooltip, TreeSelect } from 'antd'
+import { Alert, Button, DatePicker, Empty, Space, Spin, Table, Tabs, Tag, Tooltip, TreeSelect } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { Dayjs } from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { Key } from 'react'
-import type { AccountBalance, LedgerEntryRow, ReportBalancesParams } from '../../../shared/ipc'
+import type { LedgerEntryRow, ReportTrialBalanceParams, TrialBalanceCell, TrialBalanceRow } from '../../../shared/ipc'
 import { useLedgerStore } from '../stores/ledger'
 import type { AccountOption } from '../stores/ledger'
 import { formatAmount } from '../utils/format'
 import '../styles/views/reconcile.less'
 
-/** 展开全部树节点（数据异步到达后受控展开，defaultExpandAllRows 只在首渲染生效） */
-function collectKeys(nodes: AccountBalance[]): string[] {
-  return nodes.flatMap((n) => [n.name, ...collectKeys(n.children ?? [])])
-}
-
-/** 多币种余额单元格：每币种一行（formatAmount + 币种），负数红 */
-function BalanceCell({ balances }: { balances: Array<{ currency: string; number: string }> }) {
-  if (balances.length === 0) return <span className="num">—</span>
+/** 三栏单元格：金额千分位 + 币种，右对齐（.num），负数红（.num-negative） */
+function TrialBalanceCellView({ cell }: { cell: TrialBalanceCell }) {
   return (
-    <span className="reconcile-balance-cell">
-      {balances.map((b) => (
-        <span key={b.currency} className={`num${b.number.startsWith('-') ? ' num-negative' : ''}`}>
-          {formatAmount(b.number)} {b.currency}
-        </span>
-      ))}
+    <span className={`num${cell.number.startsWith('-') ? ' num-negative' : ''}`}>
+      {formatAmount(cell.number)} {cell.currency}
     </span>
   )
 }
+
 
 /** 账户顶层五大类中文分组（TreeSelect 组节点不可选，value 加前缀防与真实账户撞值） */
 const TOP_CATEGORY_LABELS: Record<string, string> = {
@@ -195,21 +185,22 @@ function DetailLedgerTab() {
 export default function ReconcilePage() {
   const accountOptions = useLedgerStore((s) => s.accountOptions)
   const accountNameMap = new Map(accountOptions.map((o) => [o.value, o.label]))
-  const [yearRange, setYearRange] = useState<[Dayjs, Dayjs] | null>(null)
-  const [balances, setBalances] = useState<AccountBalance[]>([])
+  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null)
+  const [rows, setRows] = useState<TrialBalanceRow[]>([])
+  const [currencyFilter, setCurrencyFilter] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [expandedKeys, setExpandedKeys] = useState<Key[]>([])
 
-  const load = useCallback(async (range: [Dayjs, Dayjs] | null) => {
+  const load = useCallback(async (r: [Dayjs, Dayjs] | null) => {
     setLoading(true)
     setError(null)
     try {
-      // 既有参数：余额为期末快照，仅 endYear 参与过滤（startYear 携带不改变快照口径）
-      const params: ReportBalancesParams = range ? { startYear: range[0].year(), endYear: range[1].year() } : {}
-      const r = await window.beanwise.getBalancesReport(params)
-      setBalances(r.accounts)
-      setExpandedKeys(collectKeys(r.accounts))
+      // 三栏口径：dateFrom = 区间起点（opening 为之前累计），dateTo = 区间终点
+      const params: ReportTrialBalanceParams = r
+        ? { dateFrom: r[0].format('YYYY-MM-DD'), dateTo: r[1].format('YYYY-MM-DD') }
+        : {}
+      const res = await window.beanwise.getTrialBalanceReport(params)
+      setRows(res.rows)
     } catch (err) {
       setError(String(err))
     } finally {
@@ -218,10 +209,15 @@ export default function ReconcilePage() {
   }, [])
 
   useEffect(() => {
-    void load(yearRange)
-  }, [load, yearRange])
+    void load(range)
+  }, [load, range])
 
-  const columns: ColumnsType<AccountBalance> = [
+  // 币种筛选：Tag 从当前数据派生；筛选币种随数据消失时自动退化为「全部」（防空表困惑）
+  const currencies = useMemo(() => [...new Set(rows.map((r) => r.opening.currency))].sort(), [rows])
+  const effectiveFilter = currencyFilter !== null && currencies.includes(currencyFilter) ? currencyFilter : null
+  const visibleRows = effectiveFilter === null ? rows : rows.filter((r) => r.opening.currency === effectiveFilter)
+
+  const columns: ColumnsType<TrialBalanceRow> = [
     {
       title: '账户',
       dataIndex: 'name',
@@ -230,37 +226,44 @@ export default function ReconcilePage() {
         return label === name ? name : <Tooltip title={name}>{label}</Tooltip>
       }
     },
-    {
-      title: '余额',
-      dataIndex: 'balances',
-      align: 'right',
-      render: (b: Array<{ currency: string; number: string }>) => <BalanceCell balances={b} />
-    }
+    { title: '期初', dataIndex: 'opening', align: 'right', render: (c: TrialBalanceCell) => <TrialBalanceCellView cell={c} /> },
+    { title: '发生', dataIndex: 'period', align: 'right', render: (c: TrialBalanceCell) => <TrialBalanceCellView cell={c} /> },
+    { title: '期末', dataIndex: 'closing', align: 'right', render: (c: TrialBalanceCell) => <TrialBalanceCellView cell={c} /> }
   ]
 
   const balanceTable = (
     <>
-      <div className="reconcile-toolbar">
+      <div className="reconcile-toolbar reconcile-trial-toolbar">
         <DatePicker.RangePicker
-          picker="year"
           allowClear
-          value={yearRange}
-          placeholder={['起始年', '结束年']}
+          value={range}
+          placeholder={['起始日期', '结束日期']}
           onChange={(dates) => {
-            setYearRange(dates && dates[0] && dates[1] ? ([dates[0], dates[1]] as [Dayjs, Dayjs]) : null)
+            setRange(dates && dates[0] && dates[1] ? ([dates[0], dates[1]] as [Dayjs, Dayjs]) : null)
           }}
         />
+        {currencies.length > 0 && (
+          <Space size={4} wrap>
+            <span className="reconcile-currency-label">币种：</span>
+            <Tag.CheckableTag checked={effectiveFilter === null} onChange={() => setCurrencyFilter(null)}>
+              全部
+            </Tag.CheckableTag>
+            {currencies.map((c) => (
+              <Tag.CheckableTag key={c} checked={effectiveFilter === c} onChange={() => setCurrencyFilter(c)}>
+                {c}
+              </Tag.CheckableTag>
+            ))}
+          </Space>
+        )}
       </div>
       {error && <Alert type="error" showIcon style={{ marginBottom: 12 }} message={error} />}
       <Spin spinning={loading}>
-        <Table<AccountBalance>
+        <Table<TrialBalanceRow>
           size="small"
-          rowKey="name"
-          dataSource={balances}
+          rowKey={(r) => `${r.name}:${r.opening.currency}`}
+          dataSource={visibleRows}
           columns={columns}
           pagination={false}
-          expandedRowKeys={expandedKeys}
-          onExpandedRowsChange={(keys) => setExpandedKeys([...keys])}
           locale={{ emptyText: <Empty description="暂无余额数据，请先录入账目" /> }}
         />
       </Spin>

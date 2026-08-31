@@ -5,11 +5,11 @@
  * （2026-08-23 回归修复：清空/重建后缺 option 会导致图表按 '' 过滤恒空），再无 → ''（空集）。
  */
 import { asc, count, desc, eq, like, lte, max, min, or, type SQL } from 'drizzle-orm'
-import type { ReportBalancesParams, ReportBalancesResult, ReportGranularity, ReportIncomeExpenseParams, ReportIncomeExpenseResult, ReportNetWorthParams, ReportNetWorthResult, ReportYearRange, ReportYearsResult } from '../shared/ipc'
+import type { ReportBalancesParams, ReportBalancesResult, ReportGranularity, ReportIncomeExpenseParams, ReportIncomeExpenseResult, ReportNetWorthParams, ReportNetWorthResult, ReportTrialBalanceParams, ReportTrialBalanceResult, ReportYearRange, ReportYearsResult } from '../shared/ipc'
 import type { DrizzleDb } from './db'
 import { entries, postings } from './db/schema'
 import { getLedgerStatus } from './index-builder'
-import { buildAccountTree, computeIncomeExpense, computeNetWorth, type PostingRow } from './report-aggregation'
+import { buildAccountTree, computeIncomeExpense, computeNetWorth, computeTrialBalance, type PostingRow } from './report-aggregation'
 import type { IpcRegistrar } from './ipc-handlers'
 
 export interface ReportDeps {
@@ -42,6 +42,15 @@ function validateYearRange(raw: unknown): ReportYearRange {
     throw new Error('startYear 不能大于 endYear')
   }
   return { startYear, endYear }
+}
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+/** 解析 YYYY-MM-DD 日期（缺省 undefined）；非法 → throw */
+function validateDate(raw: unknown, label: string): string | undefined {
+  if (raw === undefined) return undefined
+  if (typeof raw !== 'string' || !ISO_DATE_RE.test(raw)) throw new Error(`${label} 必须是 YYYY-MM-DD 日期`)
+  return raw
 }
 
 /**
@@ -109,6 +118,21 @@ export function registerReportHandlers(ipc: IpcRegistrar, deps: ReportDeps): voi
     const where = endYear !== undefined ? lte(entries.date, `${endYear}-12-31`) : undefined
     const rows = loadRows(db, where)
     return { accounts: buildAccountTree(rows) }
+  })
+
+  // report:trial-balance：三栏式科目余额表（批次 G #5）。opening 需 dateFrom 前全历史，
+  // 故 SQL 仅按 dateTo 封顶（禁 SUM，JS 端 addDecimalStrings 切分区间）；无 dateTo → 全量。
+  ipc.handle('report:trial-balance', async (_event: unknown, raw: unknown): Promise<ReportTrialBalanceResult> => {
+    const db = deps.db
+    const params = (raw ?? {}) as ReportTrialBalanceParams
+    const dateFrom = validateDate(params.dateFrom, 'dateFrom')
+    const dateTo = validateDate(params.dateTo, 'dateTo')
+    if (dateFrom !== undefined && dateTo !== undefined && dateFrom > dateTo) {
+      throw new Error('dateFrom 不能大于 dateTo')
+    }
+    const where = dateTo !== undefined ? lte(entries.date, dateTo) : undefined
+    const rows = loadRows(db, where)
+    return { rows: computeTrialBalance(rows, { dateFrom, dateTo }) }
   })
 
   ipc.handle('report:income-expense', async (_event: unknown, raw: unknown): Promise<ReportIncomeExpenseResult> => {

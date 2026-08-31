@@ -29,6 +29,8 @@ import type {
   ReportBalancesResult,
   ReportIncomeExpenseParams,
   ReportIncomeExpenseResult,
+  ReportTrialBalanceParams,
+  ReportTrialBalanceResult,
   ReportNetWorthParams,
   ReportNetWorthResult,
   ReportYearsResult,
@@ -124,6 +126,8 @@ export interface BeanWiseApi {
   getIncomeExpenseReport(params: ReportIncomeExpenseParams): Promise<ReportIncomeExpenseResult>
   /** 账本全量年份范围（供报表年份下拉选项，不随筛选变化） */
   getReportYears(): Promise<ReportYearsResult>
+  /** 三栏式科目余额表（期初/发生/期末；dateFrom/dateTo 为 YYYY-MM-DD，缺省全量） */
+  getTrialBalanceReport(params?: ReportTrialBalanceParams): Promise<ReportTrialBalanceResult>
   checkForUpdates(): Promise<UpdateCheckResult>
   /** 当前更新状态（idle/checking/available/downloading/downloaded/error） */
   getUpdateStatus(): Promise<UpdateState>
