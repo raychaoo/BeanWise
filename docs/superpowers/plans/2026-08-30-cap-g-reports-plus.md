@@ -106,12 +106,12 @@ cd /f/raychaoo/BeanWise && git worktree add .worktrees/g-reports-plus -b ui/g-re
 - Produces: handler 行为——取 `BrowserWindow.getFocusedWindow()`（无则 `getAllWindows()[0]`）的 `webContents.printToPDF({ printBackground: true, pageSize: 'A4' })` → `dialog.showSaveDialog`（默认文件名 `BeanWise-报表-<today>.pdf`）→ `writeFile` → 返回 `{ ok: true, path }`；取消保存返回 `{ ok: true }`（无 path）；渲染端按钮 loading 态 + 成功 `message.success('已导出: ' + path)`
 - 打印样式：`@media print` 下隐藏 ProLayout 侧栏/Header/筛选工具栏/非激活 Tab 与本按钮自身，`.page-scroll` 高度 auto、overflow visible；仅当前报表区输出（类名 `print-area` 标注到激活 Tab 内容容器）
 
-- [ ] **Step 1: 失败测试**（mock printToPDF/dialog/writeFile：成功路径返回 path；保存取消不写文件；打印异常返回 ok:false）
-- [ ] **Step 2: 跑失败** → FAIL
-- [ ] **Step 3: 实现 handler + 通道链路**
-- [ ] **Step 4: 按钮 + @media print 隔离**
-- [ ] **Step 5: 验证**：unit；`npm run dev` 实际导出一份 PDF 打开核对（表格线/数字右对齐/无导航元素）
-- [ ] **Step 6: Commit** `feat(cap-g): 报表导出 PDF（printToPDF + 打印隔离样式）`
+- [x] **Step 1: 失败测试**（mock printToPDF/dialog/writeFile：成功路径返回 path；保存取消不写文件；打印异常返回 ok:false）
+- [x] **Step 2: 跑失败** → FAIL
+- [x] **Step 3: 实现 handler + 通道链路**
+- [x] **Step 4: 按钮 + @media print 隔离**
+- [x] **Step 5: 验证**：unit；`npm run dev` 实际导出一份 PDF 打开核对（表格线/数字右对齐/无导航元素）
+- [x] **Step 6: Commit** `feat(cap-g): 报表导出 PDF（printToPDF + 打印隔离样式）`
 
 ### Task 6: 批次收尾
 

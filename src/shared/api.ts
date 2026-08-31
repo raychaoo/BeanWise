@@ -31,6 +31,7 @@ import type {
   ReportIncomeExpenseResult,
   ReportCashFlowParams,
   ReportCashFlowResult,
+  ExportReportPdfResult,
   ReportTrialBalanceParams,
   ReportTrialBalanceResult,
   ReportNetWorthParams,
@@ -132,6 +133,8 @@ export interface BeanWiseApi {
   getTrialBalanceReport(params?: ReportTrialBalanceParams): Promise<ReportTrialBalanceResult>
   /** 现金流量表（口径：Assets 顶层组全部账户视为资金池，池内互转不计；运营货币） */
   getCashFlowReport(params: ReportCashFlowParams): Promise<ReportCashFlowResult>
+  /** 导出当前报表页为 PDF（printToPDF + 保存对话框；取消 → ok:true 无 path） */
+  exportReportPdf(): Promise<ExportReportPdfResult>
   checkForUpdates(): Promise<UpdateCheckResult>
   /** 当前更新状态（idle/checking/available/downloading/downloaded/error） */
   getUpdateStatus(): Promise<UpdateState>

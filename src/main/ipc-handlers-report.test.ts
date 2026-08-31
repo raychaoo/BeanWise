@@ -19,8 +19,13 @@ function makeRegistrar(): Registrar {
 // `(_event, raw)` 及仓库既有约定（M3 测试：直呼先传 event 占位再传 params）矛盾，
 // 按 T2 先例修正测试直呼约定、实现保持逐字——handler 首参是 Electron event。
 function register(db: ReportDeps['db']): Map<string, (...args: unknown[]) => Promise<unknown>> {
+  return registerWithDeps({ db })
+}
+
+/** 带完整依赖注册（PDF 导出测试注入 printToPDF/dialog/writeFile mock） */
+function registerWithDeps(deps: ReportDeps): Map<string, (...args: unknown[]) => Promise<unknown>> {
   const registrar = makeRegistrar()
-  registerReportHandlers(registrar, { db })
+  registerReportHandlers(registrar, deps)
   const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>()
   for (const [channel, listener] of registrar.handle.mock.calls as Array<[string, (...args: unknown[]) => Promise<unknown>]>) {
     handlers.set(channel, listener)
@@ -370,5 +375,67 @@ describe('report:cash-flow', () => {
     await expect(
       handlers.get('report:cash-flow')!({}, { granularity: 'month', dateFrom: '2026-02-01', dateTo: '2026-01-01' })
     ).rejects.toThrow('dateFrom 不能大于 dateTo')
+  })
+})
+
+describe('report:export-pdf', () => {
+  type PrintToPdfMock = (options?: object) => Promise<Buffer>
+  type SaveDialogMock = (options?: object) => Promise<{ canceled: boolean; filePath?: string }>
+  type WriteFileMock = (filePath: string, data: Uint8Array) => Promise<void>
+
+  function pdfDeps(overrides: {
+    printToPDF?: PrintToPdfMock
+    showSaveDialog?: SaveDialogMock
+    writeFile?: WriteFileMock
+  } = {}) {
+    return {
+      db: setup().db,
+      getWindow: () => ({
+        webContents: { printToPDF: overrides.printToPDF ?? (async () => Buffer.from('%PDF-1.4 test')) }
+      }),
+      showSaveDialog: overrides.showSaveDialog ?? (async () => ({ canceled: false, filePath: 'C:\\out\\report.pdf' })),
+      writeFile: overrides.writeFile ?? (async () => undefined)
+    }
+  }
+
+  it('成功路径：printToPDF → showSaveDialog → writeFile → { ok:true, path }', async () => {
+    const printToPDF = vi.fn<PrintToPdfMock>().mockResolvedValue(Buffer.from('%PDF-1.4 test'))
+    const showSaveDialog = vi.fn<SaveDialogMock>().mockResolvedValue({ canceled: false, filePath: 'C:\\out\\report.pdf' })
+    const writeFile = vi.fn<WriteFileMock>().mockResolvedValue(undefined)
+    const handlers = registerWithDeps(pdfDeps({ printToPDF, showSaveDialog, writeFile }))
+
+    const r = (await handlers.get('report:export-pdf')!({})) as { ok: boolean; path?: string; message?: string }
+    expect(r).toEqual({ ok: true, path: 'C:\\out\\report.pdf' })
+    expect(printToPDF).toHaveBeenCalledWith({ printBackground: true, pageSize: 'A4' })
+    expect(showSaveDialog).toHaveBeenCalledWith(
+      expect.objectContaining({ defaultPath: expect.stringMatching(/^BeanWise-报表-\d{4}-\d{2}-\d{2}\.pdf$/) })
+    )
+    expect(writeFile).toHaveBeenCalledWith('C:\\out\\report.pdf', Buffer.from('%PDF-1.4 test'))
+  })
+
+  it('取消保存：不写文件，返回 { ok:true }（无 path）', async () => {
+    const showSaveDialog = vi.fn<SaveDialogMock>().mockResolvedValue({ canceled: true })
+    const writeFile = vi.fn<WriteFileMock>().mockResolvedValue(undefined)
+    const handlers = registerWithDeps(pdfDeps({ showSaveDialog, writeFile }))
+
+    const r = (await handlers.get('report:export-pdf')!({})) as { ok: boolean; path?: string; message?: string }
+    expect(r).toEqual({ ok: true })
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('打印异常：返回 { ok:false, message }', async () => {
+    const printToPDF = vi.fn<PrintToPdfMock>().mockRejectedValue(new Error('print failed'))
+    const handlers = registerWithDeps(pdfDeps({ printToPDF }))
+
+    const r = (await handlers.get('report:export-pdf')!({})) as { ok: boolean; path?: string; message?: string }
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('print failed')
+    expect(r.path).toBeUndefined()
+  })
+
+  it('无窗口：返回 { ok:false }', async () => {
+    const handlers = registerWithDeps({ db: setup().db, getWindow: () => null, showSaveDialog: vi.fn(), writeFile: vi.fn() })
+    const r = (await handlers.get('report:export-pdf')!({})) as { ok: boolean; message?: string }
+    expect(r).toEqual({ ok: false, message: expect.stringContaining('未找到应用窗口') })
   })
 })

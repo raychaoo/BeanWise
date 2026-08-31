@@ -5,14 +5,25 @@
  * （2026-08-23 回归修复：清空/重建后缺 option 会导致图表按 '' 过滤恒空），再无 → ''（空集）。
  */
 import { and, asc, count, desc, eq, gte, like, lte, max, min, or, type SQL } from 'drizzle-orm'
-import type { ReportBalancesParams, ReportBalancesResult, ReportCashFlowParams, ReportCashFlowResult, ReportGranularity, ReportIncomeExpenseParams, ReportIncomeExpenseResult, ReportNetWorthParams, ReportNetWorthResult, ReportTrialBalanceParams, ReportTrialBalanceResult, ReportYearRange, ReportYearsResult } from '../shared/ipc'
+import type { SaveDialogOptions, WebContents } from 'electron'
+import type { ExportReportPdfResult, ReportBalancesParams, ReportBalancesResult, ReportCashFlowParams, ReportCashFlowResult, ReportGranularity, ReportIncomeExpenseParams, ReportIncomeExpenseResult, ReportNetWorthParams, ReportNetWorthResult, ReportTrialBalanceParams, ReportTrialBalanceResult, ReportYearRange, ReportYearsResult } from '../shared/ipc'
 import type { DrizzleDb } from './db'
 import { entries, postings } from './db/schema'
 import { getLedgerStatus } from './index-builder'
 import { buildAccountTree, computeCashFlow, computeIncomeExpense, computeNetWorth, computeTrialBalance, type CashFlowPostingRow, type PostingRow } from './report-aggregation'
 import type { IpcRegistrar } from './ipc-handlers'
 
-export interface ReportDeps {
+/** PDF 导出依赖（index.ts 注入真实实现；测试注入 mock——模块不直接 import electron 运行时） */
+export interface ReportPdfDeps {
+  /** 当前窗口提供者：主进程取 BrowserWindow.getFocusedWindow() ?? getAllWindows()[0] */
+  getWindow?: () => { webContents: Pick<WebContents, 'printToPDF'> } | null
+  /** 保存对话框（dialog.showSaveDialog；取消 → canceled:true） */
+  showSaveDialog?: (options: SaveDialogOptions) => Promise<{ canceled: boolean; filePath?: string }>
+  /** 写 PDF 字节到文件（fs.promises.writeFile） */
+  writeFile?: (filePath: string, data: Uint8Array) => Promise<void>
+}
+
+export interface ReportDeps extends ReportPdfDeps {
   db: DrizzleDb
 }
 
@@ -185,6 +196,31 @@ export function registerReportHandlers(ipc: IpcRegistrar, deps: ReportDeps): voi
     return {
       series: computeCashFlow(rows as CashFlowPostingRow[], { granularity, currency, dateFrom, dateTo }),
       currency
+    }
+  })
+
+  // report:export-pdf（批次 G #8）：webContents.printToPDF → dialog.showSaveDialog → writeFile。
+  // 打印样式由渲染端 @media print 隔离（隐藏侧栏/Header/工具栏，.page-scroll 高度 auto）。
+  ipc.handle('report:export-pdf', async (): Promise<ExportReportPdfResult> => {
+    if (!deps.getWindow || !deps.showSaveDialog || !deps.writeFile) {
+      return { ok: false, message: 'PDF 导出依赖未注入（主进程配置缺失）' }
+    }
+    const win = deps.getWindow()
+    if (!win) return { ok: false, message: '未找到应用窗口，无法导出 PDF' }
+    try {
+      const data = await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4' })
+      const now = new Date()
+      const pad = (n: number): string => String(n).padStart(2, '0')
+      const defaultPath = `BeanWise-报表-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}.pdf`
+      const save = await deps.showSaveDialog({
+        defaultPath,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }]
+      })
+      if (save.canceled || !save.filePath) return { ok: true }
+      await deps.writeFile(save.filePath, data)
+      return { ok: true, path: save.filePath }
+    } catch (err) {
+      return { ok: false, message: String(err) }
     }
   })
 

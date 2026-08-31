@@ -34,7 +34,7 @@ export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list
   | 'sync:get-status' | 'sync:configure' | 'sync:push' | 'sync:pull'
   | 'sync:resolve-conflict' | 'sync:clear'
   | 'ai:get-status' | 'ai:save-config' | 'ai:clear-config' | 'ai:parse'
-  | 'report:net-worth' | 'report:balances' | 'report:income-expense' | 'report:years' | 'report:trial-balance' | 'report:cash-flow'
+  | 'report:net-worth' | 'report:balances' | 'report:income-expense' | 'report:years' | 'report:trial-balance' | 'report:cash-flow' | 'report:export-pdf'
   | 'update:check' | 'update:status' | 'update:install'
 
 /** ledger:read-file 结果（ENOENT → ok:false + message，编辑器 Empty 态） */
@@ -566,6 +566,13 @@ export interface CashFlowPoint {
 export interface ReportCashFlowResult {
   series: CashFlowPoint[]
   currency: string
+  message?: string
+}
+
+/** report:export-pdf 结果（取消保存 → ok:true 无 path；打印/写盘异常 → ok:false + message） */
+export interface ExportReportPdfResult {
+  ok: boolean
+  path?: string
   message?: string
 }
 

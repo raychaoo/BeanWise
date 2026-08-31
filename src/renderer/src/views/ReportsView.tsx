@@ -6,8 +6,9 @@
  * 图表 y 值 Number() 仅显示层，精确金额由报表 Tab 十进制字符串提供。
  * destroyInactiveTabPane=false 保切换状态；图表懒加载（LazyLine/LazyColumn）。
  */
-import { Alert, Card, Empty, Segmented, Select, Spin, Table, Tabs, Tooltip, Typography } from 'antd'
-import { useEffect } from 'react'
+import { DownloadOutlined } from '@ant-design/icons'
+import { Alert, Button, Card, Empty, Segmented, Select, Spin, Table, Tabs, Tooltip, Typography, message } from 'antd'
+import { useEffect, useState } from 'react'
 import type { AccountBalance, IncomeExpensePoint, NetWorthPoint } from '../../../shared/ipc'
 import LazyColumn from '../components/LazyColumn'
 import LazyLine from '../components/LazyLine'
@@ -76,7 +77,7 @@ function TrendPane() {
 
   return (
     <div>
-      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <div className="report-filter-bar" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <Segmented
           value={granularity}
           onChange={(v) => { if (typeof v === 'string') setGranularity(v as 'month' | 'year') }}
@@ -170,16 +171,50 @@ function TrendPane() {
 }
 
 export default function ReportsView() {
+  const [exporting, setExporting] = useState(false)
+
+  /** 导出 PDF：printToPDF + 保存对话框（取消静默；失败 message.error） */
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const r = await window.beanwise.exportReportPdf()
+      if (!r.ok) message.error(r.message ?? '导出 PDF 失败')
+      else if (r.path) message.success(`已导出: ${r.path}`)
+      // 取消保存 → { ok:true } 无 path，静默
+    } catch (err) {
+      message.error(`导出 PDF 失败：${String(err)}`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
-    <Tabs
-      defaultActiveKey="trend"
-      destroyInactiveTabPane={false}
-      items={[
-        { key: 'trend', label: '趋势图表', children: <TrendPane /> },
-        { key: 'balance', label: '资产负债表', children: <BalanceSheetTable /> },
-        { key: 'income', label: '利润表', children: <IncomeStatementTable /> },
-        { key: 'cash-flow', label: '现金流量表', children: <CashFlowTable /> }
-      ]}
-    />
+    <div>
+      <div className="reports-header">
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          报表
+        </Typography.Title>
+        <Button
+          type="primary"
+          icon={<DownloadOutlined />}
+          loading={exporting}
+          onClick={() => void handleExport()}
+          className="report-export-btn"
+        >
+          导出 PDF
+        </Button>
+      </div>
+      <Tabs
+        defaultActiveKey="trend"
+        destroyInactiveTabPane={false}
+        items={[
+          // print-area：仅激活 Tab 的报表区参与 PDF 输出（@media print 隔离）
+          { key: 'trend', label: '趋势图表', children: <div className="print-area"><TrendPane /></div> },
+          { key: 'balance', label: '资产负债表', children: <div className="print-area"><BalanceSheetTable /></div> },
+          { key: 'income', label: '利润表', children: <div className="print-area"><IncomeStatementTable /></div> },
+          { key: 'cash-flow', label: '现金流量表', children: <div className="print-area"><CashFlowTable /></div> }
+        ]}
+      />
+    </div>
   )
 }

@@ -46,6 +46,7 @@ const api: BeanWiseApi = {
   getReportYears: (): Promise<ReportYearsResult> => ipcRenderer.invoke('report:years'),
   getTrialBalanceReport: (params?: ReportTrialBalanceParams) => ipcRenderer.invoke('report:trial-balance', params),
   getCashFlowReport: (params: ReportCashFlowParams) => ipcRenderer.invoke('report:cash-flow', params),
+  exportReportPdf: () => ipcRenderer.invoke('report:export-pdf'),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   getUpdateStatus: () => ipcRenderer.invoke('update:status'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
