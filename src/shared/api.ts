@@ -29,6 +29,8 @@ import type {
   ReportBalancesResult,
   ReportIncomeExpenseParams,
   ReportIncomeExpenseResult,
+  ReportCashFlowParams,
+  ReportCashFlowResult,
   ReportTrialBalanceParams,
   ReportTrialBalanceResult,
   ReportNetWorthParams,
@@ -128,6 +130,8 @@ export interface BeanWiseApi {
   getReportYears(): Promise<ReportYearsResult>
   /** 三栏式科目余额表（期初/发生/期末；dateFrom/dateTo 为 YYYY-MM-DD，缺省全量） */
   getTrialBalanceReport(params?: ReportTrialBalanceParams): Promise<ReportTrialBalanceResult>
+  /** 现金流量表（口径：Assets 顶层组全部账户视为资金池，池内互转不计；运营货币） */
+  getCashFlowReport(params: ReportCashFlowParams): Promise<ReportCashFlowResult>
   checkForUpdates(): Promise<UpdateCheckResult>
   /** 当前更新状态（idle/checking/available/downloading/downloaded/error） */
   getUpdateStatus(): Promise<UpdateState>

@@ -43,6 +43,24 @@ function insertPosting(
     .run()
 }
 
+/** 插入同一分录的多条 posting（共享一个 entry——现金流量表按分录配对判定流入/流出） */
+function insertEntryPostings(
+  db: ReportDeps['db'],
+  date: string,
+  legs: Array<{ account: string; number: string; currency: string }>
+): void {
+  const entry = db
+    .insert(entries)
+    .values({ type: 'Transaction', date, narration: 't' })
+    .returning()
+    .get()
+  for (const leg of legs) {
+    db.insert(postings)
+      .values({ entryId: entry.id, account: leg.account, unitsNumber: leg.number, unitsCurrency: leg.currency })
+      .run()
+  }
+}
+
 function setup(): { db: ReportDeps['db']; handlers: Map<string, (...args: unknown[]) => Promise<unknown>> } {
   const db = createDrizzle(openDatabase(':memory:'))
   db.insert(ledgerMeta)
@@ -282,6 +300,75 @@ describe('report:trial-balance', () => {
     await expect(handlers.get('report:trial-balance')!({}, { dateFrom: '2026/01/01' })).rejects.toThrow('dateFrom')
     await expect(
       handlers.get('report:trial-balance')!({}, { dateFrom: '2026-02-01', dateTo: '2026-01-01' })
+    ).rejects.toThrow('dateFrom 不能大于 dateTo')
+  })
+})
+
+describe('report:cash-flow', () => {
+  it('Assets 资金池口径：收入流入 / 支出流出 / 池内互转不计 / 净额正确（month 分组）', async () => {
+    const db = createDrizzle(openDatabase(':memory:'))
+    db.insert(ledgerMeta)
+      .values({ id: 1, ledgerPath: 'x.beancount', status: 'ok', operatingCurrency: '["CNY"]' })
+      .run()
+    // 收入（流入 10000）
+    insertEntryPostings(db, '2026-01-05', [
+      { account: 'Assets:Bank:CNB', number: '10000', currency: 'CNY' },
+      { account: 'Income:Salary', number: '-10000', currency: 'CNY' }
+    ])
+    // 支出（流出 35）
+    insertEntryPostings(db, '2026-01-10', [
+      { account: 'Expenses:Food', number: '35', currency: 'CNY' },
+      { account: 'Assets:Bank:CNB', number: '-35', currency: 'CNY' }
+    ])
+    // 池内互转（不计）
+    insertEntryPostings(db, '2026-01-15', [
+      { account: 'Assets:Bank:CNB', number: '-500', currency: 'CNY' },
+      { account: 'Assets:Cash', number: '500', currency: 'CNY' }
+    ])
+    // 负债还款（流出 20，次月）
+    insertEntryPostings(db, '2026-02-01', [
+      { account: 'Liabilities:CreditCard', number: '20', currency: 'CNY' },
+      { account: 'Assets:Bank:CNB', number: '-20', currency: 'CNY' }
+    ])
+    const handlers = register(db)
+    const r = (await handlers.get('report:cash-flow')!({}, { granularity: 'month' })) as {
+      series: Array<{ period: string; inflow: string; outflow: string; net: string }>
+      currency: string
+    }
+    expect(r.currency).toBe('CNY')
+    expect(r.series).toEqual([
+      { period: '2026-01', inflow: '10000', outflow: '35', net: '9965' },
+      { period: '2026-02', inflow: '0', outflow: '20', net: '-20' }
+    ])
+  })
+
+  it('dateFrom/dateTo 区间筛选 + 非法日期/区间 throw', async () => {
+    const db = createDrizzle(openDatabase(':memory:'))
+    db.insert(ledgerMeta)
+      .values({ id: 1, ledgerPath: 'x.beancount', status: 'ok', operatingCurrency: '["CNY"]' })
+      .run()
+    insertEntryPostings(db, '2026-01-05', [
+      { account: 'Assets:Bank:CNB', number: '10000', currency: 'CNY' },
+      { account: 'Income:Salary', number: '-10000', currency: 'CNY' }
+    ])
+    insertEntryPostings(db, '2026-02-01', [
+      { account: 'Assets:Bank:CNB', number: '5000', currency: 'CNY' },
+      { account: 'Income:Bonus', number: '-5000', currency: 'CNY' }
+    ])
+    const handlers = register(db)
+    const r = (await handlers.get('report:cash-flow')!(
+      {},
+      { granularity: 'month', dateFrom: '2026-02-01', dateTo: '2026-02-28' }
+    )) as { series: Array<{ period: string; inflow: string; outflow: string; net: string }> }
+    expect(r.series).toEqual([{ period: '2026-02', inflow: '5000', outflow: '0', net: '5000' }])
+    // 无区间 → 两月都在
+    const all = (await handlers.get('report:cash-flow')!({}, { granularity: 'month' })) as {
+      series: Array<{ period: string }>
+    }
+    expect(all.series.map((p) => p.period)).toEqual(['2026-01', '2026-02'])
+    await expect(handlers.get('report:cash-flow')!({}, { granularity: 'quarter' })).rejects.toThrow('granularity')
+    await expect(
+      handlers.get('report:cash-flow')!({}, { granularity: 'month', dateFrom: '2026-02-01', dateTo: '2026-01-01' })
     ).rejects.toThrow('dateFrom 不能大于 dateTo')
   })
 })

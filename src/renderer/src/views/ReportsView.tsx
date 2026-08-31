@@ -1,5 +1,6 @@
 /**
- * M8 报表视图（T4）+ 批次 E Task 3 三表排版：外层 Tabs（趋势图表 / 资产负债表 / 利润表）。
+ * M8 报表视图（T4）+ 批次 E Task 3 三表排版 + 批次 G 现金流量表：外层 Tabs
+ * （趋势图表 / 资产负债表 / 利润表 / 现金流量表）。
  * 默认 Tab「趋势图表」保持既有 DOM（粒度 Segmented + 起止年 Select + 三卡片——
  * e2e/reports.spec.ts 依赖，不得移动）；资产负债表/利润表见 views/reports/*。
  * 图表 y 值 Number() 仅显示层，精确金额由报表 Tab 十进制字符串提供。
@@ -13,6 +14,7 @@ import LazyLine from '../components/LazyLine'
 import { useLedgerStore } from '../stores/ledger'
 import { useReportsStore } from '../stores/reports'
 import BalanceSheetTable from './reports/BalanceSheetTable'
+import CashFlowTable from './reports/CashFlowTable'
 import IncomeStatementTable from './reports/IncomeStatementTable'
 import '../styles/views/reports.less'
 
@@ -175,7 +177,8 @@ export default function ReportsView() {
       items={[
         { key: 'trend', label: '趋势图表', children: <TrendPane /> },
         { key: 'balance', label: '资产负债表', children: <BalanceSheetTable /> },
-        { key: 'income', label: '利润表', children: <IncomeStatementTable /> }
+        { key: 'income', label: '利润表', children: <IncomeStatementTable /> },
+        { key: 'cash-flow', label: '现金流量表', children: <CashFlowTable /> }
       ]}
     />
   )

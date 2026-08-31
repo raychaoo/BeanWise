@@ -86,12 +86,12 @@ cd /f/raychaoo/BeanWise && git worktree add .worktrees/g-reports-plus -b ui/g-re
 - **口径（写进实现与 UI 说明）**：现金池 = `Assets:` 顶层组全部账户（个人记账语境的资金池假设；后续如需精确圈定现金账户再立需求）。`inflow` = 区间内非 Assets→Assets 的流入（收入/对方转入）；`outflow` = Assets→非 Assets 流出；池内互转不计；`net` = inflow - outflow（字符串减法用 `computeBalancingNumber([inflow, 取反outflow])` 模式或新增本地 `subtractDecimalStrings`——若无则用 `addDecimalStrings(a, negate(b))`，`negate` 复用既有取反逻辑）
 - UI：报告式上下结构——期间选择（复用 granularity + 起止）；表格列 期间/流入/流出/净额（`.num`）；顶部固定说明行「口径：Assets 组全部账户视为资金池」
 
-- [ ] **Step 1: 失败测试**（构造 行集：收入→Assets、Assets→Expenses、Assets 内部互转、Liabilities 还款；断言 inflow/outflow 正确、互转不计、net 正确、period 分组正确）
-- [ ] **Step 2: 跑失败** → FAIL
-- [ ] **Step 3: 实现聚合 + IPC 接线**
-- [ ] **Step 4: CashFlowTable 组件 + ReportsView Tab**（默认 Tab 结构不动，e2e 安全）
-- [ ] **Step 5: 验证**：unit + `npm run test:e2e -- --grep "报表"`
-- [ ] **Step 6: Commit** `feat(cap-g): 现金流量表（report:cash-flow，Assets 资金池口径）`
+- [x] **Step 1: 失败测试**（构造 行集：收入→Assets、Assets→Expenses、Assets 内部互转、Liabilities 还款；断言 inflow/outflow 正确、互转不计、net 正确、period 分组正确）
+- [x] **Step 2: 跑失败** → FAIL
+- [x] **Step 3: 实现聚合 + IPC 接线**
+- [x] **Step 4: CashFlowTable 组件 + ReportsView Tab**（默认 Tab 结构不动，e2e 安全）
+- [x] **Step 5: 验证**：unit + `npm run test:e2e -- --grep "报表"`
+- [x] **Step 6: Commit** `feat(cap-g): 现金流量表（report:cash-flow，Assets 资金池口径）`
 
 ### Task 5: 报表导出 PDF
 

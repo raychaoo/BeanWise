@@ -6,16 +6,22 @@
 import dayjs from 'dayjs'
 import isoWeek from 'dayjs/plugin/isoWeek'
 import { addDecimalStrings, negateDecimal } from '../shared/decimal'
-import type { AccountBalance, IncomeExpensePoint, NetWorthPoint, ReportGranularity, ReportYearRange, TrialBalanceRow } from '../shared/ipc'
+import type { AccountBalance, CashFlowPoint, IncomeExpensePoint, NetWorthPoint, ReportGranularity, ReportYearRange, TrialBalanceRow } from '../shared/ipc'
 
 dayjs.extend(isoWeek)
 
-/** 索引行快照（ipc-handlers-report 查询产出） */
+/** 索引行快照（ipc-handlers-report 查询产出）；entryId 为所属分录 id（现金流量表按分录配对用） */
 export interface PostingRow {
+  entryId?: number
   date: string // YYYY-MM-DD
   account: string
   number: string // 十进制字符串
   currency: string
+}
+
+/** 现金流量表输入行：PostingRow + 必带 entryId（loadRows 恒产出，跨分录判定流入/流出必需） */
+export interface CashFlowPostingRow extends PostingRow {
+  entryId: number
 }
 
 /**
@@ -234,4 +240,49 @@ export function computeTrialBalance(
     }
   }
   return out
+}
+
+/**
+ * 现金流量表（批次 G #7）。口径（与 UI 说明一致）：现金池 = `Assets:` 顶层组全部账户
+ * （个人记账语境的资金池假设；后续如需精确圈定现金账户再立需求）。
+ * 按分录（entryId）配对：池内互转（分录全为 Assets）不计；涉及池外的分录按池净变化判定——
+ * assetsDelta > 0 → 流入（收入/对方转入），< 0 → 流出（支出/还款），= 0 → 不计；
+ * net = inflow - outflow（addDecimalStrings + negateDecimal，字符串精确运算）。
+ * 期间按 periodKey 分组；currency 缺省不按币种过滤（handler 一律传运营货币，多币种不混计）。
+ */
+export function computeCashFlow(
+  rows: CashFlowPostingRow[],
+  opts: { granularity: ReportGranularity; currency?: string; dateFrom?: string; dateTo?: string }
+): CashFlowPoint[] {
+  const groups = new Map<number, CashFlowPostingRow[]>()
+  for (const r of rows) {
+    if (opts.currency !== undefined && r.currency !== opts.currency) continue
+    if (opts.dateFrom !== undefined && r.date < opts.dateFrom) continue
+    if (opts.dateTo !== undefined && r.date > opts.dateTo) continue
+    const list = groups.get(r.entryId)
+    if (list) list.push(r)
+    else groups.set(r.entryId, [r])
+  }
+  const inflow = new Map<string, string>()
+  const outflow = new Map<string, string>()
+  for (const group of groups.values()) {
+    const assetsDelta = group
+      .filter((r) => r.account.startsWith('Assets:'))
+      .reduce((acc, r) => addDecimalStrings(acc, r.number), '0')
+    const hasExternal = group.some((r) => !r.account.startsWith('Assets:'))
+    if (assetsDelta === '0' || !hasExternal) continue // 池内互转（含仅 Assets 的分录）不计
+    const period = periodKey(group[0].date, opts.granularity)
+    if (assetsDelta.startsWith('-')) {
+      const amount = negateDecimal(assetsDelta)
+      outflow.set(period, addDecimalStrings(outflow.get(period) ?? '0', amount))
+    } else {
+      inflow.set(period, addDecimalStrings(inflow.get(period) ?? '0', assetsDelta))
+    }
+  }
+  const periods = [...new Set([...inflow.keys(), ...outflow.keys()])].sort()
+  return periods.map((period) => {
+    const inAmt = inflow.get(period) ?? '0'
+    const outAmt = outflow.get(period) ?? '0'
+    return { period, inflow: inAmt, outflow: outAmt, net: addDecimalStrings(inAmt, negateDecimal(outAmt)) }
+  })
 }

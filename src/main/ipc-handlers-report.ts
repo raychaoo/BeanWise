@@ -4,12 +4,12 @@
  * 运营货币取 ledger_meta.operating_currency[0]；无 option 时按 postings 币种频次兜底识别主币
  * （2026-08-23 回归修复：清空/重建后缺 option 会导致图表按 '' 过滤恒空），再无 → ''（空集）。
  */
-import { asc, count, desc, eq, like, lte, max, min, or, type SQL } from 'drizzle-orm'
-import type { ReportBalancesParams, ReportBalancesResult, ReportGranularity, ReportIncomeExpenseParams, ReportIncomeExpenseResult, ReportNetWorthParams, ReportNetWorthResult, ReportTrialBalanceParams, ReportTrialBalanceResult, ReportYearRange, ReportYearsResult } from '../shared/ipc'
+import { and, asc, count, desc, eq, gte, like, lte, max, min, or, type SQL } from 'drizzle-orm'
+import type { ReportBalancesParams, ReportBalancesResult, ReportCashFlowParams, ReportCashFlowResult, ReportGranularity, ReportIncomeExpenseParams, ReportIncomeExpenseResult, ReportNetWorthParams, ReportNetWorthResult, ReportTrialBalanceParams, ReportTrialBalanceResult, ReportYearRange, ReportYearsResult } from '../shared/ipc'
 import type { DrizzleDb } from './db'
 import { entries, postings } from './db/schema'
 import { getLedgerStatus } from './index-builder'
-import { buildAccountTree, computeIncomeExpense, computeNetWorth, computeTrialBalance, type PostingRow } from './report-aggregation'
+import { buildAccountTree, computeCashFlow, computeIncomeExpense, computeNetWorth, computeTrialBalance, type CashFlowPostingRow, type PostingRow } from './report-aggregation'
 import type { IpcRegistrar } from './ipc-handlers'
 
 export interface ReportDeps {
@@ -62,6 +62,7 @@ function validateDate(raw: unknown, label: string): string | undefined {
 function loadRows(db: DrizzleDb, where: SQL | undefined): PostingRow[] {
   return db
     .select({
+      entryId: entries.id,
       date: entries.date,
       account: postings.account,
       number: postings.unitsNumber,
@@ -159,6 +160,30 @@ export function registerReportHandlers(ipc: IpcRegistrar, deps: ReportDeps): voi
     }
     return {
       series: computeIncomeExpense(rows, granularity, currency, { startYear: start, endYear: end }),
+      currency
+    }
+  })
+
+  // report:cash-flow（批次 G #7）：口径 = Assets 顶层组全部账户视为资金池（池内互转不计），
+  // 按运营货币计（避免多币种混计）；dateFrom/dateTo 参与 SQL 行筛选，期间在纯函数内按
+  // day/week/month/year 分组——金额全链路 addDecimalStrings，禁 SQL SUM。
+  ipc.handle('report:cash-flow', async (_event: unknown, raw: unknown): Promise<ReportCashFlowResult> => {
+    const db = deps.db
+    const params = (raw ?? {}) as ReportCashFlowParams
+    const granularity = validateGranularity(params.granularity, 'granularity')
+    const dateFrom = validateDate(params.dateFrom, 'dateFrom')
+    const dateTo = validateDate(params.dateTo, 'dateTo')
+    if (dateFrom !== undefined && dateTo !== undefined && dateFrom > dateTo) {
+      throw new Error('dateFrom 不能大于 dateTo')
+    }
+    const currency = operatingCurrency(db)
+    const conds: SQL[] = []
+    if (dateFrom !== undefined) conds.push(gte(entries.date, dateFrom))
+    if (dateTo !== undefined) conds.push(lte(entries.date, dateTo))
+    const rows = loadRows(db, conds.length > 0 ? and(...conds) : undefined)
+    // loadRows 恒含 entryId（select 显式取 entries.id），此处收窄类型供 computeCashFlow 配对
+    return {
+      series: computeCashFlow(rows as CashFlowPostingRow[], { granularity, currency, dateFrom, dateTo }),
       currency
     }
   })

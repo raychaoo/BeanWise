@@ -5,7 +5,8 @@
 import { describe, expect, it } from 'vitest'
 import type { AccountBalance } from '../shared/ipc'
 import type { PostingRow } from './report-aggregation'
-import { buildAccountTree, computeIncomeExpense, computeNetWorth, computeTrialBalance, periodKey } from './report-aggregation'
+import { buildAccountTree, computeCashFlow, computeIncomeExpense, computeNetWorth, computeTrialBalance, periodKey } from './report-aggregation'
+import type { CashFlowPostingRow } from './report-aggregation'
 
 const rows: PostingRow[] = [
   // 2025-03 收入 + 支出
@@ -313,5 +314,78 @@ describe('computeTrialBalance（三栏：期初/发生/期末，每账户每币�
 
   it('空输入 → 空数组', () => {
     expect(computeTrialBalance([])).toEqual([])
+  })
+})
+
+describe('computeCashFlow（Assets 资金池口径：流入/流出/净额，池内互转不计）', () => {
+  // 每笔分录配对两条 posting（entryId 分组）；池内互转、池外偿还、多笔收入/支出覆盖口径。
+  const cfRows: CashFlowPostingRow[] = [
+    // 1: 收入 → Assets（流入 10000）
+    { entryId: 1, date: '2026-01-05', account: 'Assets:Bank:CNB', number: '10000', currency: 'CNY' },
+    { entryId: 1, date: '2026-01-05', account: 'Income:Salary', number: '-10000', currency: 'CNY' },
+    // 2: Assets → Expenses（流出 35）
+    { entryId: 2, date: '2026-01-10', account: 'Expenses:Food', number: '35', currency: 'CNY' },
+    { entryId: 2, date: '2026-01-10', account: 'Assets:Bank:CNB', number: '-35', currency: 'CNY' },
+    // 3: Assets 内部互转（池内互转不计）
+    { entryId: 3, date: '2026-01-15', account: 'Assets:Bank:CNB', number: '-500', currency: 'CNY' },
+    { entryId: 3, date: '2026-01-15', account: 'Assets:Cash', number: '500', currency: 'CNY' },
+    // 4: Liabilities 还款（Assets → 非 Assets，流出 20）
+    { entryId: 4, date: '2026-02-01', account: 'Liabilities:CreditCard', number: '20', currency: 'CNY' },
+    { entryId: 4, date: '2026-02-01', account: 'Assets:Bank:CNB', number: '-20', currency: 'CNY' },
+    // 5: 另一笔收入（流入 200，同月聚合）
+    { entryId: 5, date: '2026-01-20', account: 'Assets:Bank:CNB', number: '200', currency: 'CNY' },
+    { entryId: 5, date: '2026-01-20', account: 'Income:Bonus', number: '-200', currency: 'CNY' },
+    // 6: USD 收入（币种过滤场景）
+    { entryId: 6, date: '2026-02-10', account: 'Assets:Bank:USD', number: '300', currency: 'USD' },
+    { entryId: 6, date: '2026-02-10', account: 'Income:Salary', number: '-300', currency: 'USD' }
+  ]
+
+  it('month：inflow/outflow 正确、池内互转不计、net = inflow - outflow', () => {
+    const pts = computeCashFlow(cfRows, { granularity: 'month' })
+    expect(pts.map((p) => p.period)).toEqual(['2026-01', '2026-02'])
+    // 01：流入 10000 + 200 = 10200；流出 35（互转不计）；net = 10165
+    expect(pts[0]).toEqual({ period: '2026-01', inflow: '10200', outflow: '35', net: '10165' })
+    // 02：流入 0（USD 未过滤时计入 300？——默认不按币种过滤，故 300 计入流入）；流出 20
+    expect(pts[1]).toEqual({ period: '2026-02', inflow: '300', outflow: '20', net: '280' })
+  })
+
+  it('currency 过滤：仅该币种参与流入/流出判定', () => {
+    const pts = computeCashFlow(cfRows, { granularity: 'month', currency: 'CNY' })
+    expect(pts.map((p) => p.period)).toEqual(['2026-01', '2026-02'])
+    expect(pts[1]).toEqual({ period: '2026-02', inflow: '0', outflow: '20', net: '-20' })
+  })
+
+  it('day：逐日分组；week：ISO 周分组', () => {
+    const dayPts = computeCashFlow(cfRows, { granularity: 'day', currency: 'CNY' })
+    expect(dayPts.map((p) => p.period)).toEqual(['2026-01-05', '2026-01-10', '2026-01-20', '2026-02-01'])
+    expect(dayPts[0]).toEqual({ period: '2026-01-05', inflow: '10000', outflow: '0', net: '10000' })
+    expect(dayPts[1]).toEqual({ period: '2026-01-10', inflow: '0', outflow: '35', net: '-35' })
+    // 2026-01-15 纯互转 → 无输出点；2026-01-20 收入 200
+    expect(dayPts.find((p) => p.period === '2026-01-15')).toBeUndefined()
+    expect(dayPts[2]).toEqual({ period: '2026-01-20', inflow: '200', outflow: '0', net: '200' })
+
+    const weekPts = computeCashFlow(
+      [
+        { entryId: 1, date: '2026-12-29', account: 'Assets:Bank:CNB', number: '100', currency: 'CNY' },
+        { entryId: 1, date: '2026-12-29', account: 'Income:Salary', number: '-100', currency: 'CNY' },
+        { entryId: 2, date: '2027-01-04', account: 'Expenses:Food', number: '50', currency: 'CNY' },
+        { entryId: 2, date: '2027-01-04', account: 'Assets:Bank:CNB', number: '-50', currency: 'CNY' }
+      ],
+      { granularity: 'week', currency: 'CNY' }
+    )
+    // 2026-12-29（周二）ISO 属 2026-W53；2027-01-04 属 2027-W01
+    expect(weekPts.map((p) => p.period)).toEqual(['2026-W53', '2027-W01'])
+    expect(weekPts[0]).toEqual({ period: '2026-W53', inflow: '100', outflow: '0', net: '100' })
+    expect(weekPts[1]).toEqual({ period: '2027-W01', inflow: '0', outflow: '50', net: '-50' })
+  })
+
+  it('dateFrom/dateTo：仅区间内分录参与', () => {
+    const pts = computeCashFlow(cfRows, { granularity: 'month', currency: 'CNY', dateFrom: '2026-01-01', dateTo: '2026-01-31' })
+    expect(pts.map((p) => p.period)).toEqual(['2026-01'])
+    expect(pts[0]).toEqual({ period: '2026-01', inflow: '10200', outflow: '35', net: '10165' })
+  })
+
+  it('空输入 → 空数组', () => {
+    expect(computeCashFlow([], { granularity: 'month' })).toEqual([])
   })
 })

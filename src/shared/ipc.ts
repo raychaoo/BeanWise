@@ -34,7 +34,7 @@ export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list
   | 'sync:get-status' | 'sync:configure' | 'sync:push' | 'sync:pull'
   | 'sync:resolve-conflict' | 'sync:clear'
   | 'ai:get-status' | 'ai:save-config' | 'ai:clear-config' | 'ai:parse'
-  | 'report:net-worth' | 'report:balances' | 'report:income-expense' | 'report:years' | 'report:trial-balance'
+  | 'report:net-worth' | 'report:balances' | 'report:income-expense' | 'report:years' | 'report:trial-balance' | 'report:cash-flow'
   | 'update:check' | 'update:status' | 'update:install'
 
 /** ledger:read-file 结果（ENOENT → ok:false + message，编辑器 Empty 态） */
@@ -544,6 +544,28 @@ export interface TrialBalanceRow {
 /** report:trial-balance 结果 */
 export interface ReportTrialBalanceResult {
   rows: TrialBalanceRow[]
+  message?: string
+}
+
+/** report:cash-flow 入参（granularity 必传；dateFrom/dateTo 为 YYYY-MM-DD 区间，缺省全量） */
+export interface ReportCashFlowParams {
+  granularity: ReportGranularity
+  dateFrom?: string
+  dateTo?: string
+}
+
+/** 现金流量点：inflow = 区间内非 Assets→Assets 流入；outflow = Assets→非 Assets 流出；net = inflow - outflow（decimal 字符串） */
+export interface CashFlowPoint {
+  period: string
+  inflow: string
+  outflow: string
+  net: string
+}
+
+/** report:cash-flow 结果（currency 为运营货币——口径 = Assets 顶层组全部账户视为资金池，按运营货币计） */
+export interface ReportCashFlowResult {
+  series: CashFlowPoint[]
+  currency: string
   message?: string
 }
 
