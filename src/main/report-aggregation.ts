@@ -3,8 +3,12 @@
  * 金额累计一律 addDecimalStrings 精确字符串运算——SQLite SUM() 转 REAL 丢精度，禁用。
  * 口径：趋势图按运营货币过滤；余额树多币种分行 + 子树 rollup（余额树中 Income 账户同样正显示）；收支正显示（income=-ΣIncome:*）。
  */
+import dayjs from 'dayjs'
+import isoWeek from 'dayjs/plugin/isoWeek'
 import { addDecimalStrings, negateDecimal } from '../shared/decimal'
-import type { AccountBalance, IncomeExpensePoint, NetWorthPoint, ReportYearRange } from '../shared/ipc'
+import type { AccountBalance, IncomeExpensePoint, NetWorthPoint, ReportGranularity, ReportYearRange } from '../shared/ipc'
+
+dayjs.extend(isoWeek)
 
 /** 索引行快照（ipc-handlers-report 查询产出） */
 export interface PostingRow {
@@ -14,9 +18,24 @@ export interface PostingRow {
   currency: string
 }
 
-/** 期间桶：month → 'YYYY-MM'，year → 'YYYY' */
-export function periodOf(date: string, granularity: 'month' | 'year'): string {
-  return granularity === 'year' ? date.slice(0, 4) : date.slice(0, 7)
+/**
+ * 期间桶：day → 日期原值；week → ISO 周标签 `YYYY-Www`（周一起始，跨年周界按 ISO 周年归属，
+ * 如 2027-01-01 属 2026-W53——用 dayjs isoWeek 插件，主进程/单测同为 node 环境可用）；
+ * month → 'YYYY-MM'；year → 'YYYY'。
+ */
+export function periodKey(date: string, granularity: ReportGranularity): string {
+  switch (granularity) {
+    case 'day':
+      return date
+    case 'week': {
+      const d = dayjs(date)
+      return `${d.isoWeekYear()}-W${String(d.isoWeek()).padStart(2, '0')}`
+    }
+    case 'year':
+      return date.slice(0, 4)
+    default:
+      return date.slice(0, 7)
+  }
 }
 
 /** 期间是否落在年份范围内（period 前 4 位即年份，month/year 粒度通用）；无范围 → 恒 true */
@@ -38,13 +57,13 @@ function inYearRange(period: string, range?: ReportYearRange): boolean {
  */
 export function computeNetWorth(
   rows: PostingRow[],
-  granularity: 'month' | 'year',
+  granularity: ReportGranularity,
   currency: string,
   range?: ReportYearRange
 ): NetWorthPoint[] {
   const buckets = new Map<string, { assets: string; liabilities: string }>()
   for (const r of rows) {
-    const period = periodOf(r.date, granularity)
+    const period = periodKey(r.date, granularity)
     const b = buckets.get(period) ?? { assets: '0', liabilities: '0' }
     if (r.currency === currency) {
       if (r.account.startsWith('Assets:')) b.assets = addDecimalStrings(b.assets, r.number)
@@ -129,7 +148,7 @@ export function buildAccountTree(rows: PostingRow[]): AccountBalance[] {
  */
 export function computeIncomeExpense(
   rows: PostingRow[],
-  granularity: 'month' | 'year',
+  granularity: ReportGranularity,
   currency: string,
   range?: ReportYearRange
 ): IncomeExpensePoint[] {
@@ -140,7 +159,7 @@ export function computeIncomeExpense(
     const year = Number(r.date.slice(0, 4))
     if (range?.startYear !== undefined && year < range.startYear) continue
     if (range?.endYear !== undefined && year > range.endYear) continue
-    const period = periodOf(r.date, granularity)
+    const period = periodKey(r.date, granularity)
     if (r.account.startsWith('Income:')) incomeMap.set(period, addDecimalStrings(incomeMap.get(period) ?? '0', r.number))
     else if (r.account.startsWith('Expenses:')) expenseMap.set(period, addDecimalStrings(expenseMap.get(period) ?? '0', r.number))
   }

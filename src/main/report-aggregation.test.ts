@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AccountBalance } from '../shared/ipc'
 import type { PostingRow } from './report-aggregation'
-import { buildAccountTree, computeIncomeExpense, computeNetWorth, periodOf } from './report-aggregation'
+import { buildAccountTree, computeIncomeExpense, computeNetWorth, periodKey } from './report-aggregation'
 
 const rows: PostingRow[] = [
   // 2025-03 收入 + 支出
@@ -24,10 +24,25 @@ const rows: PostingRow[] = [
   { date: '2026-02-01', account: 'Income:Salary', number: '-100.00', currency: 'USD' }
 ]
 
-describe('periodOf', () => {
-  it('month → YYYY-MM，year → YYYY', () => {
-    expect(periodOf('2026-08-11', 'month')).toBe('2026-08')
-    expect(periodOf('2026-08-11', 'year')).toBe('2026')
+describe('periodKey（日/周/月/年）', () => {
+  it('day → 日期原值；month → YYYY-MM，year → YYYY', () => {
+    expect(periodKey('2026-08-11', 'day')).toBe('2026-08-11')
+    expect(periodKey('2026-08-11', 'month')).toBe('2026-08')
+    expect(periodKey('2026-08-11', 'year')).toBe('2026')
+  })
+
+  it('week → ISO 周标签 YYYY-Www（周一起始）', () => {
+    expect(periodKey('2026-08-10', 'week')).toBe('2026-W33') // 周一
+    expect(periodKey('2026-08-11', 'week')).toBe('2026-W33') // 周二
+  })
+
+  it('week 跨年周界：2026-12-29 属 2026-W53，2027-01-01/01-03 同属 2026-W53，2027-01-04 属 2027-W01（ISO 周年规则）', () => {
+    expect(periodKey('2026-12-28', 'week')).toBe('2026-W53') // 周一
+    expect(periodKey('2026-12-29', 'week')).toBe('2026-W53')
+    expect(periodKey('2026-12-31', 'week')).toBe('2026-W53')
+    expect(periodKey('2027-01-01', 'week')).toBe('2026-W53') // 2027-01-01 周五，ISO 属上一周年的最后一周
+    expect(periodKey('2027-01-03', 'week')).toBe('2026-W53') // 周日
+    expect(periodKey('2027-01-04', 'week')).toBe('2027-W01') // 周一
   })
 })
 
@@ -70,6 +85,55 @@ describe('computeNetWorth（按期间累计，运营货币过滤）', () => {
     expect(computeNetWorth([], 'month', 'CNY')).toEqual([])
   })
 })
+
+describe('computeNetWorth（日/周粒度）', () => {
+  it('day：逐日累计 assets/liabilities（USD 行被过滤，该日仍输出与上期持平点）', () => {
+    const pts = computeNetWorth(rows, 'day', 'CNY')
+    expect(pts.map((p) => p.period)).toEqual(['2025-03-01', '2025-03-05', '2025-06-10', '2026-01-05', '2026-02-01'])
+    expect(pts[0]).toEqual({ period: '2025-03-01', assets: '10000', liabilities: '0', netWorth: '10000' })
+    expect(pts[1]).toEqual({ period: '2025-03-05', assets: '9965', liabilities: '0', netWorth: '9965' })
+    expect(pts[2]).toEqual({ period: '2025-06-10', assets: '9960', liabilities: '0', netWorth: '9960' })
+    expect(pts[3]).toEqual({ period: '2026-01-05', assets: '9960', liabilities: '-20', netWorth: '9940' })
+    // 2026-02-01 全为 USD：币种过滤后仍输出与 01-05 持平的点
+    expect(pts[4]).toEqual({ period: '2026-02-01', assets: '9960', liabilities: '-20', netWorth: '9940' })
+  })
+
+  it('week：按 ISO 周累计，跨年周界归属 ISO 周年', () => {
+    const wk: PostingRow[] = [
+      { date: '2026-12-28', account: 'Assets:Bank:CNB', number: '100', currency: 'CNY' },
+      { date: '2026-12-28', account: 'Income:Salary', number: '-100', currency: 'CNY' },
+      { date: '2026-12-30', account: 'Expenses:Food', number: '30', currency: 'CNY' },
+      { date: '2026-12-30', account: 'Assets:Bank:CNB', number: '-30', currency: 'CNY' },
+      // 2027-01-02（周六）ISO 仍属 2026-W53
+      { date: '2027-01-02', account: 'Expenses:Food', number: '20', currency: 'CNY' },
+      { date: '2027-01-02', account: 'Assets:Bank:CNB', number: '-20', currency: 'CNY' },
+      // 2027-01-04（周一）属 2027-W01
+      { date: '2027-01-04', account: 'Assets:Bank:CNB', number: '500', currency: 'CNY' },
+      { date: '2027-01-04', account: 'Income:Bonus', number: '-500', currency: 'CNY' }
+    ]
+    const pts = computeNetWorth(wk, 'week', 'CNY')
+    expect(pts.map((p) => p.period)).toEqual(['2026-W53', '2027-W01'])
+    // 2026-W53 末：assets = 100 - 30 - 20 = 50（累计口径，不含 2027-W01）
+    expect(pts[0]).toEqual({ period: '2026-W53', assets: '50', liabilities: '0', netWorth: '50' })
+    // 2027-W01 末（含全历史）：assets = 50 + 500 = 550
+    expect(pts[1]).toEqual({ period: '2027-W01', assets: '550', liabilities: '0', netWorth: '550' })
+  })
+
+  it('week + 起止年筛选：输出点按 ISO 周年过滤（2025-12-29 属 2026-W01，随 2026 年范围输出），累计含历史', () => {
+    const wk: PostingRow[] = [
+      // 2025-12-29（周一）ISO 属 2026-W01
+      { date: '2025-12-29', account: 'Assets:Bank:CNB', number: '100', currency: 'CNY' },
+      { date: '2025-12-29', account: 'Income:Salary', number: '-100', currency: 'CNY' },
+      { date: '2026-01-05', account: 'Assets:Bank:CNB', number: '50', currency: 'CNY' },
+      { date: '2026-01-05', account: 'Income:Bonus', number: '-50', currency: 'CNY' }
+    ]
+    const pts = computeNetWorth(wk, 'week', 'CNY', { startYear: 2026 })
+    expect(pts.map((p) => p.period)).toEqual(['2026-W01', '2026-W02'])
+    expect(pts[0]).toEqual({ period: '2026-W01', assets: '100', liabilities: '0', netWorth: '100' })
+    expect(pts[1]).toEqual({ period: '2026-W02', assets: '150', liabilities: '0', netWorth: '150' })
+  })
+})
+
 
 describe('buildAccountTree（叶子余额 + 子树 rollup + 多币种分行）', () => {
   it('按 . 前缀建树，节点 balances 为子树各币种合计', () => {
@@ -163,3 +227,28 @@ describe('computeIncomeExpense（正显示 + 月视图补满 + 起止年范围�
     expect(() => computeIncomeExpense(rows, 'month', 'CNY')).toThrow('startYear')
   })
 })
+
+describe('computeIncomeExpense（日/周粒度）', () => {
+  it('day：逐日分组 income/expense 正显示（全被币种过滤的日期不输出）', () => {
+    const pts = computeIncomeExpense(rows, 'day', 'CNY')
+    expect(pts.map((p) => p.period)).toEqual(['2025-03-01', '2025-03-05', '2025-06-10', '2026-01-05'])
+    expect(pts[0]).toEqual({ period: '2025-03-01', income: '10000', expense: '0' })
+    expect(pts[1]).toEqual({ period: '2025-03-05', income: '0', expense: '35' })
+    expect(pts[2]).toEqual({ period: '2025-06-10', income: '0', expense: '5' })
+    expect(pts[3]).toEqual({ period: '2026-01-05', income: '0', expense: '20' })
+  })
+
+  it('week：按 ISO 周分组，跨年周界归属 ISO 周年', () => {
+    const wk: PostingRow[] = [
+      { date: '2026-12-28', account: 'Income:Salary', number: '-100', currency: 'CNY' },
+      { date: '2026-12-30', account: 'Expenses:Food', number: '30', currency: 'CNY' },
+      { date: '2027-01-02', account: 'Expenses:Food', number: '20', currency: 'CNY' },
+      { date: '2027-01-04', account: 'Income:Bonus', number: '-500', currency: 'CNY' }
+    ]
+    const pts = computeIncomeExpense(wk, 'week', 'CNY')
+    expect(pts.map((p) => p.period)).toEqual(['2026-W53', '2027-W01'])
+    expect(pts[0]).toEqual({ period: '2026-W53', income: '100', expense: '50' })
+    expect(pts[1]).toEqual({ period: '2027-W01', income: '500', expense: '0' })
+  })
+})
+

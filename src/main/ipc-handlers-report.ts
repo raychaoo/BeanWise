@@ -19,7 +19,9 @@ export interface ReportDeps {
 const YEAR_RE = /^\d{4}$/
 
 function validateGranularity(raw: unknown, label: string): ReportGranularity {
-  if (raw !== 'month' && raw !== 'year') throw new Error(`${label} 必须是 month 或 year`)
+  if (raw !== 'day' && raw !== 'week' && raw !== 'month' && raw !== 'year') {
+    throw new Error(`${label} 必须是 day/week/month/year`)
+  }
   return raw
 }
 

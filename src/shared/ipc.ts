@@ -451,8 +451,8 @@ export interface AiParseResult {
 
 /** M8：报表域（数据源 = SQLite 索引行 → 主进程 decimal.ts 精确聚合，SQL 不 SUM） */
 
-/** 报表粒度（月 YYYY-MM / 年 YYYY） */
-export type ReportGranularity = 'month' | 'year'
+/** 报表粒度（日 YYYY-MM-DD / 周 YYYY-Www（ISO）/ 月 YYYY-MM / 年 YYYY；批次 G 放开日/周） */
+export type ReportGranularity = 'day' | 'week' | 'month' | 'year'
 
 /** 报表年份范围（缺省 = 不设边界，全量数据；startYear > endYear 由 handler 校验拒绝） */
 export interface ReportYearRange {

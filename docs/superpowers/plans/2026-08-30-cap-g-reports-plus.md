@@ -35,11 +35,11 @@ cd /f/raychaoo/BeanWise && git worktree add .worktrees/g-reports-plus -b ui/g-re
 **Interfaces:**
 - Produces: period key 语义——`day` = `date` 原值；`week` = ISO 周标签 `YYYY-Www`（手写 ISO 周计算或 `dayjs` isoWeek 插件——dayjs 已是依赖，`import dayjs from 'dayjs'; import isohw from 'dayjs/plugin/isoWeek'` 需在主进程引入 dayjs；若主进程不便引 dayjs 则手写 ISO 周算法并单测覆盖跨年边界）；月/年行为不变（既有测试不破）
 
-- [ ] **Step 1: 失败测试**（行集跨 3 天/跨年周界：day 粒度逐日聚合金额正确；week 粒度跨年周归属正确（如 2026-12-29 属 2026-W53 还是 2027-W01 按 ISO 规则断言）；month/year 既有用例全保持）
-- [ ] **Step 2: 跑失败** `npx vitest run src/main/report-aggregation.test.ts` → FAIL
-- [ ] **Step 3: 实现**（period 抽取抽为 `periodKey(date, granularity)` 纯函数；金额累加继续 `addDecimalStrings`）
-- [ ] **Step 4: 跑通过** → PASS；typecheck
-- [ ] **Step 5: Commit** `feat(cap-g): 报表日/周粒度聚合`
+- [x] **Step 1: 失败测试**（行集跨 3 天/跨年周界：day 粒度逐日聚合金额正确；week 粒度跨年周归属正确（如 2026-12-29 属 2026-W53 还是 2027-W01 按 ISO 规则断言）；month/year 既有用例全保持）
+- [x] **Step 2: 跑失败** `npx vitest run src/main/report-aggregation.test.ts` → FAIL
+- [x] **Step 3: 实现**（period 抽取抽为 `periodKey(date, granularity)` 纯函数；金额累加继续 `addDecimalStrings`）
+- [x] **Step 4: 跑通过** → PASS；typecheck
+- [x] **Step 5: Commit** `feat(cap-g): 报表日/周粒度聚合`
 
 ### Task 2: 前端粒度放开
 

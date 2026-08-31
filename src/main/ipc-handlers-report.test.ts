@@ -138,7 +138,7 @@ describe('report:net-worth', () => {
 
   it('非法 granularity → throw', async () => {
     const { handlers } = setup()
-    await expect(handlers.get('report:net-worth')!({}, { granularity: 'week' })).rejects.toThrow('granularity')
+    await expect(handlers.get('report:net-worth')!({}, { granularity: 'quarter' })).rejects.toThrow('granularity')
   })
 
   it('startYear > endYear → throw', async () => {
