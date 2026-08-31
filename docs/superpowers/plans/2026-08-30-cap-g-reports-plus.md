@@ -47,9 +47,9 @@ cd /f/raychaoo/BeanWise && git worktree add .worktrees/g-reports-plus -b ui/g-re
 - Modify: `src/renderer/src/components/TimeRangeBar.tsx`（granularity Segmented 加 日/周 选项）
 - Modify: `src/renderer/src/views/DashboardPage.tsx`（透传新粒度；无逻辑改动）
 
-- [ ] **Step 1:** Segmented options 加 `{label:'日',value:'day'},{label:'周',value:'week'}`；DashboardPage store 类型随 `ReportGranularity` 自动放宽，typecheck 通过即可
-- [ ] **Step 2: 验证**：typecheck；`npm run test:e2e -- --grep "报表"` 回归
-- [ ] **Step 3: Commit** `feat(cap-g): 粒度选择器放开日/周`
+- [x] **Step 1:** Segmented options 加 `{label:'日',value:'day'},{label:'周',value:'week'}`；DashboardPage store 类型随 `ReportGranularity` 自动放宽，typecheck 通过即可
+- [x] **Step 2: 验证**：typecheck；`npm run test:e2e -- --grep "报表"` 回归
+- [x] **Step 3: Commit** `feat(cap-g): 粒度选择器放开日/周`
 
 ### Task 3: 三栏式科目余额表
 
