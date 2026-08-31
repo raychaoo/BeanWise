@@ -24,6 +24,17 @@ async function launchWithWorkspace(ledgerPath: string) {
     const opened = await window.beanwise.openWorkspace(path)
     if (!opened.ok) throw new Error(opened.message ?? '打开工作目录失败')
   }, dirname(ledgerPath))
+  // 批次 G 回归修复：openWorkspace 的索引刷新是 fire-and-forget，reload 前不等待会让
+  // reload 后读到的 ledger_meta 无运营货币 → 期初余额货币默认空（combobox 值非 CNY）。
+  // 显式等 ledger_meta 就绪（getLedgerStatus 的 operatingCurrency 非空）再 reload。
+  await win.evaluate(async () => {
+    for (let i = 0; i < 100; i++) {
+      const s = await window.beanwise.getLedgerStatus()
+      if (s && s.operatingCurrency && s.operatingCurrency.length > 0) return
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    }
+    throw new Error('等待运营货币就绪超时')
+  })
   await win.reload()
   await win.getByRole('menuitem', { name: '账户' }).click()
   // 饱载下 reload 后首个点击可能落在路由挂载完成前而被吞：未达账户页则重试一次

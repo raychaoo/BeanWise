@@ -1,7 +1,7 @@
 import { _electron as electron, expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { cleanupFixture, createFixtureCopy } from './fixtures/setup'
+import { waitForLedgerReady, cleanupFixture, createFixtureCopy } from './fixtures/setup'
 
 const launchArgs = process.env['CI'] ? ['.', '--no-sandbox'] : ['.']
 
@@ -11,6 +11,7 @@ async function activateWorkspace(win: import('@playwright/test').Page, ledgerPat
     const opened = await window.beanwise.openWorkspace(path)
     if (!opened.ok) throw new Error(opened.message ?? '打开工作目录失败')
   }, dirname(ledgerPath))
+  await waitForLedgerReady(win)
   await win.reload()
 }
 
