@@ -340,29 +340,33 @@ describe('computeCashFlow（Assets 资金池口径：流入/流出/净额，池�
     { entryId: 6, date: '2026-02-10', account: 'Income:Salary', number: '-300', currency: 'USD' }
   ]
 
-  it('month：inflow/outflow 正确、池内互转不计、net = inflow - outflow', () => {
+  it('month：inflow/outflow 正确、池内互转不计、net = inflow - outflow（最新期间在前）', () => {
     const pts = computeCashFlow(cfRows, { granularity: 'month' })
-    expect(pts.map((p) => p.period)).toEqual(['2026-01', '2026-02'])
+    // 最新期间在前（降序）：2026-02 先于 2026-01
+    expect(pts.map((p) => p.period)).toEqual(['2026-02', '2026-01'])
+    // 02：流入 300（USD 未过滤时计入）；流出 20
+    expect(pts[0]).toEqual({ period: '2026-02', inflow: '300', outflow: '20', net: '280' })
     // 01：流入 10000 + 200 = 10200；流出 35（互转不计）；net = 10165
-    expect(pts[0]).toEqual({ period: '2026-01', inflow: '10200', outflow: '35', net: '10165' })
-    // 02：流入 0（USD 未过滤时计入 300？——默认不按币种过滤，故 300 计入流入）；流出 20
-    expect(pts[1]).toEqual({ period: '2026-02', inflow: '300', outflow: '20', net: '280' })
+    expect(pts[1]).toEqual({ period: '2026-01', inflow: '10200', outflow: '35', net: '10165' })
   })
 
-  it('currency 过滤：仅该币种参与流入/流出判定', () => {
+  it('currency 过滤：仅该币种参与流入/流出判定（最新期间在前）', () => {
     const pts = computeCashFlow(cfRows, { granularity: 'month', currency: 'CNY' })
-    expect(pts.map((p) => p.period)).toEqual(['2026-01', '2026-02'])
-    expect(pts[1]).toEqual({ period: '2026-02', inflow: '0', outflow: '20', net: '-20' })
+    expect(pts.map((p) => p.period)).toEqual(['2026-02', '2026-01'])
+    // 2026-02：USD 被过滤 → 流入 0，流出 20
+    expect(pts[0]).toEqual({ period: '2026-02', inflow: '0', outflow: '20', net: '-20' })
   })
 
-  it('day：逐日分组；week：ISO 周分组', () => {
+  it('day：逐日分组；week：ISO 周分组（最新期间在前）', () => {
     const dayPts = computeCashFlow(cfRows, { granularity: 'day', currency: 'CNY' })
-    expect(dayPts.map((p) => p.period)).toEqual(['2026-01-05', '2026-01-10', '2026-01-20', '2026-02-01'])
-    expect(dayPts[0]).toEqual({ period: '2026-01-05', inflow: '10000', outflow: '0', net: '10000' })
-    expect(dayPts[1]).toEqual({ period: '2026-01-10', inflow: '0', outflow: '35', net: '-35' })
-    // 2026-01-15 纯互转 → 无输出点；2026-01-20 收入 200
+    // 最新日期在前（降序）
+    expect(dayPts.map((p) => p.period)).toEqual(['2026-02-01', '2026-01-20', '2026-01-10', '2026-01-05'])
+    expect(dayPts[0]).toEqual({ period: '2026-02-01', inflow: '0', outflow: '20', net: '-20' })
+    expect(dayPts[1]).toEqual({ period: '2026-01-20', inflow: '200', outflow: '0', net: '200' })
+    // 2026-01-15 纯互转 → 无输出点
     expect(dayPts.find((p) => p.period === '2026-01-15')).toBeUndefined()
-    expect(dayPts[2]).toEqual({ period: '2026-01-20', inflow: '200', outflow: '0', net: '200' })
+    expect(dayPts[2]).toEqual({ period: '2026-01-10', inflow: '0', outflow: '35', net: '-35' })
+    expect(dayPts[3]).toEqual({ period: '2026-01-05', inflow: '10000', outflow: '0', net: '10000' })
 
     const weekPts = computeCashFlow(
       [
@@ -373,10 +377,10 @@ describe('computeCashFlow（Assets 资金池口径：流入/流出/净额，池�
       ],
       { granularity: 'week', currency: 'CNY' }
     )
-    // 2026-12-29（周二）ISO 属 2026-W53；2027-01-04 属 2027-W01
-    expect(weekPts.map((p) => p.period)).toEqual(['2026-W53', '2027-W01'])
-    expect(weekPts[0]).toEqual({ period: '2026-W53', inflow: '100', outflow: '0', net: '100' })
-    expect(weekPts[1]).toEqual({ period: '2027-W01', inflow: '0', outflow: '50', net: '-50' })
+    // 2026-12-29（周二）ISO 属 2026-W53；2027-01-04 属 2027-W01；最新周在前
+    expect(weekPts.map((p) => p.period)).toEqual(['2027-W01', '2026-W53'])
+    expect(weekPts[0]).toEqual({ period: '2027-W01', inflow: '0', outflow: '50', net: '-50' })
+    expect(weekPts[1]).toEqual({ period: '2026-W53', inflow: '100', outflow: '0', net: '100' })
   })
 
   it('dateFrom/dateTo：仅区间内分录参与', () => {

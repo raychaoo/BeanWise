@@ -341,9 +341,10 @@ describe('report:cash-flow', () => {
       currency: string
     }
     expect(r.currency).toBe('CNY')
+    // 最新期间在前（降序）
     expect(r.series).toEqual([
-      { period: '2026-01', inflow: '10000', outflow: '35', net: '9965' },
-      { period: '2026-02', inflow: '0', outflow: '20', net: '-20' }
+      { period: '2026-02', inflow: '0', outflow: '20', net: '-20' },
+      { period: '2026-01', inflow: '10000', outflow: '35', net: '9965' }
     ])
   })
 
@@ -370,7 +371,7 @@ describe('report:cash-flow', () => {
     const all = (await handlers.get('report:cash-flow')!({}, { granularity: 'month' })) as {
       series: Array<{ period: string }>
     }
-    expect(all.series.map((p) => p.period)).toEqual(['2026-01', '2026-02'])
+    expect(all.series.map((p) => p.period)).toEqual(['2026-02', '2026-01'])
     await expect(handlers.get('report:cash-flow')!({}, { granularity: 'quarter' })).rejects.toThrow('granularity')
     await expect(
       handlers.get('report:cash-flow')!({}, { granularity: 'month', dateFrom: '2026-02-01', dateTo: '2026-01-01' })

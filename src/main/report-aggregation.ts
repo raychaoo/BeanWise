@@ -279,7 +279,8 @@ export function computeCashFlow(
       inflow.set(period, addDecimalStrings(inflow.get(period) ?? '0', assetsDelta))
     }
   }
-  const periods = [...new Set([...inflow.keys(), ...outflow.keys()])].sort()
+  // 最新期间在前（降序），便于报表首行展示最近一期
+  const periods = [...new Set([...inflow.keys(), ...outflow.keys()])].sort((a, b) => b.localeCompare(a))
   return periods.map((period) => {
     const inAmt = inflow.get(period) ?? '0'
     const outAmt = outflow.get(period) ?? '0'
