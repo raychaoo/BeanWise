@@ -6,7 +6,7 @@
  * 金额全链路 decimal 字符串）。
  */
 import { Alert, Empty, Select, Spin, Table, Typography } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
+import type { ColumnsType, TablePaginationConfig } from 'antd/es/table'
 import { useEffect, useState } from 'react'
 import type { CashFlowPoint, ReportGranularity } from '../../../../shared/ipc'
 import { useReportsStore } from '../../stores/reports'
@@ -18,6 +18,8 @@ const GRANULARITY_OPTIONS: Array<{ label: string; value: ReportGranularity }> = 
   { label: '月', value: 'month' },
   { label: '年', value: 'year' }
 ]
+
+const PAGE_SIZE = 12
 
 /** 金额单元格：千分位 + .num 右对齐，负数红（红色语义唯一化） */
 function NumCell({ value }: { value: string }) {
@@ -33,6 +35,8 @@ export default function CashFlowTable() {
   const [series, setSeries] = useState<CashFlowPoint[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE)
 
   useEffect(() => {
     let cancelled = false
@@ -56,6 +60,11 @@ export default function CashFlowTable() {
     }
   }, [granularity, startYear, endYear])
 
+  /** 粒度/起止年变化时数据已重置，回第一页避免当前页越界 */
+  useEffect(() => {
+    setPage(1)
+  }, [granularity, startYear, endYear])
+
   const yearOptions = (() => {
     if (!availableYears || availableYears.max <= 0) return []
     const options: Array<{ label: string; value: number }> = []
@@ -70,6 +79,19 @@ export default function CashFlowTable() {
     { title: '流出', dataIndex: 'outflow', align: 'right', render: (v: string) => <NumCell value={v} /> },
     { title: '净额', dataIndex: 'net', align: 'right', render: (v: string) => <NumCell value={v} /> }
   ]
+
+  const pagination: TablePaginationConfig = {
+    current: page,
+    pageSize,
+    total: series.length,
+    showSizeChanger: true,
+    pageSizeOptions: ['12', '24', '50'],
+    showTotal: (total) => `共 ${total} 期`,
+    onChange: (p, ps) => {
+      setPage(p)
+      setPageSize(ps)
+    }
+  }
 
   return (
     <div>
@@ -117,7 +139,7 @@ export default function CashFlowTable() {
           rowKey="period"
           dataSource={series}
           columns={columns}
-          pagination={false}
+          pagination={pagination}
           locale={{ emptyText: <Empty description="暂无现金流量数据" /> }}
         />
       </Spin>
