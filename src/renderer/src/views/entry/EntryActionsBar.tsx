@@ -8,8 +8,8 @@ import { Button, Drawer, Space } from 'antd'
 import { useState } from 'react'
 import type { AddEntryParams } from '../../../../shared/ipc'
 import { useAiStore } from '../../stores/ai'
-import AiEntryPanel from '../AiEntryPanel'
-import ExcelImportPanel from '../ExcelImportPanel'
+import AiEntryPanel from '../ai-entry/AiEntryPanel'
+import ExcelImportPanel from '../excel-import/ExcelImportPanel'
 
 interface Props {
   onFillForm: (draft: AddEntryParams) => void

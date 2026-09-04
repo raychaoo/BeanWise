@@ -13,7 +13,7 @@ import type {
   ListEntriesParams,
   ListEntriesResult,
   RefreshResult
-} from '../main/index-builder'
+} from '../main/core/index-builder'
 
 export type {
   LedgerEntryRow,
