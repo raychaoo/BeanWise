@@ -332,19 +332,23 @@ export default function ReportsView() {
         <Typography.Title level={4} style={{ margin: 0 }}>
           报表
         </Typography.Title>
-        <Button
-          type="primary"
-          icon={<DownloadOutlined />}
-          loading={exporting}
-          onClick={() => void handleExport()}
-          className="report-export-btn"
-        >
-          导出 PDF
-        </Button>
       </div>
       <Tabs
         defaultActiveKey="trend"
         destroyInactiveTabPane={false}
+        tabBarExtraContent={{
+          right: (
+            <Button
+              type="primary"
+              icon={<DownloadOutlined />}
+              loading={exporting}
+              onClick={() => void handleExport()}
+              className="report-export-btn"
+            >
+              导出 PDF
+            </Button>
+          )
+        }}
         items={[
           // print-area：仅激活 Tab 的报表区参与 PDF 输出（@media print 隔离）
           { key: 'trend', label: '趋势图表', children: <div className="print-area"><TrendPane /></div> },
