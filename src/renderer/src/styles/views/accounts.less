@@ -5,3 +5,10 @@
   flex-direction: column;
   gap: 12px;
 }
+
+// 路径为长 token（Assets:Bank:CNB 等），按「Long Token Wrap」规则折行而非截断；
+// 列不设固定宽，由表格横向滚动保证名称/用途列不被挤压。
+.account-path {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}

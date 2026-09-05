@@ -246,20 +246,21 @@ export default function AccountsPage() {
                 dataSource={filtered}
                 rowKey="id"
                 pagination={false}
+                scroll={{ x: 'max-content' }}
                 locale={{ emptyText: '暂无配置账户' }}
                 columns={[
                   { title: 'ID', dataIndex: 'id', width: 48, render: (v: number) => v > 0 ? v : '新增' },
                   {
                     title: '名称',
                     dataIndex: 'name',
-                    width: 160,
+                    // width: 180,
                     render: (_: string, record: AccountEntry) =>
                       <Input size="small" value={record.name} onChange={(e) => handleNameChange(record.id, e.target.value)} maxLength={100} />
                   },
                   {
                     title: '用途',
                     dataIndex: 'description',
-                    width: 200,
+                    // width: 260,
                     render: (_: string, record: AccountEntry) =>
                       <Input size="small" value={record.description ?? ''} onChange={(e) => handleDescriptionChange(record.id, e.target.value)} maxLength={200} />
                   },
@@ -273,7 +274,13 @@ export default function AccountsPage() {
                       </Tooltip>
                     )
                   },
-                  { title: '路径', dataIndex: 'value', ellipsis: true },
+                  {
+                    title: '路径',
+                    dataIndex: 'value',
+                    render: (v: string) => (
+                      <Typography.Text className="account-path" code>{v}</Typography.Text>
+                    )
+                  },
                   {
                     title: '操作',
                     width: 130,
