@@ -232,6 +232,37 @@ function TrendPane() {
             </Card>
 
             {/*
+              * 账户余额：扁平化列表（带缩进层级，无需逐条展开即可总览）
+              * 卡片标题「账户余额」不动（e2e 依赖）；tbody 仍含原始金额文本（e2e 依赖）
+              */}
+            <Card title="账户余额">
+              <Table<{ name: string; balances: Array<{ currency: string; number: string }>; depth: number }>
+                dataSource={flatBalances}
+                rowKey="name"
+                size="small"
+                pagination={false}
+                scroll={{ y: 320 }}
+                columns={[
+                  {
+                    title: '账户',
+                    dataIndex: 'name',
+                    render: (_name: string, row: { name: string; depth: number }) => {
+                      const label = accountNameMap.get(row.name) ?? row.name
+                      const content = <span className="account-name" style={{ paddingLeft: row.depth * 16 }}>{label}</span>
+                      return label === row.name ? content : <Tooltip title={row.name}>{content}</Tooltip>
+                    }
+                  },
+                  {
+                    title: '余额',
+                    dataIndex: 'balances',
+                    align: 'right',
+                    render: (b: Array<{ currency: string; number: string }>) => <BalanceCell balances={b} />
+                  }
+                ]}
+              />
+            </Card>
+
+            {/*
               * 收支对比：统计芯片（区间总收入/支出/净结余）+ 对比图 + 逐期数据表（含累计净结余）
               * 卡片标题「收支对比」不动（e2e 依赖）
               */}
@@ -267,37 +298,6 @@ function TrendPane() {
                   ]}
                 />
               )}
-            </Card>
-
-            {/*
-              * 账户余额：扁平化列表（带缩进层级，无需逐条展开即可总览）
-              * 卡片标题「账户余额」不动（e2e 依赖）；tbody 仍含原始金额文本（e2e 依赖）
-              */}
-            <Card title="账户余额">
-              <Table<{ name: string; balances: Array<{ currency: string; number: string }>; depth: number }>
-                dataSource={flatBalances}
-                rowKey="name"
-                size="small"
-                pagination={false}
-                scroll={{ y: 320 }}
-                columns={[
-                  {
-                    title: '账户',
-                    dataIndex: 'name',
-                    render: (_name: string, row: { name: string; depth: number }) => {
-                      const label = accountNameMap.get(row.name) ?? row.name
-                      const content = <span className="account-name" style={{ paddingLeft: row.depth * 16 }}>{label}</span>
-                      return label === row.name ? content : <Tooltip title={row.name}>{content}</Tooltip>
-                    }
-                  },
-                  {
-                    title: '余额',
-                    dataIndex: 'balances',
-                    align: 'right',
-                    render: (b: Array<{ currency: string; number: string }>) => <BalanceCell balances={b} />
-                  }
-                ]}
-              />
             </Card>
           </div>
         ) : (
