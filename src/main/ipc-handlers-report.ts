@@ -6,11 +6,11 @@
  */
 import { and, asc, count, desc, eq, gte, like, lte, max, min, or, type SQL } from 'drizzle-orm'
 import type { SaveDialogOptions, WebContents } from 'electron'
-import type { ExportReportPdfResult, ReportBalancesParams, ReportBalancesResult, ReportCashFlowParams, ReportCashFlowResult, ReportGranularity, ReportIncomeExpenseParams, ReportIncomeExpenseResult, ReportNetWorthParams, ReportNetWorthResult, ReportTrialBalanceParams, ReportTrialBalanceResult, ReportYearRange, ReportYearsResult } from '../shared/ipc'
+import type { ExportReportPdfResult, ReportBalancesParams, ReportBalancesResult, ReportBreakdownParams, ReportBreakdownResult, ReportCashFlowParams, ReportCashFlowResult, ReportGranularity, ReportIncomeExpenseParams, ReportIncomeExpenseResult, ReportNetWorthParams, ReportNetWorthResult, ReportTrialBalanceParams, ReportTrialBalanceResult, ReportYearRange, ReportYearsResult } from '../shared/ipc'
 import type { DrizzleDb } from './db'
 import { entries, postings } from './db/schema'
 import { getLedgerStatus } from './index-builder'
-import { buildAccountTree, computeCashFlow, computeIncomeExpense, computeNetWorth, computeTrialBalance, type CashFlowPostingRow, type PostingRow } from './report-aggregation'
+import { buildAccountTree, computeBreakdown, computeCashFlow, computeIncomeExpense, computeNetWorth, computeTrialBalance, type CashFlowPostingRow, type PostingRow } from './report-aggregation'
 import type { IpcRegistrar } from './ipc-handlers'
 
 /** PDF 导出依赖（index.ts 注入真实实现；测试注入 mock——模块不直接 import electron 运行时） */
@@ -197,6 +197,21 @@ export function registerReportHandlers(ipc: IpcRegistrar, deps: ReportDeps): voi
       series: computeCashFlow(rows as CashFlowPostingRow[], { granularity, currency, dateFrom, dateTo }),
       currency
     }
+  })
+
+  // report:breakdown（总览页支出/收入类别汇总）：顶层段聚合，按金额降序，超出 top 位合并为「其他」。
+  ipc.handle('report:breakdown', async (_event: unknown, raw: unknown): Promise<ReportBreakdownResult> => {
+    const db = deps.db
+    const params = (raw ?? {}) as ReportBreakdownParams
+    const flow = params.flow === 'income' ? 'income' : 'expense'
+    const dateFrom = validateDate(params.dateFrom, 'dateFrom')
+    const dateTo = validateDate(params.dateTo, 'dateTo')
+    if (dateFrom !== undefined && dateTo !== undefined && dateFrom > dateTo) {
+      throw new Error('dateFrom 不能大于 dateTo')
+    }
+    const currency = operatingCurrency(db)
+    const rows = loadRows(db, or(like(postings.account, 'Expenses:%'), like(postings.account, 'Income:%')))
+    return computeBreakdown(rows, { flow, currency, dateFrom, dateTo, top: params.top })
   })
 
   // report:export-pdf（批次 G #8）：webContents.printToPDF → dialog.showSaveDialog → writeFile。

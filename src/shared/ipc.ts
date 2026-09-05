@@ -34,7 +34,7 @@ export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list
   | 'sync:get-status' | 'sync:configure' | 'sync:push' | 'sync:pull'
   | 'sync:resolve-conflict' | 'sync:clear'
   | 'ai:get-status' | 'ai:save-config' | 'ai:clear-config' | 'ai:parse'
-  | 'report:net-worth' | 'report:balances' | 'report:income-expense' | 'report:years' | 'report:trial-balance' | 'report:cash-flow' | 'report:export-pdf'
+  | 'report:net-worth' | 'report:balances' | 'report:income-expense' | 'report:years' | 'report:trial-balance' | 'report:cash-flow' | 'report:breakdown' | 'report:export-pdf'
   | 'update:check' | 'update:status' | 'update:install'
 
 /** ledger:read-file 结果（ENOENT → ok:false + message，编辑器 Empty 态） */
@@ -573,6 +573,32 @@ export interface ReportCashFlowResult {
 export interface ExportReportPdfResult {
   ok: boolean
   path?: string
+  message?: string
+}
+
+/** 支出/收入类别汇总（breakdown）：单类别，ratio 为十进制字符串 0~1（占该流向总额比例，含尾随零/前导零已规范） */
+export interface BreakdownItem {
+  /** 类别路径（顶层段，如 Expenses:Food → 'Expenses:Food'；Expenses:Food:Snack → 'Expenses:Food'） */
+  category: string
+  /** 十进制字符串金额（正显示） */
+  amount: string
+  /** 占该流向总额比例（十进制字符串 0~1） */
+  ratio: string
+}
+
+/** report:breakdown 入参（dateFrom/dateTo YYYY-MM-DD 缺省全量；flow 指定流向；top 缺省 6，超出合并为「其他」） */
+export interface ReportBreakdownParams {
+  flow: 'expense' | 'income'
+  dateFrom?: string
+  dateTo?: string
+  top?: number
+}
+
+/** report:breakdown 结果（currency 运营货币；items 按金额降序，超出 top 位合并为末位「其他」；total 为该流向总额） */
+export interface ReportBreakdownResult {
+  items: BreakdownItem[]
+  total: string
+  currency: string
   message?: string
 }
 

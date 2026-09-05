@@ -379,6 +379,64 @@ describe('report:cash-flow', () => {
   })
 })
 
+describe('report:breakdown', () => {
+  /** 空账本（仅 ledgerMeta + operatingCurrency），避免 setup() 种子数据干扰 */
+  function emptySetup(): { db: ReportDeps['db']; handlers: Map<string, (...args: unknown[]) => Promise<unknown>> } {
+    const db = createDrizzle(openDatabase(':memory:'))
+    db.insert(ledgerMeta)
+      .values({ id: 1, ledgerPath: 'x.beancount', status: 'ok', operatingCurrency: '["CNY"]' })
+      .run()
+    return { db, handlers: register(db) }
+  }
+
+  it('expense：顶层段聚合（含子段），按金额降序，超出 top 位合并为「其他」', async () => {
+    const { db, handlers } = emptySetup()
+    insertPosting(db, { date: '2026-01-03', account: 'Expenses:Food', number: '35', currency: 'CNY' })
+    insertPosting(db, { date: '2026-01-05', account: 'Expenses:Food:Snack', number: '15', currency: 'CNY' })
+    insertPosting(db, { date: '2026-01-15', account: 'Expenses:Housing', number: '2000', currency: 'CNY' })
+    insertPosting(db, { date: '2026-01-20', account: 'Expenses:Food', number: '50', currency: 'CNY' })
+    insertPosting(db, { date: '2026-02-10', account: 'Expenses:Food', number: '10', currency: 'USD' })
+    const r = (await handlers.get('report:breakdown')!({}, { flow: 'expense', top: 2 })) as {
+      items: Array<{ category: string; amount: string; ratio: string }>
+      total: string
+      currency: string
+    }
+    expect(r.currency).toBe('CNY')
+    expect(r.total).toBe('2100')
+    // Housing 2000 + Food 100（35+15+50，USD 行被运营货币过滤）；top=2 已覆盖全部，无「其他」
+    expect(r.items.map((i) => i.category)).toEqual(['Expenses:Housing', 'Expenses:Food'])
+    expect(r.items.map((i) => i.amount)).toEqual(['2000', '100'])
+  })
+
+  it('income：取反累加（收入正显示）', async () => {
+    const { db, handlers } = emptySetup()
+    insertPosting(db, { date: '2026-02-01', account: 'Income:Salary', number: '-10000', currency: 'CNY' })
+    insertPosting(db, { date: '2026-02-05', account: 'Income:Bonus', number: '-2000', currency: 'CNY' })
+    const r = (await handlers.get('report:breakdown')!({}, { flow: 'income' })) as {
+      items: Array<{ category: string; amount: string; ratio: string }>
+      total: string
+      currency: string
+    }
+    expect(r.total).toBe('12000')
+    expect(r.items.map((i) => i.category)).toEqual(['Income:Salary', 'Income:Bonus'])
+    expect(r.items.map((i) => i.amount)).toEqual(['10000', '2000'])
+  })
+
+  it('超出 top 位合并为末位「其他」', async () => {
+    const { db, handlers } = emptySetup()
+    insertPosting(db, { date: '2026-01-01', account: 'Expenses:A', number: '100', currency: 'CNY' })
+    insertPosting(db, { date: '2026-01-02', account: 'Expenses:B', number: '80', currency: 'CNY' })
+    insertPosting(db, { date: '2026-01-03', account: 'Expenses:C', number: '60', currency: 'CNY' })
+    insertPosting(db, { date: '2026-01-04', account: 'Expenses:D', number: '40', currency: 'CNY' })
+    const r = (await handlers.get('report:breakdown')!({}, { flow: 'expense', top: 2 })) as {
+      items: Array<{ category: string; amount: string }>
+      total: string
+    }
+    expect(r.items.map((i) => i.category)).toEqual(['Expenses:A', 'Expenses:B', '其他'])
+    expect(r.items[2].amount).toBe('100') // 60 + 40
+  })
+})
+
 describe('report:export-pdf', () => {
   type PrintToPdfMock = (options?: object) => Promise<Buffer>
   type SaveDialogMock = (options?: object) => Promise<{ canceled: boolean; filePath?: string }>

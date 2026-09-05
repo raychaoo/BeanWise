@@ -6,7 +6,7 @@
 import dayjs from 'dayjs'
 import isoWeek from 'dayjs/plugin/isoWeek'
 import { addDecimalStrings, negateDecimal } from '../shared/decimal'
-import type { AccountBalance, CashFlowPoint, IncomeExpensePoint, NetWorthPoint, ReportGranularity, ReportYearRange, TrialBalanceRow } from '../shared/ipc'
+import type { AccountBalance, CashFlowPoint, IncomeExpensePoint, NetWorthPoint, ReportBreakdownParams, ReportGranularity, ReportYearRange, TrialBalanceRow } from '../shared/ipc'
 
 dayjs.extend(isoWeek)
 
@@ -286,4 +286,130 @@ export function computeCashFlow(
     const outAmt = outflow.get(period) ?? '0'
     return { period, inflow: inAmt, outflow: outAmt, net: addDecimalStrings(inAmt, negateDecimal(outAmt)) }
   })
+}
+
+/**
+ * 支出/收入类别汇总（breakdown，总览页「去向/来源」卡片）。
+ * 顶层段聚合：取账户路径首两段（如 Expenses:Food:Snack → Expenses:Food），
+ * 顶层段必须与 flow 前缀一致（expense→Expenses: / income→Income:），其余跳过。
+ * 金额：expense 直接累加（索引行支出为正），income 取反累加（收入正显示）。
+ * 输出按金额降序；超出 top 位的类别合并为末位「其他」。
+ * ratio = amount / total（十进制字符串除法，保留 4 位小数；total 为 0 → ratio '0'）。
+ */
+
+/** 顶层段聚合键：首两段（Expenses:Food:Snack → Expenses:Food） */
+function categoryKey(account: string): string {
+  const parts = account.split(':')
+  return parts.slice(0, 2).join(':')
+}
+
+// --- 十进制字符串除法（纯字符串运算，禁浮点；仅用于 breakdown 比例计算）
+
+/** 非负整数串比较：> 0 / < 0 / === 0（等长比字典序；长度差即值差） */
+function cmpMag(a: string, b: string): number {
+  if (a.length !== b.length) return a.length > b.length ? 1 : -1
+  return a === b ? 0 : a > b ? 1 : -1
+}
+
+/** 非负整数串减法：a - b（要求 a >= b）；结果无前导零 */
+function subMag(a: string, b: string): string {
+  let borrow = 0
+  let out = ''
+  let i = a.length - 1
+  let j = b.length - 1
+  for (; i >= 0; i--, j--) {
+    let digit = (a.charCodeAt(i) - 48) - (j >= 0 ? b.charCodeAt(j) - 48 : 0) - borrow
+    if (digit < 0) {
+      digit += 10
+      borrow = 1
+    } else {
+      borrow = 0
+    }
+    out = String(digit) + out
+  }
+  const trimmed = out.replace(/^0+(?=\d)/, '')
+  return trimmed || '0'
+}
+
+/** 非负整数串 × 个位数（0~9） */
+function mulDigit(a: string, n: number): string {
+  if (n === 0) return '0'
+  let carry = 0
+  let out = ''
+  for (let i = a.length - 1; i >= 0; i--) {
+    const prod = (a.charCodeAt(i) - 48) * n + carry
+    out = String(prod % 10) + out
+    carry = Math.floor(prod / 10)
+  }
+  if (carry) out = String(carry) + out
+  return out
+}
+
+/** 非负整数串除法：a / b → 向下取整的商（a, b 无前导零；b > 0） */
+function divMag(a: string, b: string): string {
+  if (cmpMag(a, b) < 0) return '0'
+  let q = ''
+  let rem = ''
+  for (let i = 0; i < a.length; i++) {
+    rem += a[i]
+    const remNorm = rem.replace(/^0+(?=\d)/, '') || '0'
+    let digit = 0
+    while (cmpMag(remNorm, mulDigit(b, digit + 1)) >= 0) digit++
+    q += String(digit)
+    rem = subMag(remNorm, mulDigit(b, digit))
+  }
+  return q.replace(/^0+(?=\d)/, '') || '0'
+}
+
+/** 十进制字符串除法（a / b），保留 scale 位小数（放大后整除的截断近似）；b 为 0 → '0'。 */
+function divDecimalStrings(a: string, b: string, scale = 4): string {
+  if (b === '0') return '0'
+  const aMag = a.startsWith('-') ? a.slice(1) : a
+  const bMag = b.startsWith('-') ? b.slice(1) : b
+  if (cmpMag(aMag, bMag) === 0) return '1'
+  const q = divMag(aMag + '0'.repeat(scale), bMag)
+  if (q === '0') return '0'
+  if (q.length <= scale) return '0.' + q.padStart(scale, '0')
+  return q.slice(0, q.length - scale) + '.' + q.slice(q.length - scale)
+}
+
+export function computeBreakdown(
+  rows: PostingRow[],
+  opts: { flow: 'expense' | 'income'; currency?: string; dateFrom?: string; dateTo?: string; top?: number }
+): import('../shared/ipc').ReportBreakdownResult {
+  const prefix = opts.flow === 'expense' ? 'Expenses:' : 'Income:'
+  const sums = new Map<string, string>()
+  let total = '0'
+  for (const r of rows) {
+    if (!r.account.startsWith(prefix)) continue
+    if (opts.currency !== undefined && r.currency !== opts.currency) continue
+    if (opts.dateFrom !== undefined && r.date < opts.dateFrom) continue
+    if (opts.dateTo !== undefined && r.date > opts.dateTo) continue
+    const key = categoryKey(r.account)
+    const delta = opts.flow === 'income' ? negateDecimal(r.number) : r.number
+    sums.set(key, addDecimalStrings(sums.get(key) ?? '0', delta))
+    total = addDecimalStrings(total, delta)
+  }
+  // 按金额降序（breakdown 金额均为非负；同值按类别名升序稳定）
+  const sorted = [...sums.entries()].sort((a, b) => {
+    const cmp = cmpMag(b[1], a[1])
+    return cmp !== 0 ? cmp : a[0].localeCompare(b[0])
+  })
+  const top = opts.top ?? 6
+  const head = sorted.slice(0, top)
+  const rest = sorted.slice(top)
+  const items: import('../shared/ipc').ReportBreakdownResult['items'][number][] = head.map(([category, amount]) => ({
+    category,
+    amount,
+    ratio: total === '0' ? '0' : divDecimalStrings(amount, total, 4)
+  }))
+  if (rest.length > 0) {
+    const otherAmount = rest.reduce((acc, [, n]) => addDecimalStrings(acc, n), '0')
+    items.push({
+      category: '其他',
+      amount: otherAmount,
+      ratio: total === '0' ? '0' : divDecimalStrings(otherAmount, total, 4)
+    })
+  }
+  return { items, total, currency: opts.currency ?? '' }
 }

@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AccountBalance } from '../../shared/ipc'
 import type { PostingRow } from './report-aggregation'
-import { buildAccountTree, computeCashFlow, computeIncomeExpense, computeNetWorth, computeTrialBalance, periodKey } from './report-aggregation'
+import { buildAccountTree, computeBreakdown, computeCashFlow, computeIncomeExpense, computeNetWorth, computeTrialBalance, periodKey } from './report-aggregation'
 import type { CashFlowPostingRow } from './report-aggregation'
 
 const rows: PostingRow[] = [
@@ -391,5 +391,54 @@ describe('computeCashFlow（Assets 资金池口径：流入/流出/净额，池�
 
   it('空输入 → 空数组', () => {
     expect(computeCashFlow([], { granularity: 'month' })).toEqual([])
+  })
+})
+
+describe('computeBreakdown（顶层段聚合，按金额降序，超出 top 位合并为「其他」）', () => {
+  const bdRows: PostingRow[] = [
+    { date: '2026-01-03', account: 'Expenses:Food', number: '35', currency: 'CNY' },
+    { date: '2026-01-05', account: 'Expenses:Food:Snack', number: '15', currency: 'CNY' },
+    { date: '2026-01-10', account: 'Expenses:Transport', number: '5', currency: 'CNY' },
+    { date: '2026-01-15', account: 'Expenses:Housing', number: '2000', currency: 'CNY' },
+    { date: '2026-01-20', account: 'Expenses:Food', number: '50', currency: 'CNY' },
+    { date: '2026-02-01', account: 'Income:Salary', number: '-10000', currency: 'CNY' },
+    { date: '2026-02-05', account: 'Income:Bonus', number: '-2000', currency: 'CNY' },
+    // 非运营货币 → 跳过
+    { date: '2026-02-10', account: 'Expenses:Food', number: '10', currency: 'USD' }
+  ]
+
+  it('expense：顶层段聚合（Food 含子段），按金额降序，ratio 十进制字符串', () => {
+    const r = computeBreakdown(bdRows, { flow: 'expense', currency: 'CNY', top: 6 })
+    // Food = 35 + 15 + 50 = 100，Housing = 2000，Transport = 5；USD 行跳过
+    expect(r.items.map((i) => i.category)).toEqual(['Expenses:Housing', 'Expenses:Food', 'Expenses:Transport'])
+    expect(r.items.map((i) => i.amount)).toEqual(['2000', '100', '5'])
+    expect(r.total).toBe('2105')
+    // ratio = amount / total（保留 4 位小数）：2000 / 2105 ≈ 0.9501
+    expect(r.items[0].ratio).toBe('0.9501')
+  })
+
+  it('top 截断：超出位合并为末位「其他」', () => {
+    const r = computeBreakdown(bdRows, { flow: 'expense', currency: 'CNY', top: 2 })
+    expect(r.items.map((i) => i.category)).toEqual(['Expenses:Housing', 'Expenses:Food', '其他'])
+    expect(r.items.map((i) => i.amount)).toEqual(['2000', '100', '5'])
+    expect(r.items[2].category).toBe('其他')
+  })
+
+  it('income：取反累加（收入正显示），顶层段聚合', () => {
+    const r = computeBreakdown(bdRows, { flow: 'income', currency: 'CNY', top: 6 })
+    expect(r.items.map((i) => i.category)).toEqual(['Income:Salary', 'Income:Bonus'])
+    expect(r.items.map((i) => i.amount)).toEqual(['10000', '2000'])
+    expect(r.total).toBe('12000')
+  })
+
+  it('dateFrom/dateTo：仅区间内行参与', () => {
+    const r = computeBreakdown(bdRows, { flow: 'expense', currency: 'CNY', dateFrom: '2026-01-01', dateTo: '2026-01-31' })
+    // 仅 1 月：Food 35+15+50=100，Housing 2000，Transport 5
+    expect(r.total).toBe('2105')
+    expect(r.items).toHaveLength(3)
+  })
+
+  it('空输入 → 空 items + total 0', () => {
+    expect(computeBreakdown([], { flow: 'expense', currency: 'CNY' })).toEqual({ items: [], total: '0', currency: 'CNY' })
   })
 })

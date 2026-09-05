@@ -1,23 +1,27 @@
 /**
- * 总览页（批次 D Task 3，方案模块 2）：4 × 指标卡（总资产/总负债/净资产/本月收支，运营货币）+
- * 净资产趋势卡（本期实线 + 去年同期虚线，图顶统一筛选条）。指标聚合走 useDashboardStore
- * （decimal 精确累加），Number() 仅图表 y 值显示层；每卡独立 Skeleton 防跳变。
- * 图表经批次 E 的 LazyLine 懒加载（G2 体积大头不进首屏 chunk，原计划「D 复用 E 的
- * LazyLine」——E 合并后由直接引入 Line 切换而来）。
+ * 总览页（批次 D Task 3，方案模块 2）：
+ * 第一行 4 × 指标卡（总资产/总负债/净资产/本月收支，运营货币）；
+ * 第二行 收支对比趋势卡（收入/支出分组柱状图）+ 现金流量卡（净流入折线）；
+ * 第三行 去向（支出类别 donut）+ 来源（收入类别 donut）；
+ * 净资产趋势卡（本期实线 + 去年同期虚线，图顶统一筛选条）。
+ * 指标聚合走 useDashboardStore（decimal 精确累加），Number() 仅图表 y 值显示层；
+ * 每卡独立 Skeleton 防跳变。图表经 LazyLine / LazyColumn 懒加载（G2 体积大头不进首屏 chunk）。
  */
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Col, Empty, Row, Skeleton, Statistic, Typography } from 'antd'
-import { useEffect } from 'react'
+import { Alert, Button, Card, Col, Empty, Progress, Row, Skeleton, Statistic, Typography } from 'antd'
+import { useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
+import LazyColumn from '../../components/LazyColumn'
 import LazyLine from '../../components/LazyLine'
 import TimeRangeBar from '../../components/TimeRangeBar'
 import { useTimeRange } from '../../hooks/useTimeRange'
 import type { TimeRangeValue } from '../../hooks/useTimeRange'
 import { useDashboardStore } from '../../stores/dashboard'
+import { useLedgerStore } from '../../stores/ledger'
 import { BW_COLORS } from '../../theme/tokens'
 import { formatAmount } from '../../utils/format'
 import { addDecimalStrings, negateDecimal } from '../../../../shared/decimal'
-import type { NetWorthPoint } from '../../../../shared/ipc'
+import type { IncomeExpensePoint, NetWorthPoint } from '../../../../shared/ipc'
 import '../../styles/views/dashboard.less'
 
 /** 期号回退一年：'2026-08' → '2025-08'，'2026' → '2025'（期号非金额，显示层字符串处理） */
@@ -27,8 +31,8 @@ function prevPeriod(period: string): string {
   return `${year}${dash === -1 ? '' : period.slice(dash)}`
 }
 
-/** 趋势图数据（显示层 Number）：本期实线点 + 去年同期虚线点对齐同一期号 */
-function buildTrendData(
+/** 净资产趋势图数据（显示层 Number）：本期实线点 + 去年同期虚线点对齐同一期号 */
+function buildNetWorthTrendData(
   series: NetWorthPoint[],
   prevYear: NetWorthPoint[]
 ): Array<{ period: string; series: string; value: number }> {
@@ -42,9 +46,54 @@ function buildTrendData(
   return rows
 }
 
+/** 收支对比图数据（显示层 Number）：收入/支出两序列展开 */
+function buildIncomeExpenseData(
+  points: IncomeExpensePoint[]
+): Array<{ period: string; type: string; value: number }> {
+  return points.flatMap((p) => [
+    { period: p.period, type: '收入', value: Number(p.income) },
+    { period: p.period, type: '支出', value: Number(p.expense) }
+  ])
+}
+
 /** 指标卡骨架：高度对齐 Statistic（防跳变，方案交互清单 5） */
 function MetricSkeleton() {
   return <Skeleton active title={false} paragraph={{ rows: 1 }} className="dash-metric-skeleton" />
+}
+
+/** 类别 donut 一行：色块 + 类别名 + 金额 + 百分比 */
+function BreakdownRow({ color, name, amount, ratio }: { color: string; name: string; amount: string; ratio: string }) {
+  const pct = Math.round(Number(ratio) * 1000) / 10 // ratio 十进制字符串 0~1 → 百分比
+  return (
+    <div className="dash-breakdown-row">
+      <span className="dash-breakdown-row__dot" style={{ background: color }} />
+      <Typography.Text className="dash-breakdown-row__name" ellipsis title={name}>
+        {name}
+      </Typography.Text>
+      <span className="num dash-breakdown-row__amount">{formatAmount(amount)}</span>
+      <Progress
+        percent={pct}
+        size="small"
+        showInfo={false}
+        strokeColor={color}
+        trailColor="rgba(15,23,42,0.06)"
+        className="dash-breakdown-row__bar"
+      />
+      <span className="num dash-breakdown-row__pct">{`${pct.toFixed(1)}%`}</span>
+    </div>
+  )
+}
+
+// donut 色板（分类色，非语义红绿，避免与流入流出语义冲突）
+const BREAKDOWN_COLORS = ['#1d39c4', '#08979c', '#d46b08', '#389e0d', '#9254de', '#f759ab', '#8c8c8c']
+
+/** 类别路径 → 中文显示名：匹配账户库中以该类别为前缀的账户，取中文名；无匹配则取末段 */
+function resolveCategoryName(category: string, nameMap: Map<string, string>): string {
+  if (category === '其他') return '其他'
+  for (const [value, label] of nameMap) {
+    if (value === category || value.startsWith(`${category}:`)) return label
+  }
+  return category.split(':').pop() ?? category
 }
 
 export default function DashboardPage() {
@@ -54,7 +103,19 @@ export default function DashboardPage() {
   const series = useDashboardStore((s) => s.series)
   const prevYearSeries = useDashboardStore((s) => s.prevYearSeries)
   const otherCurrencies = useDashboardStore((s) => s.otherCurrencies)
+  const incomeExpense = useDashboardStore((s) => s.incomeExpense)
+  const cashFlow = useDashboardStore((s) => s.cashFlow)
+  const expenseBreakdown = useDashboardStore((s) => s.expenseBreakdown)
+  const incomeBreakdown = useDashboardStore((s) => s.incomeBreakdown)
   const hasData = useDashboardStore((s) => s.hasData)
+  const accountOptions = useLedgerStore((s) => s.accountOptions)
+
+  // 账户路径 → 中文显示名（匹配 value 前缀，取第一个配置的中文名）
+  const accountNameMap = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const o of accountOptions) m.set(o.value, o.label)
+    return m
+  }, [accountOptions])
 
   const tr = useTimeRange({ granularity: 'month' })
   const rangeValue: TimeRangeValue = { preset: tr.preset, range: tr.range, granularity: tr.granularity }
@@ -88,6 +149,7 @@ export default function DashboardPage() {
   return (
     <div>
       {error && <Alert type="error" showIcon style={{ marginBottom: 16 }} message={error} />}
+      {/* 第一行：4 指标卡 */}
       <Row gutter={[16, 16]} className="dashboard-metrics">
         <Col xs={24} sm={12} xl={6}>
           <Card size="small">
@@ -147,8 +209,98 @@ export default function DashboardPage() {
           {otherCurrencies.map((c) => `${formatAmount(c.number)} ${c.currency}`).join(' / ')}
         </Typography.Text>
       )}
+
+      {/* 第二行：收支对比 + 现金流量 */}
+      <Row gutter={[16, 16]} className="dashboard-charts">
+        <Col xs={24} lg={14}>
+          <Card title="收支对比">
+            {loading && incomeExpense.length === 0 ? (
+              <Skeleton active title={false} paragraph={{ rows: 5 }} className="dashboard-trend-skeleton" />
+            ) : (
+              <LazyColumn
+                data={buildIncomeExpenseData(incomeExpense)}
+                xField="period"
+                yField="value"
+                colorField="type"
+                height={240}
+                style={{
+                  color: [BW_COLORS.inflow, BW_COLORS.outflow]
+                }}
+              />
+            )}
+          </Card>
+        </Col>
+        <Col xs={24} lg={10}>
+          <Card title="现金流量">
+            {loading && cashFlow.length === 0 ? (
+              <Skeleton active title={false} paragraph={{ rows: 5 }} className="dashboard-trend-skeleton" />
+            ) : (
+              <LazyLine
+                data={cashFlow.map((p) => ({ period: p.period, value: Number(p.net) }))}
+                xField="period"
+                yField="value"
+                height={240}
+                style={{
+                  lineWidth: 2,
+                  lineDash: [0, 0],
+                  color: BW_COLORS.primary
+                }}
+              />
+            )}
+          </Card>
+        </Col>
+      </Row>
+
+      {/* 第三行：去向 + 来源 */}
+      <Row gutter={[16, 16]} className="dashboard-charts">
+        <Col xs={24} lg={12}>
+          <Card title="支出去向">
+            {loading && expenseBreakdown.length === 0 ? (
+              <Skeleton active title={false} paragraph={{ rows: 4 }} className="dashboard-trend-skeleton" />
+            ) : expenseBreakdown.length === 0 ? (
+              <Typography.Text type="secondary">暂无支出数据</Typography.Text>
+            ) : (
+              <div className="dash-breakdown">
+                {expenseBreakdown.map((it, i) => (
+                  <BreakdownRow
+                    key={it.category}
+                    color={BREAKDOWN_COLORS[i % BREAKDOWN_COLORS.length]}
+                    name={resolveCategoryName(it.category, accountNameMap)}
+                    amount={it.amount}
+                    ratio={it.ratio}
+                  />
+                ))}
+              </div>
+            )}
+          </Card>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Card title="收入来源">
+            {loading && incomeBreakdown.length === 0 ? (
+              <Skeleton active title={false} paragraph={{ rows: 4 }} className="dashboard-trend-skeleton" />
+            ) : incomeBreakdown.length === 0 ? (
+              <Typography.Text type="secondary">暂无收入数据</Typography.Text>
+            ) : (
+              <div className="dash-breakdown">
+                {incomeBreakdown.map((it, i) => (
+                  <BreakdownRow
+                    key={it.category}
+                    color={BREAKDOWN_COLORS[(i + 3) % BREAKDOWN_COLORS.length]}
+                    name={resolveCategoryName(it.category, accountNameMap)}
+                    amount={it.amount}
+                    ratio={it.ratio}
+                  />
+                ))}
+              </div>
+            )}
+          </Card>
+        </Col>
+      </Row>
+
+      {/* 第四行：净资产趋势（带筛选条） */}
       <Card
         title="净资产趋势"
+        className="dashboard-charts"
         extra={
           <TimeRangeBar
             value={rangeValue}
@@ -166,7 +318,7 @@ export default function DashboardPage() {
           <Skeleton active title={false} paragraph={{ rows: 5 }} className="dashboard-trend-skeleton" />
         ) : (
           <LazyLine
-            data={buildTrendData(series, prevYearSeries)}
+            data={buildNetWorthTrendData(series, prevYearSeries)}
             xField="period"
             yField="value"
             colorField="series"

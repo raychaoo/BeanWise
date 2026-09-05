@@ -1,7 +1,12 @@
-// 总览页（批次 D Task 3）：指标卡行 + 净资产趋势卡。
+// 总览页（批次 D Task 3）：指标卡行 + 图表行 + 类别去向/来源行。
 // 骨架高度对齐 Statistic / 图表（280px），数据就绪无布局跳变（方案交互清单 5）。
 .dashboard-metrics {
   margin-bottom: 16px;
+}
+
+// 图表行（收支对比/现金流量/去向/来源/净资产趋势）
+.dashboard-charts {
+  margin-top: 16px;
 }
 
 // Skeleton 对齐 Statistic：标题(~22px) + 值(38px) ≈ 60px
@@ -15,12 +20,8 @@
   }
 }
 
-.dashboard-trend-toolbar {
-  margin-bottom: 12px;
-}
-
 .dashboard-trend-skeleton {
-  height: 280px;
+  height: 240px;
 
   .ant-skeleton-paragraph {
     margin-top: 24px;
@@ -29,4 +30,53 @@
 
 .dashboard-other-currencies {
   margin-top: 8px;
+}
+
+// 类别去向/来源：色块 + 类别名 + 金额 + 进度条 + 百分比
+.dash-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dash-breakdown-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dash-breakdown-row__dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.dash-breakdown-row__name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dash-breakdown-row__amount {
+  flex: 0 0 auto;
+  min-width: 80px;
+}
+
+.dash-breakdown-row__bar {
+  flex: 0 0 120px;
+  min-width: 80px;
+  margin: 0;
+}
+
+.dash-breakdown-row__pct {
+  flex: 0 0 auto;
+  min-width: 56px;
+  text-align: right;
+}
+
+// 窄屏：进度条退让，仅保留色块 + 类别 + 金额 + 百分比
+@media (max-width: 575px) {
+  .dash-breakdown-row__bar {
+    display: none;
+  }
 }

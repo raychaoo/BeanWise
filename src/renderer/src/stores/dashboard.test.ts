@@ -100,6 +100,8 @@ describe('useDashboardStore.reloadAll', () => {
     getNetWorthReport: ReturnType<typeof vi.fn>
     getBalancesReport: ReturnType<typeof vi.fn>
     getIncomeExpenseReport: ReturnType<typeof vi.fn>
+    getCashFlowReport: ReturnType<typeof vi.fn>
+    getBreakdownReport: ReturnType<typeof vi.fn>
   }
 
   function stubBeanwise(overrides: Partial<StubApi> = {}): StubApi {
@@ -115,6 +117,8 @@ describe('useDashboardStore.reloadAll', () => {
         currency: 'CNY'
       }),
       getNetWorthReport: vi.fn().mockResolvedValue({ series: [{ period: '2026-08', assets: '1200.50', liabilities: '-300', netWorth: '900.50' }], currency: 'CNY' }),
+      getCashFlowReport: vi.fn().mockResolvedValue({ series: [], currency: 'CNY' }),
+      getBreakdownReport: vi.fn().mockResolvedValue({ items: [], total: '0', currency: 'CNY' }),
       ...overrides
     }
     vi.stubGlobal('window', { beanwise: api })

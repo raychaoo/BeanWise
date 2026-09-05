@@ -9,7 +9,14 @@ import { message } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import { create } from 'zustand'
 import { addDecimalStrings } from '../../../shared/decimal'
-import type { AccountBalance, IncomeExpensePoint, NetWorthPoint, ReportNetWorthParams } from '../../../shared/ipc'
+import type {
+  AccountBalance,
+  BreakdownItem,
+  CashFlowPoint,
+  IncomeExpensePoint,
+  NetWorthPoint,
+  ReportNetWorthParams
+} from '../../../shared/ipc'
 import type { TimeGranularity } from '../hooks/useTimeRange'
 
 /** 趋势筛选窗口（TimeRangeBar 受控值映射；start/end null = 不设界） */
@@ -39,6 +46,16 @@ interface DashboardState {
   prevYearSeries: NetWorthPoint[]
   /** 其余币种资产合计（运营货币之外单独列出，方案模块 2 多币种口径） */
   otherCurrencies: Array<{ currency: string; number: string }>
+  /** 本期收支对比序列（月粒度，供收支趋势卡；全量当年 12 个月） */
+  incomeExpense: IncomeExpensePoint[]
+  /** 账户余额树（顶层节点，供资产分布卡） */
+  balances: AccountBalance[]
+  /** 近 12 个月现金流量序列（运营货币，供现金流卡） */
+  cashFlow: CashFlowPoint[]
+  /** 支出类别汇总（顶层段聚合，按金额降序，供去向卡） */
+  expenseBreakdown: BreakdownItem[]
+  /** 收入类别汇总（顶层段聚合，按金额降序，供来源卡） */
+  incomeBreakdown: BreakdownItem[]
   hasData: boolean
   reloadAll(range?: DashboardRange): Promise<void>
 }
@@ -125,6 +142,11 @@ export const useDashboardStore = create<DashboardState>((set) => {
     series: [],
     prevYearSeries: [],
     otherCurrencies: [],
+    incomeExpense: [],
+    balances: [],
+    cashFlow: [],
+    expenseBreakdown: [],
+    incomeBreakdown: [],
     hasData: false,
 
     reloadAll: async (range = { start: null, end: null, granularity: 'month' }) => {
@@ -140,15 +162,22 @@ export const useDashboardStore = create<DashboardState>((set) => {
         : { granularity: g }
       const startKey = windowed && g === 'month' ? range.start!.format('YYYY-MM') : windowed ? range.start!.format('YYYY') : null
       const endKey = windowed && g === 'month' ? range.end!.format('YYYY-MM') : windowed ? range.end!.format('YYYY') : null
+      // 收支对比口径：运营货币 + 当年全 12 个月（month 粒度缺省 → 当年）
+      const ieParams = { granularity: 'month' as const, ...(windowed ? { startYear: range.start!.year(), endYear: range.end!.year() } : {}) }
 
       set({ loading: true, error: null })
       try {
-        const [bal, ie, cur, prev] = await Promise.all([
+        const [bal, ie, cur, prev, cf, expBreak, incBreak] = await Promise.all([
           // 余额快照不带界 = 截至最新数据（指标卡为「当前状态」口径）
           window.beanwise.getBalancesReport({}),
-          window.beanwise.getIncomeExpenseReport({ granularity: 'month' }),
+          window.beanwise.getIncomeExpenseReport(ieParams),
           window.beanwise.getNetWorthReport(curParams),
-          window.beanwise.getNetWorthReport(prevParams)
+          window.beanwise.getNetWorthReport(prevParams),
+          // 现金流：近 12 个月（运营货币，月粒度）
+          window.beanwise.getCashFlowReport({ granularity: 'month' }),
+          // 收支类别汇总（运营货币，全量）
+          window.beanwise.getBreakdownReport({ flow: 'expense' }),
+          window.beanwise.getBreakdownReport({ flow: 'income' })
         ])
         if (seq !== reqSeq) return // 过期请求：结果丢弃
         const currency = cur.currency
@@ -166,6 +195,11 @@ export const useDashboardStore = create<DashboardState>((set) => {
           series: filterSeriesWindow(cur.series, startKey, endKey),
           prevYearSeries: prev.series,
           otherCurrencies: sumOtherCurrencyAssets(bal.accounts, currency),
+          incomeExpense: ie.series,
+          balances: bal.accounts,
+          cashFlow: cf.series,
+          expenseBreakdown: expBreak.items,
+          incomeBreakdown: incBreak.items,
           hasData: bal.accounts.length > 0 || cur.series.length > 0 || ie.series.length > 0,
           loading: false
         })

@@ -65,7 +65,7 @@ function subMagnitude(a: string, b: string): string {
 }
 
 /** 非负整数串比较：> 0 / < 0 / === 0（等长比字典序；长度差即值差） */
-function compareMagnitude(a: string, b: string): number {
+export function compareMagnitude(a: string, b: string): number {
   if (a.length !== b.length) return a.length > b.length ? 1 : -1
   return a === b ? 0 : a > b ? 1 : -1
 }
@@ -130,4 +130,14 @@ export function isZeroDecimal(s: string): boolean {
 export function computeBalancingNumber(amounts: string[]): string {
   const sum = amounts.reduce((acc, cur) => addDecimalStrings(acc, cur), '0')
   return negateDecimal(sum)
+}
+
+/** 十进制字符串比较（含负号）：> 0 / < 0 / === 0。用于排序/分类聚合，纯字符串比较，禁浮点。 */
+export function compareDecimalStrings(a: string, b: string): number {
+  const aNeg = a.startsWith('-')
+  const bNeg = b.startsWith('-')
+  if (aNeg !== bNeg) return aNeg ? -1 : 1
+  // 同号：绝对值比较，负号时反向
+  const cmp = compareMagnitude(body(a), body(b))
+  return aNeg ? -cmp : cmp
 }
