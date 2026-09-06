@@ -1,11 +1,14 @@
-import { CloudDownloadOutlined, CloudOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons'
-import { Badge, Button, Divider, Popover, Space, Tag } from 'antd'
+import { BulbFilled, BulbOutlined, CloudDownloadOutlined, CloudOutlined, ReloadOutlined, SettingOutlined, SkinOutlined } from '@ant-design/icons'
+import { Badge, Button, Dropdown, Popover, Space, Tag } from 'antd'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAiStore } from '../../stores/ai'
 import { useLedgerStore } from '../../stores/ledger'
 import { useSyncStore } from '../../stores/sync'
 import { useUpdateStore } from '../../stores/update'
+import { useThemeContext } from '../../theme/ThemeProvider'
+import { usePalette } from '../../theme/useSemanticColors'
+import { THEME_LIST, THEMES, type ThemeId } from '../../theme/tokens'
 
 const INDEX_STATUS_COLOR: Record<string, string> = { ok: 'success', error: 'error', missing: 'default' }
 
@@ -34,6 +37,8 @@ export default function HeaderStatusArea({ onOpenSync, onOpenAi, onOpenUpdate }:
   const updateState = useUpdateStore((s) => s.state)
   const aiStatus = useAiStore((s) => s.status)
   const [refreshing, setRefreshing] = useState(false)
+  const { themeId, mode, toggleMode, setTheme } = useThemeContext()
+  const palette = usePalette()
 
   /** 原 App.tsx Header 索引 Tag 的链路：重建索引 → 重拉状态（与明细视图「重建索引」同链路） */
   const handleRefreshIndex = async () => {
@@ -89,8 +94,28 @@ export default function HeaderStatusArea({ onOpenSync, onOpenAi, onOpenUpdate }:
     </div>
   )
 
+  const themeMenuItems = THEME_LIST.map((t) => ({
+    key: t.id,
+    label: (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ width: 12, height: 12, borderRadius: 2, background: THEMES[t.id].palette.primary, flex: 'none' }} />
+        {t.label}
+      </span>
+    )
+  }))
+
   return (
     <Space size={4}>
+      <Dropdown menu={{ items: themeMenuItems, selectable: true, selectedKeys: [themeId], onClick: ({ key }) => setTheme(key as ThemeId) }}>
+        <Button type="text" icon={<SkinOutlined />} aria-label={`主题色：${THEMES[themeId].label}`} title={`主题色：${THEMES[themeId].label}`} />
+      </Dropdown>
+      <Button
+        type="text"
+        icon={mode === 'dark' ? <BulbFilled /> : <BulbOutlined />}
+        aria-label={mode === 'dark' ? '切换为亮色主题' : '切换为暗色主题'}
+        title={mode === 'dark' ? '切换为亮色主题' : '切换为暗色主题'}
+        onClick={toggleMode}
+      />
       {configured ? (
         <>
           <Badge count={conflict ? 1 : 0} size="small">

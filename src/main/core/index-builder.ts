@@ -43,6 +43,9 @@ export interface LedgerEntryRow {
    * （收入 +、支出 -，十进制字符串）；无 PL posting（转账/Open 等）或运算异常 → null */
   amount: string | null
   currency: string | null
+  /** PL 侧账户路径（Income/Expenses 中主币种下的首个 posting 账户），用于流水列表显示支出/收入账户中文名；
+   * 无 PL posting（转账/Open 等）→ null */
+  pnlAccount: string | null
 }
 
 export interface ListEntriesParams {
@@ -234,20 +237,21 @@ export function getLedgerStatus(db: DrizzleDb): LedgerStatus | null {
 
 /** 交易金额计算（超 UI 层 #1）：主币种（运营货币优先，缺省取首笔 posting 币种）下 PL 侧
  * 金额和取反——资产流视角（支出 → 负、收入 → 正）；无 PL posting（转账/Open）→ null。
- * 求和走 shared/decimal 十进制字符串运算（禁浮点），异常兜底 null 不阻塞列表。 */
+ * 求和走 shared/decimal 十进制字符串运算（禁浮点），异常兜底 null 不阻塞列表。
+ * 同时返回首个 PL 侧账户路径（pnlAccount），用于流水列表显示支出/收入账户中文名。 */
 function entryAmount(
   ps: Array<{ account: string; unitsNumber: string; unitsCurrency: string }>,
   primaryCurrency: string | null
-): { amount: string | null; currency: string | null } {
-  if (ps.length === 0) return { amount: null, currency: null }
+): { amount: string | null; currency: string | null; pnlAccount: string | null } {
+  if (ps.length === 0) return { amount: null, currency: null, pnlAccount: null }
   const currency = primaryCurrency ?? ps[0]!.unitsCurrency
   const pl = ps.filter((p) => p.unitsCurrency === currency && isPnlAccountType(accountType(p.account)))
-  if (pl.length === 0) return { amount: null, currency }
+  if (pl.length === 0) return { amount: null, currency, pnlAccount: null }
   try {
     const sum = pl.reduce((acc, p) => addDecimalStrings(acc, p.unitsNumber), '0')
-    return { amount: negateDecimal(sum), currency }
+    return { amount: negateDecimal(sum), currency, pnlAccount: pl[0]!.account }
   } catch {
-    return { amount: null, currency }
+    return { amount: null, currency, pnlAccount: null }
   }
 }
 
@@ -310,8 +314,8 @@ export function listEntries(
   )[0] ?? null
 
   const out = rows.map((r) => {
-    const { amount, currency } = entryAmount(byEntry.get(r.id) ?? [], primaryCurrency)
-    return { ...r, amount, currency }
+    const { amount, currency, pnlAccount } = entryAmount(byEntry.get(r.id) ?? [], primaryCurrency)
+    return { ...r, amount, currency, pnlAccount }
   })
   return { entries: out as LedgerEntryRow[], total }
 }

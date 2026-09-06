@@ -10,7 +10,7 @@ import type { ProColumns } from '@ant-design/pro-components'
 import { Alert, Button, DatePicker, Empty, Space, Spin, Tabs, Tag, Tooltip, TreeSelect } from 'antd'
 import type { Dayjs } from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { LedgerEntryRow, ReportTrialBalanceParams, TrialBalanceCell, TrialBalanceRow } from '../../../../shared/ipc'
+import type { LedgerEntryRow, ListEntriesFilters, ReportTrialBalanceParams, TrialBalanceCell, TrialBalanceRow } from '../../../../shared/ipc'
 import { useLedgerStore } from '../../stores/ledger'
 import type { AccountOption } from '../../stores/ledger'
 import { formatAmount } from '../../utils/format'
@@ -66,24 +66,29 @@ function DetailLedgerTab() {
   const accountNameMap = useMemo(() => new Map(accountOptions.map((o) => [o.value, o.label])), [accountOptions])
 
   const [account, setAccount] = useState<string | undefined>(undefined)
+  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null)
   const [rows, setRows] = useState<LedgerEntryRow[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const loadEntries = useCallback(async (acc: string, p: number) => {
+  const loadEntries = useCallback(async (acc: string, p: number, r: [Dayjs, Dayjs] | null) => {
     setLoading(true)
     setError(null)
     try {
-      const r = await window.beanwise.listLedgerEntries({
+      const filters: ListEntriesFilters = {
+        ...(r ? { dateFrom: r[0].format('YYYY-MM-DD'), dateTo: r[1].format('YYYY-MM-DD') } : {})
+      }
+      const r2 = await window.beanwise.listLedgerEntries({
         account: acc,
         order: 'desc',
         limit: DETAIL_PAGE_SIZE,
-        offset: (p - 1) * DETAIL_PAGE_SIZE
+        offset: (p - 1) * DETAIL_PAGE_SIZE,
+        ...filters
       })
-      setRows(r.entries)
-      setTotal(r.total)
+      setRows(r2.entries)
+      setTotal(r2.total)
     } catch (err) {
       setError(String(err))
     } finally {
@@ -97,18 +102,25 @@ function DetailLedgerTab() {
     setPage(1)
     setRows([])
     setTotal(0)
-    if (value) void loadEntries(value, 1)
+    if (value) void loadEntries(value, 1, range)
+  }
+
+  const handleRange = (dates: [Dayjs | null, Dayjs | null] | null) => {
+    const valid = dates && dates[0] && dates[1] ? ([dates[0], dates[1]] as [Dayjs, Dayjs]) : null
+    setRange(valid)
+    setPage(1)
+    if (account) void loadEntries(account, 1, valid)
   }
 
   const handleSearch = () => {
     if (!account) return
     setPage(1)
-    void loadEntries(account, 1)
+    void loadEntries(account, 1, range)
   }
 
   const handlePageChange = (p: number) => {
     setPage(p)
-    if (account) void loadEntries(account, p)
+    if (account) void loadEntries(account, p, range)
   }
 
   const accountLabel = account ? (accountNameMap.get(account) ?? account) : null
@@ -155,6 +167,12 @@ function DetailLedgerTab() {
           placeholder="选择账户"
           style={{ minWidth: 280 }}
           onChange={handleSelect}
+        />
+        <DatePicker.RangePicker
+          allowClear
+          value={range}
+          placeholder={['起始日期', '结束日期']}
+          onChange={handleRange}
         />
         <Button type="primary" disabled={!account} onClick={handleSearch}>
           查询
