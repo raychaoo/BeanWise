@@ -35,7 +35,7 @@
 
 // ---- M4：通用（自 styles.css 迁入）----
 .error-text {
-  color: #cf1322;
+  color: var(--bw-negative);
 }
 
 // ---- M5：编辑器视图布局 ----
@@ -55,7 +55,7 @@
 .editor-main {
   flex: 1;
   min-height: 0;
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--bw-border);
 }
 
 .editor-conflict {
@@ -64,7 +64,7 @@
 
 .editor-diff {
   height: 320px;
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--bw-border);
 }
 
 .editor-empty {
@@ -98,11 +98,11 @@
 .conflict-diff {
   height: 40%;
   min-height: 240px;
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--bw-border);
 }
 
 .conflict-merged {
   flex: 1;
   min-height: 0;
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--bw-border);
 }

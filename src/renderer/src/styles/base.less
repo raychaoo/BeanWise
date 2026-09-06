@@ -24,10 +24,10 @@ body,
 }
 
 .num-negative {
-  color: #cf1322; // 仅负数/赤字（与 --bw-negative 一致）
+  color: var(--bw-negative); // 仅负数/赤字（与 --bw-negative 一致）
 }
 
-// 主内容区滚动条（细圆角，浅灰）
+// 主内容区滚动条（细圆角，跟随主题）
 .page-scroll {
   &::-webkit-scrollbar {
     width: 8px;
@@ -35,7 +35,7 @@ body,
   }
 
   &::-webkit-scrollbar-thumb {
-    background: #d9d9d9;
+    background: var(--bw-scrollbar-thumb);
     border-radius: 4px;
   }
 

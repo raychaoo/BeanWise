@@ -1,7 +1,7 @@
 // 流水页样式（批次 B Task 5）：页头时间筛选工具条。
 @import (reference) '../tokens.less';
 
-@bw-text-secondary: #64748b; // 辅助文字（slate-500，与 entry.less 同值）
+// @bw-text-secondary 统一在 tokens.less 以 CSS var 形式提供（--bw-text-secondary），此处不再重复定义
 
 .entries-view {
   .entries-error {
@@ -30,7 +30,7 @@
 }
 
 .entries-filter-hint {
-  color: @bw-text-secondary;
+  color: var(--bw-text-secondary);
   cursor: help;
   font-size: 14px;
 }

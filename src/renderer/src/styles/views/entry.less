@@ -1,10 +1,7 @@
 // 录入页样式（重设计）：分区化凭证 + 加重的记账行 + 可读的最近流水列表。
 // 借贷色沿用 tokens.less：贷方蓝=@bw-primary、借方橙=@bw-outflow。
+// var(--bw-posting-bg) / @bw-section-line / var(--bw-text-secondary) 统一在 tokens.less 以 CSS var 双档提供。
 @import (reference) '../tokens.less';
-
-@bw-posting-bg: #f8fafc;
-@bw-section-line: #e2e8f0; // 分区分隔线（slate-200）
-@bw-text-secondary: #64748b;
 
 // 桌面双栏 flex:3/2 —— stretch 让两栏等高，标题与内容严格对齐
 .entry-two-col {
@@ -59,7 +56,7 @@
   & + & {
     margin-top: 12px;
     padding-top: 12px;
-    border-top: 1px solid @bw-section-line;
+    border-top: 1px solid var(--bw-section-line);
   }
 }
 
@@ -67,7 +64,7 @@
   display: block;
   font-size: 12px;
   font-weight: 600;
-  color: @bw-text-secondary;
+  color: var(--bw-text-secondary);
   letter-spacing: 0.04em;
   margin-bottom: 8px;
 }
@@ -78,14 +75,14 @@
   padding: 10px 12px 12px;
   border-radius: 6px;
   border-left: 3px solid transparent;
-  background: @bw-posting-bg;
+  background: var(--bw-posting-bg);
 
   &--debit {
-    border-left-color: @bw-primary;
+    border-left-color: var(--bw-primary);
   }
 
   &--credit {
-    border-left-color: @bw-outflow;
+    border-left-color: var(--bw-outflow);
   }
 
   &__head {
@@ -95,7 +92,7 @@
     width: 100%;
     font-size: 13px;
     font-weight: 600;
-    color: @bw-text-base;
+    color: var(--bw-text-base);
     margin-bottom: 8px;
   }
 
@@ -108,20 +105,20 @@
     letter-spacing: 0.02em;
 
     .posting-row--debit & {
-      color: @bw-primary;
-      background: fade(@bw-primary, 10%);
+      color: var(--bw-primary);
+      background: var(--bw-primary-soft);
     }
 
     .posting-row--credit & {
-      color: @bw-outflow;
-      background: fade(@bw-outflow, 10%);
+      color: var(--bw-outflow);
+      background: var(--bw-outflow-soft);
     }
   }
 
   &__head-text {
     font-size: 12px;
     font-weight: 400;
-    color: @bw-text-secondary;
+    color: var(--bw-text-secondary);
   }
 
   &__fields {
@@ -174,13 +171,13 @@
   font-weight: 500;
 
   &--balanced {
-    color: @bw-inflow;
-    background: fade(@bw-inflow, 8%);
+    color: var(--bw-inflow);
+    background: var(--bw-inflow-soft);
   }
 
   &--diff {
-    color: @bw-negative;
-    background: fade(@bw-negative, 8%);
+    color: var(--bw-negative);
+    background: var(--bw-negative-soft);
   }
 }
 
@@ -199,27 +196,18 @@
 
 .entry-submit-tip {
   font-size: 12px;
-  color: @bw-text-secondary;
+  color: var(--bw-text-secondary);
 }
 
-// ---------- 更多操作（header 收纳）----------
+// ---------- 更多操作（header 收纳，使用 antd Button 以保证键盘可达 + 焦点环）----------
 .entry-more-trigger {
   font-size: 13px;
-  color: @bw-text-secondary;
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
-
-  &:hover {
-    color: @bw-text-base;
-    background: fade(@bw-text-base, 6%);
-  }
 }
 
 // ---------- 最近流水：可读列表（等宽数字 + 正负色 + 单行信息层级）----------
 .entry-recent-title {
   font-size: 12px;
-  color: @bw-text-secondary;
+  color: var(--bw-text-secondary);
 }
 
 .entry-recent-list {
@@ -236,7 +224,7 @@
   align-items: baseline;
   padding: 7px 16px;
   font-size: 13px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--bw-border);
 
   &:last-child {
     border-bottom: none;
@@ -245,28 +233,45 @@
 
 .entry-recent-date {
   flex: none;
-  color: @bw-text-secondary;
+  color: var(--bw-text-secondary);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
 }
 
 .entry-recent-main {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   min-width: 0;
+  overflow: hidden;
+  color: var(--bw-text-base);
+  line-height: 1.3;
+}
+
+.entry-recent-headline {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: @bw-text-base;
+  font-size: 13px;
+}
+
+.entry-recent-account {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--bw-text-secondary);
 }
 
 .entry-recent-amount {
   flex: none;
   text-align: right;
   font-variant-numeric: tabular-nums;
-  color: @bw-text-base;
+  color: var(--bw-text-base);
   white-space: nowrap;
 
   &.num-negative {
-    color: @bw-negative;
+    color: var(--bw-negative);
   }
 }
 

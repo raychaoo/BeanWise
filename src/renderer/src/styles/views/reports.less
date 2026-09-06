@@ -9,45 +9,12 @@
   gap: 16px;
 }
 
-// 统计芯片横排：label + 大字号金额 + 可选单位/子说明
+// 统计芯片横排（SummaryPill 组件样式已迁移至 antd-style createStyles）
 .summary-pill-row {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 12px;
-}
-
-.summary-pill {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 14px;
-  background: @bw-bg-layout;
-  border-radius: 6px;
-  min-width: 120px;
-}
-
-.summary-pill__label {
-  font-size: 12px;
-  color: rgba(15, 23, 42, 0.55);
-}
-
-.summary-pill__value {
-  font-size: 20px;
-  font-weight: 600;
-  line-height: 1.3;
-}
-
-.summary-pill__unit {
-  font-size: 12px;
-  font-weight: 400;
-  color: rgba(15, 23, 42, 0.55);
-  margin-left: 2px;
-}
-
-.summary-pill__hint {
-  font-size: 12px;
-  color: rgba(15, 23, 42, 0.45);
 }
 
 // 趋势数据表：等宽金额列
@@ -96,24 +63,24 @@
 // 行别字重与表格线：section 小节标题（浅底）→ item 明细 → subtotal 小计（半粗）→
 // total 合计（粗 + 上边框加粗，正式报表双线收尾）→ net 净利润（强调底色）
 .report-row--section > td {
-  background: @bw-bg-layout;
+  background: var(--bw-bg-layout);
   font-weight: 600;
 }
 
 .report-row--subtotal > td {
   font-weight: 600;
-  border-top: 1px solid rgba(15, 23, 42, 0.35);
+  border-top: 1px solid var(--bw-border-strong);
 }
 
 .report-row--total > td {
   font-weight: 600;
-  border-top: 2px solid @bw-text-base;
+  border-top: 2px solid var(--bw-text-base);
 }
 
 .report-row--net > td {
   font-weight: 600;
-  background: fade(@bw-primary, 6%);
-  border-top: 1px solid rgba(15, 23, 42, 0.35);
+  background: var(--bw-primary-soft);
+  border-top: 1px solid var(--bw-border-strong);
 }
 
 

@@ -5,21 +5,35 @@ import './monaco/setup'
 import 'dayjs/locale/zh-cn'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
+import { createGlobalStyle } from 'antd-style'
 import dayjs from 'dayjs'
 import App from './App'
-import { THEME_TOKENS } from './theme/tokens'
+import { ThemeProvider } from './theme/ThemeProvider'
 import './styles/tokens.less'
 import './styles/base.less'
 import './styles/layout.less'
+
+// ProLayout actions 区溢出修复：actions 容器高度大于 header 时，hover 背景会溢出 header 区域
+// 约束 actions 行高度并 clip hover 背景
+const HeaderActionsFix = createGlobalStyle`
+  .ant-pro-global-header-header-actions-item {
+    height: 32px !important;
+    overflow: hidden;
+  }
+  .ant-pro-global-header-header-actions-item > * {
+    height: 32px;
+    line-height: 32px;
+  }
+`
 
 dayjs.locale('zh-cn')
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ConfigProvider locale={zhCN} theme={THEME_TOKENS}>
+    <ThemeProvider locale={zhCN}>
+      <HeaderActionsFix />
       <App />
-    </ConfigProvider>
+    </ThemeProvider>
   </React.StrictMode>
 )

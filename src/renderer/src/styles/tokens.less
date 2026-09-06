@@ -1,10 +1,21 @@
-// 与 src/renderer/src/theme/tokens.ts 的 BW_COLORS 保持同步（修改任一侧必须同步另一侧）
+// 与 src/renderer/src/theme/tokens.ts 的 BW_COLORS / BW_COLORS_DARK 保持同步（修改任一侧必须同步另一侧）
+// antd token 需真实色值（色板算法不能用 CSS var），Less 侧同名变量作运行期兜底。
+// 明暗双档：:root（默认亮色）+ [data-theme='dark']（暗色，由 useTheme 切换 html 属性）。
+
+// ---- Less 变量（编译期，供 @bw-* 引用）----
 @bw-primary: #1d39c4;
 @bw-inflow: #08979c;
 @bw-outflow: #d46b08;
 @bw-negative: #cf1322;
 @bw-bg-layout: #f5f7fa;
 @bw-text-base: #0f172a;
+
+@bw-primary-dark: #5b7cf6;
+@bw-inflow-dark: #2ccbc9;
+@bw-outflow-dark: #f5a53d;
+@bw-negative-dark: #ff4d4f;
+@bw-bg-layout-dark: #141414;
+@bw-text-base-dark: #e2e8f0;
 
 :root {
   --bw-primary: @bw-primary;
@@ -13,4 +24,38 @@
   --bw-negative: @bw-negative;
   --bw-bg-layout: @bw-bg-layout;
   --bw-text-base: @bw-text-base;
+  --bw-scrollbar-thumb: #d9d9d9;
+  --bw-border: #f0f0f0;
+  --bw-text-secondary: #64748b;
+  --bw-posting-bg: #f8fafc;
+  --bw-section-line: #e2e8f0;
+  --bw-progress-trail: rgba(15, 23, 42, 0.06);
+  --bw-text-tertiary: rgba(15, 23, 42, 0.45);
+  --bw-border-strong: rgba(15, 23, 42, 0.35);
+  --bw-primary-soft: rgba(29, 57, 196, 0.06);
+  --bw-inflow-soft: rgba(8, 151, 156, 0.08);
+  --bw-outflow-soft: rgba(212, 107, 8, 0.1);
+  --bw-negative-soft: rgba(207, 19, 34, 0.08);
+}
+
+// 暗色档：覆盖 CSS 变量（antd 组件色板由 ConfigProvider darkAlgorithm 派生，此处仅补语义色）
+[data-theme='dark'] {
+  --bw-primary: @bw-primary-dark;
+  --bw-inflow: @bw-inflow-dark;
+  --bw-outflow: @bw-outflow-dark;
+  --bw-negative: @bw-negative-dark;
+  --bw-bg-layout: @bw-bg-layout-dark;
+  --bw-text-base: @bw-text-base-dark;
+  --bw-scrollbar-thumb: #4b5563;
+  --bw-border: #334155;
+  --bw-text-secondary: #94a3b8;
+  --bw-posting-bg: #1e293b;
+  --bw-section-line: #334155;
+  --bw-progress-trail: rgba(226, 232, 240, 0.08);
+  --bw-text-tertiary: rgba(226, 232, 240, 0.45);
+  --bw-border-strong: rgba(226, 232, 240, 0.35);
+  --bw-primary-soft: rgba(91, 124, 246, 0.12);
+  --bw-inflow-soft: rgba(44, 203, 201, 0.1);
+  --bw-outflow-soft: rgba(245, 165, 61, 0.12);
+  --bw-negative-soft: rgba(255, 77, 79, 0.1);
 }

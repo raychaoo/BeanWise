@@ -31,6 +31,8 @@ export function registerBeancountLanguage(monaco: typeof Monaco): void {
   if (monaco.languages.getLanguages().some((l) => l.id === BEANCOUNT_LANGUAGE_ID)) return
   monaco.languages.register({ id: BEANCOUNT_LANGUAGE_ID })
   monaco.languages.setMonarchTokensProvider(BEANCOUNT_LANGUAGE_ID, BEANCOUNT_TOKENIZER)
+
+  // 亮色主题（base: vs）—— GitHub Light 风格语义色
   monaco.editor.defineTheme('beanwise', {
     base: 'vs',
     inherit: true,
@@ -48,4 +50,28 @@ export function registerBeancountLanguage(monaco: typeof Monaco): void {
       { token: 'link', foreground: '22863a' }
     ]
   })
+
+  // 暗色主题（base: vs-dark）—— 提亮语义色以在暗色表面保持可读性
+  monaco.editor.defineTheme('beanwise-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    colors: {},
+    rules: [
+      { token: 'comment', foreground: '8b949e' },
+      { token: 'keyword', foreground: 'ff7b72' },
+      { token: 'string', foreground: 'a5d6ff' },
+      { token: 'number.date', foreground: '79c0ff' },
+      { token: 'number', foreground: '79c0ff' },
+      { token: 'type.account', foreground: 'ffa657' },
+      { token: 'currency', foreground: 'd2a8ff' },
+      { token: 'type.flag', foreground: 'ff7b72' },
+      { token: 'tag', foreground: '7ee787' },
+      { token: 'link', foreground: '7ee787' }
+    ]
+  })
+}
+
+/** 根据当前主题模式返回对应的 Monaco 主题名 */
+export function monacoThemeForMode(mode: 'light' | 'dark'): 'beanwise' | 'beanwise-dark' {
+  return mode === 'dark' ? 'beanwise-dark' : 'beanwise'
 }
