@@ -1,25 +1,43 @@
-// 录入页样式（批次 B Task 3，方案模块 3）：双栏布局 + 借贷分录卡 + 平衡指示条。
-// 借贷色沿用 tokens.less：付方蓝=@bw-primary、收方橙=@bw-outflow（方案草案 @bw-blue/@bw-orange 的落地映射）。
+// 录入页样式（重设计）：分区化凭证 + 加重的记账行 + 可读的最近流水列表。
+// 借贷色沿用 tokens.less：贷方蓝=@bw-primary、借方橙=@bw-outflow。
 @import (reference) '../tokens.less';
 
-@bw-posting-bg: #f8fafc; // 分录行次级底色（卡片白上的浅灰蓝）
-@bw-text-secondary: #64748b; // 辅助文字（slate-500）
+@bw-posting-bg: #f8fafc;
+@bw-section-line: #e2e8f0; // 分区分隔线（slate-200）
+@bw-text-secondary: #64748b;
 
-// 桌面双栏 flex:3/2（≥1280 有效；最小窗口 1280，以下为防御性退化）
+// 桌面双栏 flex:3/2 —— stretch 让两栏等高，标题与内容严格对齐
 .entry-two-col {
   display: flex;
   gap: 16px;
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 .entry-col-form {
   flex: 3;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .entry-col-side {
   flex: 2;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+// 两侧 Card 撑满各自列高，body 顶部对齐
+.entry-col-form > .ant-card,
+.entry-col-side > .ant-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.entry-col-form > .ant-card > .ant-card-body,
+.entry-col-side > .ant-card > .ant-card-body {
+  flex: 1;
 }
 
 @media (max-width: 1279px) {
@@ -34,26 +52,30 @@
   }
 }
 
-// 凭证头 2 列栅格：日期/标志 + 交易对象/说明
-.entry-voucher-head {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  column-gap: 16px;
+// ---------- 凭证头：分区化（日期/标志 一行 + 交易对象/说明 纵向堆叠）----------
+.entry-section {
+  padding-top: 4px;
+
+  & + & {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid @bw-section-line;
+  }
 }
 
-.entry-postings-head {
-  margin-top: 8px;
-}
-
-.entry-postings-tip {
+.entry-section__title {
+  display: block;
   font-size: 12px;
-  margin-bottom: 12px;
+  font-weight: 600;
+  color: @bw-text-secondary;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
 }
 
-// 分录行借贷卡：左边条 + 头部语义文案 + 账户/金额/货币一行
+// 日期 + 标志 同行紧凑（短字段不横向拉开）
 .posting-row {
   margin-bottom: 8px;
-  padding: 8px 12px;
+  padding: 10px 12px 12px;
   border-radius: 6px;
   border-left: 3px solid transparent;
   background: @bw-posting-bg;
@@ -69,16 +91,42 @@
   &__head {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     width: 100%;
+    font-size: 13px;
+    font-weight: 600;
+    color: @bw-text-base;
+    margin-bottom: 8px;
+  }
+
+  &__head-tag {
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 3px;
+    letter-spacing: 0.02em;
+
+    .posting-row--debit & {
+      color: @bw-primary;
+      background: fade(@bw-primary, 10%);
+    }
+
+    .posting-row--credit & {
+      color: @bw-outflow;
+      background: fade(@bw-outflow, 10%);
+    }
+  }
+
+  &__head-text {
     font-size: 12px;
+    font-weight: 400;
     color: @bw-text-secondary;
   }
 
   &__fields {
     display: flex;
     gap: 8px;
-    margin-top: 4px;
 
     .ant-form-item {
       margin-bottom: 0;
@@ -89,9 +137,18 @@
     }
   }
 
+  // 账户为主输入
   &__account {
-    flex: 5.5;
+    flex: 1;
     min-width: 0;
+  }
+
+  // 金额 + 货币 作为一组副输入
+  &__aside {
+    display: flex;
+    gap: 8px;
+    flex: none;
+    width: 240px;
   }
 
   &__number {
@@ -100,20 +157,21 @@
   }
 
   &__currency {
-    flex: 1.5;
+    flex: 1.4;
     min-width: 0;
   }
 }
 
-// 平衡指示条两态：绿（@bw-inflow）已平衡 / 红（@bw-negative）差额与自动平衡预告
+// ---------- 余额指示条：加权重 ----------
 .balance-hint {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin-top: 4px;
-  padding: 6px 12px;
+  padding: 8px 12px;
   border-radius: 6px;
   font-size: 13px;
+  font-weight: 500;
 
   &--balanced {
     color: @bw-inflow;
@@ -126,18 +184,57 @@
   }
 }
 
-// 最近流水卡（批次 D 补收）：最近 8 条分录，录入成功后随 refresh() 即时刷新
+// ---------- 提交区：主 CTA 强化（按钮靠右）----------
+.entry-submit-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 4px;
+
+  .ant-btn-primary {
+    min-width: 120px;
+  }
+}
+
+.entry-submit-tip {
+  font-size: 12px;
+  color: @bw-text-secondary;
+}
+
+// ---------- 更多操作（header 收纳）----------
+.entry-more-trigger {
+  font-size: 13px;
+  color: @bw-text-secondary;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+
+  &:hover {
+    color: @bw-text-base;
+    background: fade(@bw-text-base, 6%);
+  }
+}
+
+// ---------- 最近流水：可读列表（等宽数字 + 正负色 + 单行信息层级）----------
+.entry-recent-title {
+  font-size: 12px;
+  color: @bw-text-secondary;
+}
+
 .entry-recent-list {
   margin: 0;
   padding: 0;
   list-style: none;
+  max-height: 100%;
 }
 
 .entry-recent-item {
-  display: flex;
-  align-items: baseline;
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
   gap: 8px;
-  padding: 6px 0;
+  align-items: baseline;
+  padding: 7px 16px;
   font-size: 13px;
   border-bottom: 1px solid #f0f0f0;
 
@@ -150,31 +247,29 @@
   flex: none;
   color: @bw-text-secondary;
   font-variant-numeric: tabular-nums;
+  font-size: 12px;
 }
 
 .entry-recent-main {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: @bw-text-base;
 }
 
-.entry-recent-account {
-  flex: none;
-  max-width: 45%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: @bw-text-secondary;
-}
-
-// 交易金额（超 UI 层 #1）：资产流视角（支出负/收入正），右对齐等宽数字 + 负数红
 .entry-recent-amount {
   flex: none;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
   color: @bw-text-base;
+  white-space: nowrap;
 
   &.num-negative {
-    color: inherit; // 负数红色由 .num-negative 接管（覆盖上一行的正色）
+    color: @bw-negative;
   }
+}
+
+.entry-recent-empty {
+  padding: 16px 0;
 }
