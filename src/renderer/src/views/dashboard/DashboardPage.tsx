@@ -18,7 +18,8 @@ import { useTimeRange } from '../../hooks/useTimeRange'
 import type { TimeRangeValue } from '../../hooks/useTimeRange'
 import { useDashboardStore } from '../../stores/dashboard'
 import { useLedgerStore } from '../../stores/ledger'
-import { BW_COLORS } from '../../theme/tokens'
+import { useSemanticColors } from '../../theme/useSemanticColors'
+import { useThemeContext } from '../../theme/ThemeProvider'
 import { formatAmount } from '../../utils/format'
 import { addDecimalStrings, negateDecimal } from '../../../../shared/decimal'
 import type { IncomeExpensePoint, NetWorthPoint } from '../../../../shared/ipc'
@@ -76,7 +77,7 @@ function BreakdownRow({ color, name, amount, ratio }: { color: string; name: str
         size="small"
         showInfo={false}
         strokeColor={color}
-        trailColor="rgba(15,23,42,0.06)"
+        trailColor="var(--bw-progress-trail)"
         className="dash-breakdown-row__bar"
       />
       <span className="num dash-breakdown-row__pct">{`${pct.toFixed(1)}%`}</span>
@@ -84,8 +85,13 @@ function BreakdownRow({ color, name, amount, ratio }: { color: string; name: str
   )
 }
 
-// donut 色板（分类色，非语义红绿，避免与流入流出语义冲突）
-const BREAKDOWN_COLORS = ['#1d39c4', '#08979c', '#d46b08', '#389e0d', '#9254de', '#f759ab', '#8c8c8c']
+// 分类色板（非语义红绿，避免与流入流出语义冲突）：首位跟随主题主色，其余固定分类色
+const BREAKDOWN_CATEGORICAL = ['#08979c', '#d46b08', '#389e0d', '#9254de', '#f759ab', '#8c8c8c']
+
+/** 构建当前主题的分类色板：[主题主色, 固定分类色...] */
+function breakdownColors(primary: string): string[] {
+  return [primary, ...BREAKDOWN_CATEGORICAL]
+}
 
 /** 类别路径 → 中文显示名：匹配账户库中以该类别为前缀的账户，取中文名；无匹配则取末段 */
 function resolveCategoryName(category: string, nameMap: Map<string, string>): string {
@@ -109,6 +115,11 @@ export default function DashboardPage() {
   const incomeBreakdown = useDashboardStore((s) => s.incomeBreakdown)
   const hasData = useDashboardStore((s) => s.hasData)
   const accountOptions = useLedgerStore((s) => s.accountOptions)
+  const { mode } = useThemeContext()
+  const colors = useSemanticColors()
+
+  // 当前主题的分类色板（[主题主色, 固定分类色...]），跟随主题切换
+  const breakdownPalette = useMemo(() => breakdownColors(colors.primary), [colors.primary])
 
   // 账户路径 → 中文显示名（匹配 value 前缀，取第一个配置的中文名）
   const accountNameMap = useMemo(() => {
@@ -132,7 +143,7 @@ export default function DashboardPage() {
   const monthNet = metrics === null ? '0' : addDecimalStrings(metrics.monthIncome, negateDecimal(metrics.monthExpense))
   const monthNetUp = !monthNet.startsWith('-') && monthNet !== '0'
   const monthNetDown = monthNet.startsWith('-')
-  // 净资产卡值颜色：正 = 文本色、负 = 红（BW_COLORS.negative，红色语义唯一化）
+  // 净资产卡值颜色：正 = 文本色、负 = 红（colors.negative，红色语义唯一化）
   const netWorthNegative = metrics !== null && metrics.netWorth.startsWith('-')
 
   // 账本无数据 → 整页空态带行动（方案交互清单 4）
@@ -177,7 +188,7 @@ export default function DashboardPage() {
               <Statistic
                 title="净资产"
                 value={formatAmount(metrics?.netWorth)}
-                valueStyle={{ color: netWorthNegative ? BW_COLORS.negative : undefined }}
+                valueStyle={{ color: netWorthNegative ? colors.negative : undefined }}
               />
             )}
           </Card>
@@ -190,12 +201,12 @@ export default function DashboardPage() {
               <Statistic
                 title="本月收支"
                 value={formatAmount(monthNet)}
-                valueStyle={{ color: monthNetUp ? BW_COLORS.inflow : monthNetDown ? BW_COLORS.outflow : undefined }}
+                valueStyle={{ color: monthNetUp ? colors.inflow : monthNetDown ? colors.outflow : undefined }}
                 suffix={
                   monthNetUp ? (
-                    <ArrowUpOutlined style={{ color: BW_COLORS.inflow }} />
+                    <ArrowUpOutlined style={{ color: colors.inflow }} />
                   ) : monthNetDown ? (
-                    <ArrowDownOutlined style={{ color: BW_COLORS.outflow }} />
+                    <ArrowDownOutlined style={{ color: colors.outflow }} />
                   ) : null
                 }
               />
@@ -222,9 +233,10 @@ export default function DashboardPage() {
                 xField="period"
                 yField="value"
                 colorField="type"
+                theme={mode}
                 height={240}
                 style={{
-                  color: [BW_COLORS.inflow, BW_COLORS.outflow]
+                  color: [colors.inflow, colors.outflow]
                 }}
               />
             )}
@@ -239,11 +251,12 @@ export default function DashboardPage() {
                 data={cashFlow.map((p) => ({ period: p.period, value: Number(p.net) }))}
                 xField="period"
                 yField="value"
+                theme={mode}
                 height={240}
                 style={{
                   lineWidth: 2,
                   lineDash: [0, 0],
-                  color: BW_COLORS.primary
+                  color: colors.primary
                 }}
               />
             )}
@@ -264,7 +277,7 @@ export default function DashboardPage() {
                 {expenseBreakdown.map((it, i) => (
                   <BreakdownRow
                     key={it.category}
-                    color={BREAKDOWN_COLORS[i % BREAKDOWN_COLORS.length]}
+                    color={breakdownPalette[i % breakdownPalette.length]}
                     name={resolveCategoryName(it.category, accountNameMap)}
                     amount={it.amount}
                     ratio={it.ratio}
@@ -285,7 +298,7 @@ export default function DashboardPage() {
                 {incomeBreakdown.map((it, i) => (
                   <BreakdownRow
                     key={it.category}
-                    color={BREAKDOWN_COLORS[(i + 3) % BREAKDOWN_COLORS.length]}
+                    color={breakdownPalette[(i + 3) % breakdownPalette.length]}
                     name={resolveCategoryName(it.category, accountNameMap)}
                     amount={it.amount}
                     ratio={it.ratio}
@@ -322,6 +335,7 @@ export default function DashboardPage() {
             xField="period"
             yField="value"
             colorField="series"
+            theme={mode}
             height={280}
             style={{
               lineWidth: 2,

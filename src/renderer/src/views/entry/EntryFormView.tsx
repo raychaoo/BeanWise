@@ -59,12 +59,17 @@ export default function EntryFormView() {
     void useLedgerStore.getState().refresh()
   }, [loadAccounts])
 
-  // 自动平衡
+  // 自动平衡：第一行金额变化时，第二行 = 第一行取反（受控只读，保证两行合计恒为 0）
   useEffect(() => {
-    if (!Array.isArray(postings)) return
-    const balancing = nextBalancingNumber(postings)
-    if (balancing !== undefined) {
-      form.setFieldValue(['postings', postings.length - 1, 'number'], balancing)
+    if (!Array.isArray(postings) || postings.length < 2) return
+    const first = postings[0]
+    const second = postings[1]
+    const firstNum = first?.number?.trim()
+    if (!firstNum) return
+    // 第二行始终跟随第一行取反，避免残留旧值导致借贷不平衡
+    const expected = computeBalancingNumber([firstNum])
+    if (second?.number !== expected) {
+      form.setFieldValue(['postings', 1, 'number'], expected)
     }
   }, [postings, form])
 
@@ -170,9 +175,9 @@ export default function EntryFormView() {
         title="录入凭证"
         extra={
           <Dropdown menu={{ items: moreMenu }} trigger={['click']}>
-            <span className="entry-more-trigger" role="button" tabIndex={0}>
+            <Button type="text" className="entry-more-trigger">
               更多
-            </span>
+            </Button>
           </Dropdown>
         }
       >
@@ -221,7 +226,7 @@ export default function EntryFormView() {
           <div className="entry-section">
             <span className="entry-section__title">记账行</span>
             <Typography.Paragraph type="secondary" className="entry-postings-tip">
-              两行分别记录资金涉及的两个账户；第二行金额留空会自动补差，两行合计必须为 0。
+              两行分别记录资金涉及的两个账户；第二行金额自动跟随第一行取反，两行合计恒为 0。
             </Typography.Paragraph>
 
             <Form.List
@@ -244,6 +249,7 @@ export default function EntryFormView() {
                     <PostingRowCard
                       key={field.key}
                       index={field.name as 0 | 1}
+                      amountReadOnly={field.name === 1}
                       currencyOptions={currencyOptions}
                       accountOptions={accountOptionsFor(field.name)}
                       accountRules={accountRules}
@@ -285,14 +291,17 @@ export default function EntryFormView() {
         ) : (
           <ul className="entry-recent-list">
             {recentEntries.slice(0, 20).map((e) => {
-              const account = e.account
-              const label = account !== null ? (accountNameMap.get(account) ?? account) : null
+              const accountLabel = e.pnlAccount !== null ? (accountNameMap.get(e.pnlAccount) ?? e.pnlAccount) : null
               const negative = e.amount !== null && e.amount.startsWith('-')
+              const headline = e.payee ?? e.narration ?? '—'
               return (
                 <li key={e.id} className="entry-recent-item">
                   <span className="entry-recent-date">{e.date}</span>
-                  <span className="entry-recent-main" title={e.narration ?? undefined}>
-                    {e.payee ?? e.narration ?? '—'}
+                  <span className="entry-recent-main">
+                    <span className="entry-recent-headline">{headline}</span>
+                    {accountLabel && accountLabel !== headline && (
+                      <span className="entry-recent-account">{accountLabel}</span>
+                    )}
                   </span>
                   <span className={`entry-recent-amount${negative ? ' num-negative' : ''}`}>
                     {e.amount !== null ? `${formatAmount(e.amount)} ${e.currency ?? ''}`.trimEnd() : '—'}

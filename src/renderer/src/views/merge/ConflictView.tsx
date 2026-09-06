@@ -1,8 +1,9 @@
 import { Alert, Button, Space } from 'antd'
 import * as monaco from 'monaco-editor'
 import { useEffect, useRef, useState } from 'react'
-import { BEANCOUNT_LANGUAGE_ID, registerBeancountLanguage } from '../../monaco/beancount-language'
+import { BEANCOUNT_LANGUAGE_ID, monacoThemeForMode, registerBeancountLanguage } from '../../monaco/beancount-language'
 import { useSyncStore } from '../../stores/sync'
+import { useThemeContext } from '../../theme/ThemeProvider'
 
 registerBeancountLanguage(monaco) // 模块级注册一次（幂等，M5）
 
@@ -16,6 +17,7 @@ export default function ConflictView() {
   const conflict = useSyncStore((s) => s.conflict)
   const syncing = useSyncStore((s) => s.syncing)
   const resolveConflict = useSyncStore((s) => s.resolveConflict)
+  const { mode } = useThemeContext()
 
   const diffRef = useRef<HTMLDivElement | null>(null)
   const editorRef = useRef<HTMLDivElement | null>(null)
@@ -50,7 +52,7 @@ export default function ConflictView() {
     if (!container) return
     const editor = monaco.editor.create(container, {
       language: BEANCOUNT_LANGUAGE_ID,
-      theme: 'beanwise',
+      theme: monacoThemeForMode(mode),
       automaticLayout: true,
       fontSize: 14,
       minimap: { enabled: false },
@@ -59,7 +61,14 @@ export default function ConflictView() {
     monacoRef.current = editor
     const sub = editor.onDidChangeModelContent(() => setMerged(editor.getValue()))
     return () => { sub.dispose(); editor.dispose(); monacoRef.current = null }
+    // 主题模式切换由下方 effect 热切换
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // 主题模式切换 → 热切换 Monaco 主题（不重建编辑器实例）
+  useEffect(() => {
+    monaco.editor.setTheme(monacoThemeForMode(mode))
+  }, [mode])
 
   // 采用本地/采用远端 → 推 merged（值相同跳过，避免与 onDidChange 死循环）
   useEffect(() => {

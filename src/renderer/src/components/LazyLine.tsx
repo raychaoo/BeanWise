@@ -7,6 +7,7 @@
  */
 import { lazy, Suspense } from 'react'
 import { Skeleton } from 'antd'
+import type { ThemeMode } from '../theme/useTheme'
 
 const AntLine = lazy(() => import('@ant-design/charts').then((m) => ({ default: m.Line })))
 
@@ -18,14 +19,17 @@ export interface LazyLineProps {
   height?: number
   /** G2 mark style（线宽/虚线等；回调形态按 G2 约定） */
   style?: Record<string, unknown>
+  /** 主题模式（决定坐标轴/网格/背景色） */
+  theme?: ThemeMode
 }
 
 export default function LazyLine(props: LazyLineProps) {
+  const { theme, ...rest } = props
   return (
     <Suspense
       fallback={<Skeleton.Node active style={{ width: '100%', height: props.height ?? 280 }} />}
     >
-      <AntLine {...props} />
+      <AntLine theme={theme === 'dark' ? 'dark' : 'light'} {...rest} />
     </Suspense>
   )
 }

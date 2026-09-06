@@ -15,6 +15,8 @@ interface CurrencyOption {
 
 interface Props {
   index: 0 | 1
+  /** 金额只读（第二行自动平衡，不可手动编辑） */
+  amountReadOnly?: boolean
   currencyOptions: CurrencyOption[]
   accountOptions: AccountOption[]
   accountRules: Rule[]
@@ -38,7 +40,7 @@ const ROW_META = [
   }
 ] as const
 
-export default function PostingRowCard({ index, currencyOptions, accountOptions, accountRules, numberRules }: Props) {
+export default function PostingRowCard({ index, amountReadOnly, currencyOptions, accountOptions, accountRules, numberRules }: Props) {
   const meta = ROW_META[index]
   return (
     <div className={`posting-row posting-row--${meta.tone}`}>
@@ -58,7 +60,7 @@ export default function PostingRowCard({ index, currencyOptions, accountOptions,
         </Form.Item>
         <div className="posting-row__aside">
           <Form.Item className="posting-row__number" name={[index, 'number']} label="金额" rules={numberRules}>
-            <InputNumber stringMode placeholder="0.00" controls={false} />
+            <InputNumber stringMode placeholder="0.00" controls={false} readOnly={amountReadOnly} />
           </Form.Item>
           <Form.Item
             className="posting-row__currency"

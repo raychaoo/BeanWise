@@ -5,6 +5,7 @@
  */
 import { lazy, Suspense } from 'react'
 import { Skeleton } from 'antd'
+import type { ThemeMode } from '../theme/useTheme'
 
 const AntColumn = lazy(() => import('@ant-design/charts').then((m) => ({ default: m.Column })))
 
@@ -16,14 +17,17 @@ export interface LazyColumnProps {
   height?: number
   /** G2 mark style（回调形态按 G2 约定） */
   style?: Record<string, unknown>
+  /** 主题模式（决定坐标轴/网格/背景色） */
+  theme?: ThemeMode
 }
 
 export default function LazyColumn(props: LazyColumnProps) {
+  const { theme, ...rest } = props
   return (
     <Suspense
       fallback={<Skeleton.Node active style={{ width: '100%', height: props.height ?? 280 }} />}
     >
-      <AntColumn {...props} />
+      <AntColumn theme={theme === 'dark' ? 'dark' : 'light'} {...rest} />
     </Suspense>
   )
 }

@@ -9,6 +9,7 @@
 import { ProTable } from '@ant-design/pro-components'
 import { DownloadOutlined } from '@ant-design/icons'
 import { Alert, Button, Card, Empty, Segmented, Select, Spin, Tabs, Tooltip, Typography, message } from 'antd'
+import { createStyles } from 'antd-style'
 import { useEffect, useMemo, useState } from 'react'
 import type { AccountBalance, IncomeExpensePoint, NetWorthPoint } from '../../../../shared/ipc'
 import { addDecimalStrings, negateDecimal } from '../../../../shared/decimal'
@@ -16,6 +17,7 @@ import LazyColumn from '../../components/LazyColumn'
 import LazyLine from '../../components/LazyLine'
 import { useLedgerStore } from '../../stores/ledger'
 import { useReportsStore } from '../../stores/reports'
+import { useThemeContext } from '../../theme/ThemeProvider'
 import { formatAmount } from '../../utils/format'
 import BalanceSheetTable from './BalanceSheetTable'
 import CashFlowTable from './CashFlowTable'
@@ -61,17 +63,38 @@ function netInflow(income: string, expense: string): string {
   return addDecimalStrings(income, negateDecimal(expense))
 }
 
+/** 统计芯片样式：背景/标签色跟随 antd token 主题 */
+const useSummaryPillStyles = createStyles(({ token, css }) => ({
+  pill: {
+    display: 'inline-flex',
+    flexDirection: 'column',
+    gap: 2,
+    padding: '6px 14px',
+    background: token.colorBgLayout,
+    borderRadius: token.borderRadius,
+    minWidth: 120
+  },
+  label: { fontSize: 12, color: token.colorTextSecondary },
+  value: { fontSize: 20, fontWeight: 600, lineHeight: 1.3 },
+  unit: { fontSize: 12, fontWeight: 400, color: token.colorTextSecondary, marginLeft: 2 },
+  hint: { fontSize: 12, color: token.colorTextTertiary },
+  negative: css`
+    color: ${token.colorError} !important;
+  `
+}))
+
 /** 统计芯片：label + 大字号十进制金额 + 可选子说明 */
 function SummaryPill({ label, value, unit, negative, hint }: { label: string; value: string; unit?: string; negative?: boolean; hint?: string }) {
+  const { styles } = useSummaryPillStyles()
   const display = formatAmount(value)
   return (
-    <div className="summary-pill">
-      <span className="summary-pill__label">{label}</span>
-      <span className={`summary-pill__value num ${negative ? 'num-negative' : ''}`}>
+    <div className={styles.pill}>
+      <span className={styles.label}>{label}</span>
+      <span className={`num ${styles.value} ${negative ? styles.negative : ''}`}>
         {display}
-        {unit && <span className="summary-pill__unit">{unit}</span>}
+        {unit && <span className={styles.unit}>{unit}</span>}
       </span>
-      {hint && <span className="summary-pill__hint">{hint}</span>}
+      {hint && <span className={styles.hint}>{hint}</span>}
     </div>
   )
 }
@@ -92,6 +115,7 @@ function TrendPane() {
   const currency = useReportsStore((s) => s.currency)
   const status = useLedgerStore((s) => s.status)
   const accountOptions = useLedgerStore((s) => s.accountOptions)
+  const { mode } = useThemeContext()
 
   useEffect(() => {
     void useReportsStore.getState().reloadAll()
@@ -212,6 +236,7 @@ function TrendPane() {
                 xField="period"
                 yField="value"
                 colorField="series"
+                theme={mode}
                 height={220}
               />
               {netWorth && netWorth.length > 0 && (
@@ -284,6 +309,7 @@ function TrendPane() {
                 xField="period"
                 yField="value"
                 colorField="type"
+                theme={mode}
                 height={220}
               />
               {incomeSummary && (

@@ -40,10 +40,10 @@ export default function WorkspaceGate({ onOpened }: Props) {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: '#f5f5f5'
+      background: 'var(--bw-bg-layout)'
     }}>
       <Result
-        icon={<FolderOpenOutlined style={{ color: '#1677ff' }} />}
+        icon={<FolderOpenOutlined style={{ color: 'var(--bw-primary)' }} />}
         title="选择工作目录"
         subTitle="BeanWise 需要一个文件夹来存储账本文件和本地 Git 版本记录。已有 .beancount 文件将被接管，否则会新建。"
         extra={

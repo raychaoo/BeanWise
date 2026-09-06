@@ -3,8 +3,9 @@ import { Alert, Button, Empty, Space, Tag } from 'antd'
 import * as monaco from 'monaco-editor'
 import { useEffect, useRef } from 'react'
 import { useEditorSave } from '../../hooks/useEditorSave'
-import { BEANCOUNT_LANGUAGE_ID, registerBeancountLanguage } from '../../monaco/beancount-language'
+import { BEANCOUNT_LANGUAGE_ID, monacoThemeForMode, registerBeancountLanguage } from '../../monaco/beancount-language'
 import { useLedgerStore } from '../../stores/ledger'
+import { useThemeContext } from '../../theme/ThemeProvider'
 
 registerBeancountLanguage(monaco) // 模块级注册一次（幂等）
 
@@ -21,6 +22,7 @@ export default function EditorView() {
   const missing = useLedgerStore((s) => s.editorMissing)
   const content = useLedgerStore((s) => s.editorContent)
   const { dirty, saving, conflict, save, forceSave, reload, continueEditing } = useEditorSave()
+  const { mode } = useThemeContext()
 
   // 保存动作经 ref 引用：create effect 依赖保持空数组（避免 dirty 变化重建编辑器）
   const saveRef = useRef(save)
@@ -38,7 +40,7 @@ export default function EditorView() {
     if (!container) return
     const editor = monaco.editor.create(container, {
       language: BEANCOUNT_LANGUAGE_ID,
-      theme: 'beanwise',
+      theme: monacoThemeForMode(mode),
       automaticLayout: true,
       fontSize: 14,
       minimap: { enabled: false },
@@ -50,7 +52,14 @@ export default function EditorView() {
       useLedgerStore.getState().setEditorContent(editor.getValue())
     })
     return () => { sub.dispose(); editor.dispose(); editorRef.current = null }
+    // 仅在首次挂载时创建；后续模式变化由下方 effect 热切换主题
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // 主题模式切换 → 热切换 Monaco 主题（不重建编辑器实例）
+  useEffect(() => {
+    monaco.editor.setTheme(monacoThemeForMode(mode))
+  }, [mode])
 
   // 外部装载/重载：基线或内容变化后推送（值相同跳过，避免与 onDidChange 死循环）
   useEffect(() => {
