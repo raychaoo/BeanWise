@@ -5,9 +5,10 @@
  * 账户列用下拉选择（与录入页「记账行」一致）：选项 = 账户库 + 账本历史账户，并并入当前已填值，
  * 保证已存映射即使不在账户库中也能显示/保留。
  */
-import { Button, Input, message, Modal, Select, Space, Table, Typography } from 'antd'
+import { ProTable } from '@ant-design/pro-components'
+import type { ProColumns } from '@ant-design/pro-components'
+import { Button, Input, message, Modal, Select, Space, Typography } from 'antd'
 import { SearchOutlined } from '@ant-design/icons'
-import type { ColumnsType } from 'antd/es/table'
 import { useEffect, useMemo, useState } from 'react'
 import type { AccountMappingConfig } from '../../../../shared/ipc'
 import type { AccountOption } from '../../stores/ledger'
@@ -110,12 +111,12 @@ export default function ExcelAccountMappingModal({ open, accountMapping, account
     onClose()
   }
 
-  const expenseColumns: ColumnsType<MappingRow> = [
+  const expenseColumns: ProColumns<MappingRow>[] = [
     { title: '交易类型/键', dataIndex: 'label', width: 200 },
     {
       title: '支出账户',
       dataIndex: 'value',
-      render: (_: string, row: MappingRow) => (
+      render: (_dom: unknown, row: MappingRow) => (
         <Select
           showSearch
           optionFilterProp="label"
@@ -128,12 +129,12 @@ export default function ExcelAccountMappingModal({ open, accountMapping, account
       )
     }
   ]
-  const sourceColumns: ColumnsType<MappingRow> = [
+  const sourceColumns: ProColumns<MappingRow>[] = [
     { title: '支付方式/键', dataIndex: 'label', width: 200 },
     {
       title: '来源账户',
       dataIndex: 'value',
-      render: (_: string, row: MappingRow) => (
+      render: (_dom: unknown, row: MappingRow) => (
         <Select
           showSearch
           optionFilterProp="label"
@@ -146,12 +147,12 @@ export default function ExcelAccountMappingModal({ open, accountMapping, account
       )
     }
   ]
-  const incomeColumns: ColumnsType<MappingRow> = [
+  const incomeColumns: ProColumns<MappingRow>[] = [
     { title: '收入/退款键', dataIndex: 'label', width: 200 },
     {
       title: '收入账户',
       dataIndex: 'value',
-      render: (_: string, row: MappingRow) => (
+      render: (_dom: unknown, row: MappingRow) => (
         <Select
           showSearch
           optionFilterProp="label"
@@ -164,12 +165,12 @@ export default function ExcelAccountMappingModal({ open, accountMapping, account
       )
     }
   ]
-  const cashColumns: ColumnsType<MappingRow> = [
+  const cashColumns: ProColumns<MappingRow>[] = [
     { title: '支付方式/键', dataIndex: 'label', width: 200 },
     {
       title: '现金账户',
       dataIndex: 'value',
-      render: (_: string, row: MappingRow) => (
+      render: (_dom: unknown, row: MappingRow) => (
         <Select
           showSearch
           optionFilterProp="label"
@@ -215,10 +216,10 @@ export default function ExcelAccountMappingModal({ open, accountMapping, account
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
         />
-        <Table<MappingRow> size="small" rowKey="key" dataSource={filterByKeyword(expenseRows)} pagination={false} columns={expenseColumns} />
-        <Table<MappingRow> size="small" rowKey="key" dataSource={filterByKeyword(incomeRows)} pagination={false} columns={incomeColumns} />
-        <Table<MappingRow> size="small" rowKey="key" dataSource={filterByKeyword(sourceRows)} pagination={false} columns={sourceColumns} />
-        <Table<MappingRow> size="small" rowKey="key" dataSource={filterByKeyword(cashRows)} pagination={false} columns={cashColumns} />
+        <ProTable<MappingRow> size="small" rowKey="key" dataSource={filterByKeyword(expenseRows)} pagination={false} search={false} options={false} columns={expenseColumns} />
+        <ProTable<MappingRow> size="small" rowKey="key" dataSource={filterByKeyword(incomeRows)} pagination={false} search={false} options={false} columns={incomeColumns} />
+        <ProTable<MappingRow> size="small" rowKey="key" dataSource={filterByKeyword(sourceRows)} pagination={false} search={false} options={false} columns={sourceColumns} />
+        <ProTable<MappingRow> size="small" rowKey="key" dataSource={filterByKeyword(cashRows)} pagination={false} search={false} options={false} columns={cashColumns} />
         <Space size={12} wrap>
           <span>兜底支出：</span>
           <Select

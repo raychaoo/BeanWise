@@ -6,8 +6,9 @@
  * 图表 y 值 Number() 仅显示层，精确金额由报表 Tab 十进制字符串提供。
  * destroyInactiveTabPane=false 保切换状态；图表懒加载（LazyLine/LazyColumn）。
  */
+import { ProTable } from '@ant-design/pro-components'
 import { DownloadOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Empty, Segmented, Select, Spin, Table, Tabs, Tooltip, Typography, message } from 'antd'
+import { Alert, Button, Card, Empty, Segmented, Select, Spin, Tabs, Tooltip, Typography, message } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import type { AccountBalance, IncomeExpensePoint, NetWorthPoint } from '../../../../shared/ipc'
 import { addDecimalStrings, negateDecimal } from '../../../../shared/decimal'
@@ -214,18 +215,20 @@ function TrendPane() {
                 height={220}
               />
               {netWorth && netWorth.length > 0 && (
-                <Table<NetWorthPoint>
+                <ProTable<NetWorthPoint>
                   className="trend-data-table"
                   dataSource={[...netWorth].reverse()}
                   rowKey="period"
                   size="small"
                   pagination={false}
                   scroll={{ y: 220 }}
+                  search={false}
+                  options={false}
                   columns={[
                     { title: '期间', dataIndex: 'period', width: 90 },
-                    { title: '资产', dataIndex: 'assets', align: 'right', render: (v: string) => <span className="num">{formatAmount(v)}</span> },
-                    { title: '负债', dataIndex: 'liabilities', align: 'right', render: (v: string) => <span className={`num ${v.startsWith('-') ? 'num-negative' : ''}`}>{formatAmount(v)}</span> },
-                    { title: '净资产', dataIndex: 'netWorth', align: 'right', render: (v: string) => <span className={`num ${v.startsWith('-') ? 'num-negative' : ''}`}>{formatAmount(v)}</span> }
+                    { title: '资产', dataIndex: 'assets', align: 'right', render: (_dom, row: NetWorthPoint) => <span className="num">{formatAmount(row.assets)}</span> },
+                    { title: '负债', dataIndex: 'liabilities', align: 'right', render: (_dom, row: NetWorthPoint) => <span className={`num ${row.liabilities.startsWith('-') ? 'num-negative' : ''}`}>{formatAmount(row.liabilities)}</span> },
+                    { title: '净资产', dataIndex: 'netWorth', align: 'right', render: (_dom, row: NetWorthPoint) => <span className={`num ${row.netWorth.startsWith('-') ? 'num-negative' : ''}`}>{formatAmount(row.netWorth)}</span> }
                   ]}
                 />
               )}
@@ -236,17 +239,19 @@ function TrendPane() {
               * 卡片标题「账户余额」不动（e2e 依赖）；tbody 仍含原始金额文本（e2e 依赖）
               */}
             <Card title="账户余额">
-              <Table<{ name: string; balances: Array<{ currency: string; number: string }>; depth: number }>
+              <ProTable<{ name: string; balances: Array<{ currency: string; number: string }>; depth: number }>
                 dataSource={flatBalances}
                 rowKey="name"
                 size="small"
                 pagination={false}
                 scroll={{ y: 320 }}
+                search={false}
+                options={false}
                 columns={[
                   {
                     title: '账户',
                     dataIndex: 'name',
-                    render: (_name: string, row: { name: string; depth: number }) => {
+                    render: (_dom: unknown, row: { name: string; depth: number }) => {
                       const label = accountNameMap.get(row.name) ?? row.name
                       const content = <span className="account-name" style={{ paddingLeft: row.depth * 16 }}>{label}</span>
                       return label === row.name ? content : <Tooltip title={row.name}>{content}</Tooltip>
@@ -256,7 +261,7 @@ function TrendPane() {
                     title: '余额',
                     dataIndex: 'balances',
                     align: 'right',
-                    render: (b: Array<{ currency: string; number: string }>) => <BalanceCell balances={b} />
+                    render: (_dom: unknown, row: { balances: Array<{ currency: string; number: string }> }) => <BalanceCell balances={row.balances} />
                   }
                 ]}
               />
@@ -282,19 +287,21 @@ function TrendPane() {
                 height={220}
               />
               {incomeSummary && (
-                <Table
+                <ProTable
                   className="trend-data-table"
                   dataSource={[...incomeSummary.rows].reverse()}
                   rowKey="period"
                   size="small"
                   pagination={false}
                   scroll={{ y: 220 }}
+                  search={false}
+                  options={false}
                   columns={[
                     { title: '期间', dataIndex: 'period', width: 90 },
-                    { title: '收入', dataIndex: 'income', align: 'right', render: (v: string) => <span className="num">{formatAmount(v)}</span> },
-                    { title: '支出', dataIndex: 'expense', align: 'right', render: (v: string) => <span className="num">{formatAmount(v)}</span> },
-                    { title: '净结余', dataIndex: 'net', align: 'right', render: (v: string) => <span className={`num ${v.startsWith('-') ? 'num-negative' : ''}`}>{formatAmount(v)}</span> },
-                    { title: '累计', dataIndex: 'cumulative', align: 'right', render: (v: string) => <span className={`num ${v.startsWith('-') ? 'num-negative' : ''}`}>{formatAmount(v)}</span> }
+                    { title: '收入', dataIndex: 'income', align: 'right', render: (_dom, row) => <span className="num">{formatAmount(row.income)}</span> },
+                    { title: '支出', dataIndex: 'expense', align: 'right', render: (_dom, row) => <span className="num">{formatAmount(row.expense)}</span> },
+                    { title: '净结余', dataIndex: 'net', align: 'right', render: (_dom, row) => <span className={`num ${row.net.startsWith('-') ? 'num-negative' : ''}`}>{formatAmount(row.net)}</span> },
+                    { title: '累计', dataIndex: 'cumulative', align: 'right', render: (_dom, row) => <span className={`num ${row.cumulative.startsWith('-') ? 'num-negative' : ''}`}>{formatAmount(row.cumulative)}</span> }
                   ]}
                 />
               )}

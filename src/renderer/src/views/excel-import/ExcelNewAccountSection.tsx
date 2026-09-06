@@ -4,8 +4,9 @@
  * fallback=保持兜底（默认，允许导入+强提示）；existing=归位已有账户；new=新建账户路径；
  * exclude=排除这些行（导入时过滤）。严格模式下存在 fallback 未处理项 → 阻塞导入。
  */
-import { Input, Select, Table, Tag, Typography } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
+import { ProTable } from '@ant-design/pro-components'
+import type { ProColumns } from '@ant-design/pro-components'
+import { Input, Select, Tag, Typography } from 'antd'
 import type { ExcelNewAccountInfo, NewAccountResolution } from '../../../../shared/ipc'
 import type { AccountOption } from '../../stores/ledger'
 
@@ -36,16 +37,16 @@ export default function ExcelNewAccountSection({ items, accountOptions, resoluti
   if (items.length === 0) return null
   const fallbackCount = items.filter((n) => (resolutions[n.id] ?? 'fallback') === 'fallback').length
 
-  const columns: ColumnsType<ExcelNewAccountInfo> = [
+  const columns: ProColumns<ExcelNewAccountInfo>[] = [
     { title: '支付方式/键', dataIndex: 'key', width: 180 },
-    { title: '交易类型（区分）', dataIndex: 'type', width: 160, render: (v: string) => v || '—' },
+    { title: '交易类型（区分）', dataIndex: 'type', width: 160, render: (_dom: unknown, row: ExcelNewAccountInfo) => row.type || '—' },
     { title: '笔数', dataIndex: 'count', width: 64, align: 'right' },
     { title: '金额合计', dataIndex: 'amount', width: 100, align: 'right' },
-    { title: '建议账户', dataIndex: 'suggestedAccount', ellipsis: true, render: (v: string) => v || '—' },
+    { title: '建议账户', dataIndex: 'suggestedAccount', ellipsis: true, render: (_dom: unknown, row: ExcelNewAccountInfo) => row.suggestedAccount || '—' },
     {
       title: '处理方式',
       width: 160,
-      render: (_: unknown, item: ExcelNewAccountInfo) => {
+      render: (_dom: unknown, item: ExcelNewAccountInfo) => {
         const res = resolutions[item.id] ?? 'fallback'
         return (
           <Select
@@ -61,7 +62,7 @@ export default function ExcelNewAccountSection({ items, accountOptions, resoluti
     {
       title: '目标账户',
       width: 260,
-      render: (_: unknown, item: ExcelNewAccountInfo) => {
+      render: (_dom: unknown, item: ExcelNewAccountInfo) => {
         const res = resolutions[item.id] ?? 'fallback'
         if (res === 'existing') {
           return (
@@ -94,7 +95,7 @@ export default function ExcelNewAccountSection({ items, accountOptions, resoluti
     {
       title: '状态',
       width: 110,
-      render: (_: unknown, item: ExcelNewAccountInfo) => {
+      render: (_dom: unknown, item: ExcelNewAccountInfo) => {
         const res = resolutions[item.id] ?? 'fallback'
         return <Tag color={RESOLUTION_COLOR[res]}>{RESOLUTION_LABEL[res]}</Tag>
       }
@@ -109,7 +110,7 @@ export default function ExcelNewAccountSection({ items, accountOptions, resoluti
           共 {fallbackCount} 个键未处理{strict ? '，严格模式下需全部处理才能导入' : '，导入时将记入兜底资产账户（可二次确认）'}。
         </Typography.Text>
       ) : null}
-      <Table<ExcelNewAccountInfo> size="small" rowKey="id" dataSource={items} pagination={false} columns={columns} />
+      <ProTable<ExcelNewAccountInfo> size="small" rowKey="id" dataSource={items} pagination={false} search={false} options={false} columns={columns} />
     </div>
   )
 }

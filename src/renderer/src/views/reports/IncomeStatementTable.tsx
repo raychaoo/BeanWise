@@ -6,7 +6,9 @@
  * startYear=endYear=所选年）对应期点；累计明细取 getBalancesReport（endYear=所选年——
  * 余额通道仅支持年粒度期末快照，明细区如实标注「截至所选年年末累计」）。零 IPC 变更。
  */
-import { Alert, Card, DatePicker, Empty, Spin, Table, Tooltip, Typography } from 'antd'
+import { ProTable } from '@ant-design/pro-components'
+import type { ProColumns } from '@ant-design/pro-components'
+import { Alert, Card, DatePicker, Empty, Spin, Tooltip, Typography } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useEffect, useState, type ReactNode } from 'react'
 import type { AccountBalance, IncomeExpensePoint } from '../../../../shared/ipc'
@@ -101,27 +103,29 @@ export default function IncomeStatementTable() {
       <Spin spinning={loading}>
         {hasAny && sheet !== null ? (
           <Card size="small">
-            <Table<StatementRow>
+            <ProTable<StatementRow>
               size="small"
               pagination={false}
               dataSource={sheet.rows}
               rowKey="key"
               rowClassName={(r) => `report-row report-row--${r.kind}`}
+              search={false}
+              options={false}
               columns={[
                 {
                   title: '项目',
                   dataIndex: 'label',
                   key: 'label',
-                  onCell: (r) => ({ colSpan: r.kind === 'section' ? 2 : 1 }),
-                  render: (label: string, r: StatementRow) => (r.kind === 'item' ? renderLabel(label) : label)
+                  onCell: (r: StatementRow) => ({ colSpan: r.kind === 'section' ? 2 : 1 }),
+                  render: (_dom: unknown, r: StatementRow) => (r.kind === 'item' ? renderLabel(r.label) : r.label)
                 },
                 {
                   title: `金额（${currency}）`,
                   dataIndex: 'amount',
                   key: 'amount',
                   align: 'right',
-                  onCell: (r) => ({ colSpan: r.kind === 'section' ? 0 : 1 }),
-                  render: amountCell
+                  onCell: (r: StatementRow) => ({ colSpan: r.kind === 'section' ? 0 : 1 }),
+                  render: (_dom: unknown, r: StatementRow) => amountCell(r.amount)
                 }
               ]}
             />

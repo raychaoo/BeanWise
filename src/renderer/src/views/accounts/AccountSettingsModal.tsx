@@ -2,8 +2,10 @@
  * @deprecated 批次 D 起账户管理迁至独立页面 /accounts（views/AccountsPage.tsx，逻辑原样搬移），
  * 录入页「账户设置」按钮已改为路由跳转；本文件暂无引用，留待下个清理批次删除。
  */
+import { ProTable } from '@ant-design/pro-components'
+import type { ProColumns } from '@ant-design/pro-components'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
-import { Button, Input, message, Modal, Radio, Space, Table, Tooltip, Typography } from 'antd'
+import { Button, Input, message, Modal, Radio, Space, Tooltip, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import type { AccountEntry } from '../../../../shared/ipc'
 import { useLedgerStore } from '../../stores/ledger'
@@ -129,26 +131,28 @@ export default function AccountSettingsModal({ open, onClose }: Props) {
       width={760}
     >
       <Space direction="vertical" style={{ width: '100%' }} size={12}>
-        <Table<AccountEntry>
+        <ProTable<AccountEntry>
           size="small"
           dataSource={configured}
           rowKey="id"
           pagination={false}
           locale={{ emptyText: '暂无配置账户' }}
+          search={false}
+          options={false}
           columns={[
-            { title: 'ID', dataIndex: 'id', width: 48, render: (v: number) => v > 0 ? v : '新增' },
+            { title: 'ID', dataIndex: 'id', width: 48, render: (_dom: unknown, record: AccountEntry) => record.id > 0 ? record.id : '新增' },
             {
               title: '名称',
               dataIndex: 'name',
               width: 160,
-              render: (_: string, record: AccountEntry) =>
+              render: (_dom: unknown, record: AccountEntry) =>
                 <Input size="small" value={record.name} onChange={(e) => handleNameChange(record.id, e.target.value)} maxLength={100} />
             },
             {
               title: '用途',
               dataIndex: 'description',
               width: 200,
-              render: (_: string, record: AccountEntry) =>
+              render: (_dom: unknown, record: AccountEntry) =>
                 <Input size="small" value={record.description ?? ''} onChange={(e) => handleDescriptionChange(record.id, e.target.value)} maxLength={200} />
             },
             { title: '路径', dataIndex: 'value', ellipsis: true },

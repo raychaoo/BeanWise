@@ -5,8 +5,9 @@
  * 精确过滤 + order desc 分页查询；本地查询状态（不经共享 store entries 槽，防跨页串扰）。
  * 金额 formatAmount 千分位 + .num 右对齐，负数 .num-negative（红色语义唯一化）。
  */
-import { Alert, Button, DatePicker, Empty, Space, Spin, Table, Tabs, Tag, Tooltip, TreeSelect } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
+import { ProTable } from '@ant-design/pro-components'
+import type { ProColumns } from '@ant-design/pro-components'
+import { Alert, Button, DatePicker, Empty, Space, Spin, Tabs, Tag, Tooltip, TreeSelect } from 'antd'
 import type { Dayjs } from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { LedgerEntryRow, ReportTrialBalanceParams, TrialBalanceCell, TrialBalanceRow } from '../../../../shared/ipc'
@@ -112,22 +113,22 @@ function DetailLedgerTab() {
 
   const accountLabel = account ? (accountNameMap.get(account) ?? account) : null
 
-  const columns: ColumnsType<LedgerEntryRow> = [
+  const columns: ProColumns<LedgerEntryRow>[] = [
     { title: '日期', dataIndex: 'date', width: 110 },
-    { title: '交易对象', dataIndex: 'payee', render: (v: string | null) => v ?? '—', ellipsis: true },
-    { title: '说明', dataIndex: 'narration', render: (v: string | null) => v ?? '—', ellipsis: true },
+    { title: '交易对象', dataIndex: 'payee', render: (_dom: unknown, row: LedgerEntryRow) => row.payee ?? '—', ellipsis: true },
+    { title: '说明', dataIndex: 'narration', render: (_dom: unknown, row: LedgerEntryRow) => row.narration ?? '—', ellipsis: true },
     {
       title: '账户',
       dataIndex: 'account',
       // 服务端精确过滤后每行均属所选账户：中文映射 + Tooltip 原名
-      render: () =>
-        accountLabel === null ? (
-          '—'
-        ) : accountLabel === account ? (
-          account
-        ) : (
-          <Tooltip title={account}>{accountLabel}</Tooltip>
-        )
+      render: (_dom: unknown, row: LedgerEntryRow) => {
+        const v = row.account
+        return accountLabel === null
+          ? '—'
+          : accountLabel === v
+            ? v
+            : <Tooltip title={v}>{accountLabel}</Tooltip>
+      }
     },
     {
       title: '金额',
@@ -135,10 +136,10 @@ function DetailLedgerTab() {
       width: 140,
       align: 'right',
       // 交易金额（超 UI 层 #1）：资产流视角（收入 +、支出 -），千分位 + 负数红；转账/Open 行无金额
-      render: (v: string | null) =>
-        v === null ? '—' : <span className={`num${v.startsWith('-') ? ' num-negative' : ''}`}>{formatAmount(v)}</span>
+      render: (_dom: unknown, row: LedgerEntryRow) =>
+        row.amount === null ? '—' : <span className={`num${row.amount.startsWith('-') ? ' num-negative' : ''}`}>{formatAmount(row.amount)}</span>
     },
-    { title: '币种', dataIndex: 'currency', width: 80, render: (v: string | null) => v ?? '—' }
+    { title: '币种', dataIndex: 'currency', width: 80, render: (_dom: unknown, row: LedgerEntryRow) => row.currency ?? '—' }
   ]
 
   return (
@@ -160,7 +161,7 @@ function DetailLedgerTab() {
         </Button>
       </div>
       {error && <Alert type="error" showIcon style={{ marginBottom: 12 }} message={error} />}
-      <Table<LedgerEntryRow>
+      <ProTable<LedgerEntryRow>
         rowKey="id"
         size="small"
         loading={loading}
@@ -177,6 +178,8 @@ function DetailLedgerTab() {
           showTotal: (t) => `共 ${t} 条`,
           onChange: handlePageChange
         }}
+        search={false}
+        options={false}
       />
     </>
   )
@@ -217,18 +220,18 @@ export default function ReconcilePage() {
   const effectiveFilter = currencyFilter !== null && currencies.includes(currencyFilter) ? currencyFilter : null
   const visibleRows = effectiveFilter === null ? rows : rows.filter((r) => r.opening.currency === effectiveFilter)
 
-  const columns: ColumnsType<TrialBalanceRow> = [
+  const columns: ProColumns<TrialBalanceRow>[] = [
     {
       title: '账户',
       dataIndex: 'name',
-      render: (name: string) => {
-        const label = accountNameMap.get(name) ?? name
-        return label === name ? name : <Tooltip title={name}>{label}</Tooltip>
+      render: (_dom: unknown, row: TrialBalanceRow) => {
+        const label = accountNameMap.get(row.name) ?? row.name
+        return label === row.name ? row.name : <Tooltip title={row.name}>{label}</Tooltip>
       }
     },
-    { title: '期初', dataIndex: 'opening', align: 'right', render: (c: TrialBalanceCell) => <TrialBalanceCellView cell={c} /> },
-    { title: '发生', dataIndex: 'period', align: 'right', render: (c: TrialBalanceCell) => <TrialBalanceCellView cell={c} /> },
-    { title: '期末', dataIndex: 'closing', align: 'right', render: (c: TrialBalanceCell) => <TrialBalanceCellView cell={c} /> }
+    { title: '期初', dataIndex: 'opening', align: 'right', render: (_dom: unknown, row: TrialBalanceRow) => <TrialBalanceCellView cell={row.opening} /> },
+    { title: '发生', dataIndex: 'period', align: 'right', render: (_dom: unknown, row: TrialBalanceRow) => <TrialBalanceCellView cell={row.period} /> },
+    { title: '期末', dataIndex: 'closing', align: 'right', render: (_dom: unknown, row: TrialBalanceRow) => <TrialBalanceCellView cell={row.closing} /> }
   ]
 
   const balanceTable = (
@@ -258,13 +261,15 @@ export default function ReconcilePage() {
       </div>
       {error && <Alert type="error" showIcon style={{ marginBottom: 12 }} message={error} />}
       <Spin spinning={loading}>
-        <Table<TrialBalanceRow>
+        <ProTable<TrialBalanceRow>
           size="small"
           rowKey={(r) => `${r.name}:${r.opening.currency}`}
           dataSource={visibleRows}
           columns={columns}
           pagination={false}
           locale={{ emptyText: <Empty description="暂无余额数据，请先录入账目" /> }}
+          search={false}
+          options={false}
         />
       </Spin>
     </>

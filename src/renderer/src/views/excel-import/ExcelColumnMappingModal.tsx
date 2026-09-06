@@ -3,8 +3,9 @@
  * Excel 列 → 标准字段（自动建议 + 手动微调）+ 方向判定规则 + 模板元信息。
  * 保存回调给 ExcelImportPanel，由面板统一经 excel:save-template 持久化。
  */
-import { Button, Input, InputNumber, Modal, Radio, Select, Space, Switch, Table, Typography } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
+import { ProTable } from '@ant-design/pro-components'
+import type { ProColumns } from '@ant-design/pro-components'
+import { Button, Input, InputNumber, Modal, Radio, Select, Space, Switch, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import type {
   ExcelDirectionMode,
@@ -145,20 +146,20 @@ export default function ExcelColumnMappingModal({
     onSave(template)
   }
 
-  const columns2: ColumnsType<FieldRow> = [
+  const columns2: ProColumns<FieldRow>[] = [
     { title: '标准字段', dataIndex: 'label', width: 160 },
     {
       title: 'Excel 列',
       dataIndex: 'key',
-      render: (key: keyof ExcelFieldMapping, row: FieldRow) => (
+      render: (_dom: unknown, row: FieldRow) => (
         <Select
           style={{ width: '100%' }}
           allowClear
           showSearch
           options={columnOptions}
-          value={mapping[key]}
+          value={mapping[row.key]}
           placeholder={row.required ? '必选' : '可选'}
-          onChange={(v?: string) => setMapping((prev) => ({ ...prev, [key]: v }))}
+          onChange={(v?: string) => setMapping((prev) => ({ ...prev, [row.key]: v }))}
         />
       )
     }
@@ -202,7 +203,7 @@ export default function ExcelColumnMappingModal({
         <Typography.Text type="secondary">
           列映射自动建议已按常见列名预填，可逐列调整；方向列/支付方式列可选但建议指定（关系到新交易账户检测）。
         </Typography.Text>
-        <Table<FieldRow> size="small" rowKey="key" dataSource={FIELDS} pagination={false} columns={columns2} />
+        <ProTable<FieldRow> size="small" rowKey="key" dataSource={FIELDS} pagination={false} search={false} options={false} columns={columns2} />
 
         <Space size={12} wrap>
           <span>方向判定：</span>

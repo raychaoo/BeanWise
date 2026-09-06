@@ -7,8 +7,10 @@
  * 数据零 IPC 变更：getBalancesReport（期末快照，仅 endYear 年粒度）+ getIncomeExpenseReport
  * （year 粒度累计净利润）。期间选择 TimeRangeBar（granularity），截所选范围终点年末。
  */
+import { ProTable } from '@ant-design/pro-components'
+import type { ProColumns } from '@ant-design/pro-components'
 import { CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons'
-import { Alert, Card, Empty, Spin, Table, Tag, Tooltip, Typography } from 'antd'
+import { Alert, Card, Empty, Spin, Tag, Tooltip, Typography } from 'antd'
 import { useEffect, useState, type ReactNode } from 'react'
 import { isZeroDecimal } from '../../../../shared/decimal'
 import type { AccountBalance } from '../../../../shared/ipc'
@@ -25,7 +27,7 @@ function amountCell(value: string): ReactNode {
   return <span className={`num${value.startsWith('-') ? ' num-negative' : ''}`}>{formatAmount(value)}</span>
 }
 
-const COLUMNS = [
+const COLUMNS: ProColumns<StatementRow>[] = [
   {
     title: '项目',
     dataIndex: 'label',
@@ -36,7 +38,7 @@ const COLUMNS = [
     dataIndex: 'amount',
     key: 'amount',
     align: 'right' as const,
-    render: amountCell
+    render: (_dom: unknown, row: StatementRow) => amountCell(row.amount)
   }
 ]
 
@@ -93,15 +95,17 @@ export default function BalanceSheetTable() {
   }
 
   const renderTable = (rows: StatementRow[], rowKeyPrefix: string) => (
-    <Table<StatementRow>
+    <ProTable<StatementRow>
       size="small"
       pagination={false}
       dataSource={rows}
       rowKey="key"
       rowClassName={(r) => `report-row report-row--${r.kind}`}
+      search={false}
+      options={false}
       columns={COLUMNS.map((c, idx) =>
         idx === 0
-          ? { ...c, render: (label: string, r: StatementRow) => (r.kind === 'item' ? renderLabel(label) : label) }
+          ? { ...c, render: (_dom: unknown, r: StatementRow) => (r.kind === 'item' ? renderLabel(r.label) : r.label) }
           : c
       )}
       key={rowKeyPrefix}

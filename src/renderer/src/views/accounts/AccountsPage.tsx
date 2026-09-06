@@ -9,6 +9,8 @@
  * → buildOpeningBalanceEntry 组合 → 确认预览 → 既有 add-entry 通道写入（Equity:Opening-Balances
  * 配对，账本文件唯一事实源）→ refresh。
  */
+import { ProTable } from '@ant-design/pro-components'
+import type { ProColumns } from '@ant-design/pro-components'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import {
   AutoComplete,
@@ -23,7 +25,6 @@ import {
   Radio,
   Space,
   Switch,
-  Table,
   Tabs,
   Tooltip,
   Typography
@@ -241,34 +242,36 @@ export default function AccountsPage() {
             key: t.key,
             label: t.label,
             children: (
-              <Table<AccountEntry>
+              <ProTable<AccountEntry>
                 size="small"
                 dataSource={filtered}
                 rowKey="id"
                 pagination={false}
                 scroll={{ x: 'max-content' }}
                 locale={{ emptyText: '暂无配置账户' }}
+                search={false}
+                options={false}
                 columns={[
-                  { title: 'ID', dataIndex: 'id', width: 48, render: (v: number) => v > 0 ? v : '新增' },
+                  { title: 'ID', dataIndex: 'id', width: 48, render: (_dom: unknown, record: AccountEntry) => record.id > 0 ? record.id : '新增' },
                   {
                     title: '名称',
                     dataIndex: 'name',
                     // width: 180,
-                    render: (_: string, record: AccountEntry) =>
+                    render: (_dom: unknown, record: AccountEntry) =>
                       <Input size="small" value={record.name} onChange={(e) => handleNameChange(record.id, e.target.value)} maxLength={100} />
                   },
                   {
                     title: '用途',
                     dataIndex: 'description',
                     // width: 260,
-                    render: (_: string, record: AccountEntry) =>
+                    render: (_dom: unknown, record: AccountEntry) =>
                       <Input size="small" value={record.description ?? ''} onChange={(e) => handleDescriptionChange(record.id, e.target.value)} maxLength={200} />
                   },
                   {
                     title: '状态',
                     dataIndex: 'enabled',
                     width: 72,
-                    render: (_: boolean | undefined, record: AccountEntry) => (
+                    render: (_dom: unknown, record: AccountEntry) => (
                       <Tooltip title={record.enabled !== false ? '已启用（录入下拉可选）' : '已停用（录入下拉不可选，不影响历史明细）'}>
                         <Switch size="small" checked={record.enabled !== false} onChange={(checked) => handleEnabledChange(record.id, checked)} aria-label={`启停用 ${record.name}`} />
                       </Tooltip>
@@ -277,14 +280,14 @@ export default function AccountsPage() {
                   {
                     title: '路径',
                     dataIndex: 'value',
-                    render: (v: string) => (
-                      <Typography.Text className="account-path" code>{v}</Typography.Text>
+                    render: (_dom: unknown, record: AccountEntry) => (
+                      <Typography.Text className="account-path" code>{record.value}</Typography.Text>
                     )
                   },
                   {
                     title: '操作',
                     width: 130,
-                    render: (_: unknown, record: AccountEntry) => {
+                    render: (_dom: unknown, record: AccountEntry) => {
                       const used = usedValues.has(record.value)
                       const type = record.value.split(':')[0]
                       const obEligible = type === 'Assets' || type === 'Liabilities'

@@ -5,8 +5,9 @@
  * 数据经 report:cash-flow 主进程聚合（Assets 资金池口径：池内互转不计，按运营货币计，
  * 金额全链路 decimal 字符串）。
  */
-import { Alert, Empty, Select, Spin, Table, Typography } from 'antd'
-import type { ColumnsType, TablePaginationConfig } from 'antd/es/table'
+import { ProTable } from '@ant-design/pro-components'
+import type { ProColumns } from '@ant-design/pro-components'
+import { Alert, Empty, Select, Spin, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import type { CashFlowPoint, ReportGranularity } from '../../../../shared/ipc'
 import { useReportsStore } from '../../stores/reports'
@@ -35,8 +36,6 @@ export default function CashFlowTable() {
   const [series, setSeries] = useState<CashFlowPoint[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(PAGE_SIZE)
 
   useEffect(() => {
     let cancelled = false
@@ -60,11 +59,6 @@ export default function CashFlowTable() {
     }
   }, [granularity, startYear, endYear])
 
-  /** 粒度/起止年变化时数据已重置，回第一页避免当前页越界 */
-  useEffect(() => {
-    setPage(1)
-  }, [granularity, startYear, endYear])
-
   const yearOptions = (() => {
     if (!availableYears || availableYears.max <= 0) return []
     const options: Array<{ label: string; value: number }> = []
@@ -73,25 +67,12 @@ export default function CashFlowTable() {
   })()
   const yearSelectDisabled = yearOptions.length === 0
 
-  const columns: ColumnsType<CashFlowPoint> = [
+  const columns: ProColumns<CashFlowPoint>[] = [
     { title: '期间', dataIndex: 'period', width: 140 },
-    { title: '流入', dataIndex: 'inflow', align: 'right', render: (v: string) => <NumCell value={v} /> },
-    { title: '流出', dataIndex: 'outflow', align: 'right', render: (v: string) => <NumCell value={v} /> },
-    { title: '净额', dataIndex: 'net', align: 'right', render: (v: string) => <NumCell value={v} /> }
+    { title: '流入', dataIndex: 'inflow', align: 'right', render: (_dom: unknown, row: CashFlowPoint) => <NumCell value={row.inflow} /> },
+    { title: '流出', dataIndex: 'outflow', align: 'right', render: (_dom: unknown, row: CashFlowPoint) => <NumCell value={row.outflow} /> },
+    { title: '净额', dataIndex: 'net', align: 'right', render: (_dom: unknown, row: CashFlowPoint) => <NumCell value={row.net} /> }
   ]
-
-  const pagination: TablePaginationConfig = {
-    current: page,
-    pageSize,
-    total: series.length,
-    showSizeChanger: true,
-    pageSizeOptions: ['12', '24', '50'],
-    showTotal: (total) => `共 ${total} 期`,
-    onChange: (p, ps) => {
-      setPage(p)
-      setPageSize(ps)
-    }
-  }
 
   return (
     <div>
@@ -134,13 +115,20 @@ export default function CashFlowTable() {
       />
       {error && <Alert type="error" showIcon style={{ marginBottom: 12 }} message={error} />}
       <Spin spinning={loading}>
-        <Table<CashFlowPoint>
+        <ProTable<CashFlowPoint>
           size="small"
           rowKey="period"
           dataSource={series}
           columns={columns}
-          pagination={pagination}
+          pagination={{
+            defaultPageSize: PAGE_SIZE,
+            pageSizeOptions: ['12', '24', '50'],
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 期`
+          }}
           locale={{ emptyText: <Empty description="暂无现金流量数据" /> }}
+          search={false}
+          options={false}
         />
       </Spin>
     </div>

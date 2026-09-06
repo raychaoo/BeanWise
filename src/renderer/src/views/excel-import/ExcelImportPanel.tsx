@@ -3,9 +3,10 @@
  * 流程：选模板/新建 → 选文件 → 解析（新模板先列映射）→ 预览（新交易账户处理 + 勾选）→ 批量导入。
  * 策略 C：默认允许导入 + 未处理新账户强提示，模板严格模式阻塞导入。
  */
+import { ProTable } from '@ant-design/pro-components'
+import type { ProColumns } from '@ant-design/pro-components'
 import { DeleteOutlined, ImportOutlined, SaveOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Input, message, Modal, Select, Space, Table, Tag, Typography } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
+import { Alert, Button, Card, Input, message, Modal, Select, Space, Tag, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import type {
   ExcelImportTemplate,
@@ -468,7 +469,7 @@ export default function ExcelImportPanel({ onImported }: Props) {
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
             />
-            <Table<ExcelPreviewRow>
+            <ProTable<ExcelPreviewRow>
               size="small"
               rowKey="rowId"
               dataSource={visibleRows}
@@ -483,6 +484,8 @@ export default function ExcelImportPanel({ onImported }: Props) {
                 showSizeChanger: true,
                 showTotal: (total) => `共 ${total} 行`
               }}
+              search={false}
+              options={false}
               columns={columns}
             />
             <Typography.Text type="secondary">合计选中金额：{totalAmount.toFixed(2)} 元</Typography.Text>
@@ -512,7 +515,7 @@ export default function ExcelImportPanel({ onImported }: Props) {
   )
 }
 
-const columns: ColumnsType<ExcelPreviewRow> = [
+const columns: ProColumns<ExcelPreviewRow>[] = [
   { title: '日期', dataIndex: 'date', width: 104 },
   { title: '时间', dataIndex: 'time', width: 76 },
   { title: '交易类型', dataIndex: 'transactionType', width: 110, ellipsis: true },
@@ -524,9 +527,9 @@ const columns: ColumnsType<ExcelPreviewRow> = [
     title: '类别',
     dataIndex: 'kind',
     width: 96,
-    render: (v: string) => (
-      <Tag color={v === 'expense' ? 'red' : v === 'income' ? 'green' : 'blue'}>
-        {v === 'expense' ? '支出' : v === 'income' ? '收入/退款' : '提现/充值'}
+    render: (_dom: unknown, row: ExcelPreviewRow) => (
+      <Tag color={row.kind === 'expense' ? 'red' : row.kind === 'income' ? 'green' : 'blue'}>
+        {row.kind === 'expense' ? '支出' : row.kind === 'income' ? '收入/退款' : '提现/充值'}
       </Tag>
     )
   },
@@ -534,24 +537,24 @@ const columns: ColumnsType<ExcelPreviewRow> = [
     title: '主账户',
     dataIndex: 'expenseAccount',
     width: 180,
-    render: (v: string) => <Typography.Text style={{ fontSize: 12 }}>{v}</Typography.Text>
+    render: (_dom: unknown, row: ExcelPreviewRow) => <Typography.Text style={{ fontSize: 12 }}>{row.expenseAccount}</Typography.Text>
   },
   {
     title: '来源账户',
     dataIndex: 'sourceAccount',
     width: 180,
-    render: (v: string) => <Typography.Text style={{ fontSize: 12 }}>{v}</Typography.Text>
+    render: (_dom: unknown, row: ExcelPreviewRow) => <Typography.Text style={{ fontSize: 12 }}>{row.sourceAccount}</Typography.Text>
   },
   {
     title: '去重状态',
     dataIndex: 'dupState',
     width: 110,
-    render: (v: ExcelPreviewRow['dupState']) =>
-      v === 'exact' ? (
+    render: (_dom: unknown, row: ExcelPreviewRow) =>
+      row.dupState === 'exact' ? (
         <Tag color="default">已导入</Tag>
-      ) : v === 'suspect' ? (
+      ) : row.dupState === 'suspect' ? (
         <Tag color="orange">疑似重复</Tag>
-      ) : v === 'confirm' ? (
+      ) : row.dupState === 'confirm' ? (
         <Tag color="volcano">需确认</Tag>
       ) : (
         <Tag color="success">待导入</Tag>

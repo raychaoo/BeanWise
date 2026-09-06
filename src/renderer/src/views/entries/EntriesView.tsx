@@ -6,9 +6,10 @@
  * ORDER BY date,id 后 LIMIT/OFFSET 分页返回，total 同条件计数；排序方向（正/倒序）由日期列头
  * 切换，翻页/筛选/搜索/排序变化均重新查询，天然作用于总体数据。
  */
+import { ProTable } from '@ant-design/pro-components'
+import type { ProColumns } from '@ant-design/pro-components'
 import { QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, DatePicker, Input, Segmented, Table, Tooltip } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
+import { Alert, Button, Card, DatePicker, Input, Segmented, Tooltip } from 'antd'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
@@ -55,13 +56,14 @@ export default function EntriesView() {
   const loadEntries = useLedgerStore((s) => s.loadEntries)
   const setError = useLedgerStore((s) => s.setError)
   const accountOptions = useLedgerStore((s) => s.accountOptions)
-  const [page, setPage] = useState(1)
   const [quick, setQuick] = useState<QuickKey>('all')
   const [custom, setCustom] = useState<[Dayjs, Dayjs] | null>(null)
   // 已应用的搜索词（Input.Search 回车/按钮触发，避免逐键查询）
   const [appliedKeyword, setAppliedKeyword] = useState('')
   // 日期列服务端排序方向（受控）：切换 = 改查询参数重查后端，而非本地排当前页
   const [dateOrder, setDateOrder] = useState<'ascend' | 'descend'>('descend')
+  // ProTable 管理的页码（筛选/排序变化时重置为 1）
+  const [page, setPage] = useState(1)
 
   /** 当前筛选状态 → 服务端过滤参数（quick 与自定义范围互斥：custom 优先） */
   const filtersOf = (q: QuickKey, c: [Dayjs, Dayjs] | null, keyword: string): ListEntriesFilters => {
@@ -119,7 +121,7 @@ export default function EntriesView() {
 
   const accountNameMap = new Map(accountOptions.map((o) => [o.value, o.label]))
 
-  const columns: ColumnsType<LedgerEntryRow> = [
+  const columns: ProColumns<LedgerEntryRow>[] = [
     {
       title: '日期',
       dataIndex: 'date',
@@ -129,14 +131,15 @@ export default function EntriesView() {
       sorter: true,
       defaultSortOrder: 'descend'
     },
-    { title: '标志', dataIndex: 'flag', width: 60, render: (v: string | null) => v ?? '—' },
+    { title: '标志', dataIndex: 'flag', width: 60, render: (_dom: unknown, row: LedgerEntryRow) => row.flag ?? '—' },
     { title: '类型', dataIndex: 'type', width: 90 },
-    { title: '交易对象', dataIndex: 'payee', render: (v: string | null) => v ?? '—' },
-    { title: '说明', dataIndex: 'narration', render: (v: string | null) => v ?? '—' },
+    { title: '交易对象', dataIndex: 'payee', render: (_dom: unknown, row: LedgerEntryRow) => row.payee ?? '—' },
+    { title: '说明', dataIndex: 'narration', render: (_dom: unknown, row: LedgerEntryRow) => row.narration ?? '—' },
     {
       title: '账户',
       dataIndex: 'account',
-      render: (v: string | null) => {
+      render: (_dom: unknown, row: LedgerEntryRow) => {
+        const v = row.account
         if (!v) return '—'
         const label = accountNameMap.get(v) ?? v
         return label === v ? v : <Tooltip title={v}>{label}</Tooltip>
@@ -147,12 +150,12 @@ export default function EntriesView() {
       dataIndex: 'amount',
       width: 120,
       // 交易金额（超 UI 层 #1）：资产流视角（收入 +、支出 -），千分位 + 负数红；转账/Open 行无金额
-      render: (v: string | null, row) =>
-        v === null ? (
+      render: (_dom: unknown, row: LedgerEntryRow) =>
+        row.amount === null ? (
           '—'
         ) : (
-          <span className={`num${v.startsWith('-') ? ' num-negative' : ''}`}>
-            {formatAmount(v)}
+          <span className={`num${row.amount.startsWith('-') ? ' num-negative' : ''}`}>
+            {formatAmount(row.amount)}
             {row.currency ? ` ${row.currency}` : ''}
           </span>
         )
@@ -196,7 +199,7 @@ export default function EntriesView() {
         </Button>
       </div>
       <Card title={`条目（${total}）`}>
-        <Table<LedgerEntryRow>
+        <ProTable<LedgerEntryRow>
           rowKey="id"
           size="small"
           loading={loading}
@@ -221,6 +224,8 @@ export default function EntriesView() {
               runQuery(p, dateOrder, filtersOf(quick, custom, appliedKeyword))
             }
           }}
+          search={false}
+          options={false}
         />
       </Card>
     </div>
