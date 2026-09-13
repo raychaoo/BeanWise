@@ -5,7 +5,7 @@
  * 已存在账户不覆盖用户自定义名称与描述。
  */
 import type { AccountEntry, ExcelImportTemplate } from '../../shared/ipc'
-import { toChineseAccountLabel } from '../account-path-label'
+import { toChineseAccountLabel } from '../utils/account-path-label'
 
 export interface ExcelAccountStore {
   load(): AccountEntry[]

@@ -17,7 +17,7 @@ import {
   suggestFieldMapping,
   suggestTypeAccountWithMethod
 } from './parser'
-import { computeDedupFingerprint } from '../dedup'
+import { computeDedupFingerprint } from '../core/dedup'
 
 const accountMapping = defaultAccountMapping()
 

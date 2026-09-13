@@ -25,7 +25,7 @@ import type {
   AccountMappingConfig
 } from '../../shared/ipc'
 import { addDecimalStrings } from '../../shared/decimal'
-import { computeDedupFingerprint } from '../dedup'
+import { computeDedupFingerprint } from '../core/dedup'
 import { methodMapKey, typeMapKey } from '../../shared/import-keys'
 
 export const BEANWISE_IMPORT_MARKER = 'beanwise-import'

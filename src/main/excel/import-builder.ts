@@ -6,8 +6,8 @@
  */
 import type { AddEntryParams, ExcelPreviewRow } from '../../shared/ipc'
 import { negateDecimal } from '../../shared/decimal'
-import { serializeEntry, serializeFirstEntryBlock } from '../entry-serializer'
-import { fingerprintMarker } from '../dedup'
+import { serializeEntry, serializeFirstEntryBlock } from '../core/entry-serializer'
+import { fingerprintMarker } from '../core/dedup'
 import { beanwiseMarker } from './parser'
 
 export interface ExcelImportDraft {
