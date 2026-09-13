@@ -278,7 +278,7 @@ export default function DashboardPage() {
                   <BreakdownRow
                     key={it.category}
                     color={breakdownPalette[i % breakdownPalette.length]}
-                    name={resolveCategoryName(it.category, accountNameMap)}
+                    name={it.label ?? resolveCategoryName(it.category, accountNameMap)}
                     amount={it.amount}
                     ratio={it.ratio}
                   />
@@ -299,7 +299,7 @@ export default function DashboardPage() {
                   <BreakdownRow
                     key={it.category}
                     color={breakdownPalette[(i + 3) % breakdownPalette.length]}
-                    name={resolveCategoryName(it.category, accountNameMap)}
+                    name={it.label ?? resolveCategoryName(it.category, accountNameMap)}
                     amount={it.amount}
                     ratio={it.ratio}
                   />

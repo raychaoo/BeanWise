@@ -376,7 +376,14 @@ function divDecimalStrings(a: string, b: string, scale = 4): string {
 
 export function computeBreakdown(
   rows: PostingRow[],
-  opts: { flow: 'expense' | 'income'; currency?: string; dateFrom?: string; dateTo?: string; top?: number }
+  opts: {
+    flow: 'expense' | 'income'
+    currency?: string
+    dateFrom?: string
+    dateTo?: string
+    top?: number
+    categoryLabels?: ReadonlyMap<string, string>
+  }
 ): import('../../shared/ipc').ReportBreakdownResult {
   const prefix = opts.flow === 'expense' ? 'Expenses:' : 'Income:'
   const sums = new Map<string, string>()
@@ -401,6 +408,7 @@ export function computeBreakdown(
   const rest = sorted.slice(top)
   const items: import('../../shared/ipc').ReportBreakdownResult['items'][number][] = head.map(([category, amount]) => ({
     category,
+    label: opts.categoryLabels?.get(category),
     amount,
     ratio: total === '0' ? '0' : divDecimalStrings(amount, total, 4)
   }))
@@ -408,6 +416,7 @@ export function computeBreakdown(
     const otherAmount = rest.reduce((acc, [, n]) => addDecimalStrings(acc, n), '0')
     items.push({
       category: '其他',
+      label: '其他',
       amount: otherAmount,
       ratio: total === '0' ? '0' : divDecimalStrings(otherAmount, total, 4)
     })

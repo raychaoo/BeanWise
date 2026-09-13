@@ -408,9 +408,19 @@ describe('computeBreakdown（顶层段聚合，按金额降序，超出 top 位�
   ]
 
   it('expense：顶层段聚合（Food 含子段），按金额降序，ratio 十进制字符串', () => {
-    const r = computeBreakdown(bdRows, { flow: 'expense', currency: 'CNY', top: 6 })
+    const r = computeBreakdown(bdRows, {
+      flow: 'expense',
+      currency: 'CNY',
+      top: 6,
+      categoryLabels: new Map([
+        ['Expenses:Housing', '居住'],
+        ['Expenses:Food', '餐饮'],
+        ['Expenses:Transport', '交通']
+      ])
+    })
     // Food = 35 + 15 + 50 = 100，Housing = 2000，Transport = 5；USD 行跳过
     expect(r.items.map((i) => i.category)).toEqual(['Expenses:Housing', 'Expenses:Food', 'Expenses:Transport'])
+    expect(r.items.map((i) => i.label)).toEqual(['居住', '餐饮', '交通'])
     expect(r.items.map((i) => i.amount)).toEqual(['2000', '100', '5'])
     expect(r.total).toBe('2105')
     // ratio = amount / total（保留 4 位小数）：2000 / 2105 ≈ 0.9501

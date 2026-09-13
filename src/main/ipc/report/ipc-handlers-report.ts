@@ -41,7 +41,12 @@ import {
   type PostingRow
 } from '../../core/report-aggregation'
 import { computeLoanLedger, loadLoanRows } from '../../core/loan-links'
+import { flattenExpenseTaxonomy } from '../../expenses/expense-taxonomy'
 import type { IpcRegistrar } from '../ledger/ipc-handlers'
+
+const EXPENSE_CATEGORY_LABELS = new Map(
+  flattenExpenseTaxonomy().map((account) => [account.path, account.label])
+)
 
 /** PDF 导出依赖（index.ts 注入真实实现；测试注入 mock——模块不直接 import electron 运行时） */
 export interface ReportPdfDeps {
@@ -245,7 +250,14 @@ export function registerReportHandlers(ipc: IpcRegistrar, deps: ReportDeps): voi
     }
     const currency = operatingCurrency(db)
     const rows = loadRows(db, or(like(postings.account, 'Expenses:%'), like(postings.account, 'Income:%')))
-    return computeBreakdown(rows, { flow, currency, dateFrom, dateTo, top: params.top })
+    return computeBreakdown(rows, {
+      flow,
+      currency,
+      dateFrom,
+      dateTo,
+      top: params.top,
+      categoryLabels: flow === 'expense' ? EXPENSE_CATEGORY_LABELS : undefined
+    })
   })
 
   // report:counterparty-ledger（ADR 23）：往来类账户由账户库 counterparty 标志圈定（不硬编码账户名），

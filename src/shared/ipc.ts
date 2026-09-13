@@ -618,6 +618,8 @@ export interface ExportReportPdfResult {
 export interface BreakdownItem {
   /** 类别路径（顶层段，如 Expenses:Food → 'Expenses:Food'；Expenses:Food:Snack → 'Expenses:Food'） */
   category: string
+  /** 分类树提供的显示名（当前用于支出父科目；缺失时由渲染端账户库映射回退） */
+  label?: string
   /** 十进制字符串金额（正显示） */
   amount: string
   /** 占该流向总额比例（十进制字符串 0~1） */

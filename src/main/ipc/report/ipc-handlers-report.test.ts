@@ -133,6 +133,27 @@ describe('operatingCurrency 兜底（无 option → 按 postings 币种频次识
   })
 })
 
+describe('report:breakdown', () => {
+  it('支出父科目返回分类树中文显示名', async () => {
+    const db = createDrizzle(openDatabase(':memory:'))
+    db.insert(ledgerMeta)
+      .values({ id: 1, ledgerPath: 'x.beancount', status: 'ok', operatingCurrency: '["CNY"]' })
+      .run()
+    insertPosting(db, {
+      date: '2026-01-05',
+      account: 'Expenses:Life:Food:Breakfast',
+      number: '20.00',
+      currency: 'CNY'
+    })
+    const handlers = register(db)
+
+    const r = (await handlers.get('report:breakdown')!({}, { flow: 'expense' })) as {
+      items: Array<{ category: string; label?: string }>
+    }
+    expect(r.items).toEqual([expect.objectContaining({ category: 'Expenses:Life', label: '生活消费' })])
+  })
+})
+
 describe('report:net-worth', () => {
   it('month：按期间累计，仅运营货币', async () => {
     const { handlers } = setup()
