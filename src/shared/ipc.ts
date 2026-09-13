@@ -26,7 +26,7 @@ export type {
 }
 
 export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list-entries'
-  | 'ledger:add-entry' | 'ledger:list-accounts' | 'ledger:read-file' | 'ledger:save-file' | 'ledger:clear' | 'ledger:list-counterparties'
+  | 'ledger:add-entry' | 'ledger:update-entry' | 'ledger:list-accounts' | 'ledger:read-file' | 'ledger:save-file' | 'ledger:clear' | 'ledger:list-counterparties'
   | 'accounts:get' | 'accounts:save'
   | 'excel:choose' | 'excel:parse' | 'excel:preview' | 'excel:import' | 'excel:get-templates' | 'excel:save-template' | 'excel:delete-template'
   | 'workspace:get-status' | 'workspace:choose' | 'workspace:open' | 'workspace:recents'
@@ -95,6 +95,10 @@ export interface AddEntryPosting {
 export interface AddEntryParams {
   /** YYYY-MM-DD（真实日期） */
   date: string
+  /** 稳定交易 ID（Beancount 交易级 metadata `id`）；缺省由主进程生成 */
+  id?: string
+  /** 交易发生时间 YYYY-MM-DD HH:mm:ss；缺省由主进程按当前本地时间生成 */
+  time?: string
   flag?: '*' | '!'
   /** ≤200 字符、无控制字符（trim 后空视为缺省） */
   payee?: string
@@ -112,6 +116,11 @@ export interface AddEntryResult {
   status: LedgerIndexStatus
   entryCount: number
   errorCount: number
+}
+
+/** ledger:update-entry 入参：id 必填，其余字段与新增交易相同。 */
+export interface UpdateEntryParams extends AddEntryParams {
+  id: string
 }
 
 /** ledger:list-accounts 结果（postings 表 DISTINCT） */

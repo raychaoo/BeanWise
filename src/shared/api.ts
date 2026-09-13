@@ -49,6 +49,7 @@ import type {
   SaveFileResult,
   SyncResult,
   SyncStatus,
+  UpdateEntryParams,
   UpdateCheckResult,
   UpdateInstallResult,
   UpdateState,
@@ -79,6 +80,8 @@ export interface BeanWiseApi {
   listLedgerEntries(params: ListEntriesParams): Promise<ListEntriesResult>
   /** 录入一笔交易：前置校验 → 落文件 → 校验 → 索引重建（M4） */
   addLedgerEntry(params: AddEntryParams): Promise<AddEntryResult>
+  /** 按稳定 ID 更新单笔交易：文本级替换 → 校验落盘 → 索引重建 */
+  updateLedgerEntry(params: UpdateEntryParams): Promise<AddEntryResult>
   /** 账户列表（录入表单 AutoComplete 数据源，postings 表 DISTINCT） */
   listLedgerAccounts(): Promise<ListAccountsResult>
   /** 往来对象候选（录入页「往来对象」历史补全；postings.counterparty 非空 DISTINCT，ADR 23） */

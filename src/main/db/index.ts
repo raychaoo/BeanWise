@@ -9,9 +9,10 @@ export type DrizzleDb = ReturnType<typeof createDrizzle>
  * 故版本不符即整表丢弃重建，由 refreshIndex 按文件重新填充——`CREATE TABLE IF NOT EXISTS`
  * 无法给已存在的表补列，加列必须走这道闸门（drizzle 不生成 DDL，无需手写 migration）。
  * 版本史：1 = 初版；2 = postings 加 counterparty（往来对象，ADR 23）；
- * 3 = 新增 entry_links（交易级 link，ADR 23 P2 核销）。
+ * 3 = 新增 entry_links（交易级 link，ADR 23 P2 核销）；
+ * 4 = entries 加 external_id/time（稳定交易 ID + 秒级时间）。
  */
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 
 /** 建表 DDL。与 schema.ts 表定义一一对应（drizzle 不生成 DDL，索引可随时重建，无需 migration）。 */
 const SCHEMA_DDL = `
@@ -32,6 +33,8 @@ CREATE TABLE IF NOT EXISTS entries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   type TEXT NOT NULL,
   date TEXT NOT NULL,
+  external_id TEXT,
+  time TEXT,
   flag TEXT,
   payee TEXT,
   narration TEXT,
@@ -49,6 +52,7 @@ CREATE TABLE IF NOT EXISTS postings (
   counterparty TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_external_id ON entries(external_id) WHERE external_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_postings_account ON postings(account);
 CREATE INDEX IF NOT EXISTS idx_postings_entry ON postings(entry_id);
 CREATE INDEX IF NOT EXISTS idx_postings_counterparty ON postings(counterparty);

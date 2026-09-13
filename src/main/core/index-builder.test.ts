@@ -16,6 +16,7 @@ const MAIN_FIXTURE = resolve('python/tests/fixtures/main.beancount')
 const BAD_FIXTURE = resolve('python/tests/fixtures/bad.beancount')
 const COUNTERPARTY_FIXTURE = resolve('python/tests/fixtures/counterparty.beancount')
 const LOANS_FIXTURE = resolve('python/tests/fixtures/loans.beancount')
+const ENTRY_META_FIXTURE = resolve('python/tests/fixtures/entry-meta.beancount')
 
 describe('索引重建管线（M3）', () => {
   let db: ReturnType<typeof openDatabase>
@@ -143,6 +144,28 @@ describe('索引重建管线（M3）', () => {
     expect(breakfast.currency).toBe('CNY')
     const opens = listed.entries.filter((e) => e.type === 'Open')
     expect(opens.every((e) => e.amount === null && e.currency === null)).toBe(true)
+  }, 30_000)
+
+  it('ledger id/time metadata → entries.externalId/time 落库并透出到列表', async () => {
+    copyFileSync(ENTRY_META_FIXTURE, workFile)
+    const result = await refreshIndex(drizzle, engine, workFile)
+    expect(result.status).toBe('ok')
+
+    const stored = drizzle.select().from(entries).all()
+    const tx = stored.find((e) => e.type === 'Transaction')
+    expect(tx).toMatchObject({
+      externalId: 'bw-test-001',
+      time: '2026-01-02 08:30:15'
+    })
+
+    const listed = listEntries(drizzle, 100, 0)
+    expect(listed.entries.find((e) => e.narration === '带元数据')).toMatchObject({
+      externalId: 'bw-test-001',
+      time: '2026-01-02 08:30:15'
+    })
+    const byId = listEntries(drizzle, 100, 0, 'asc', { keyword: 'bw-test-001' })
+    expect(byId.total).toBe(1)
+    expect(byId.entries[0]!.externalId).toBe('bw-test-001')
   }, 30_000)
 
   it('listEntries dateFrom/dateTo 过滤（含端点）且 total 同步', async () => {

@@ -20,6 +20,8 @@ export const entries = sqliteTable('entries', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   type: text('type').notNull(),
   date: text('date').notNull(), // ISO YYYY-MM-DD，字符串排序即时间序
+  externalId: text('external_id'), // Beancount transaction metadata `id`；稳定编辑定位键
+  time: text('time'), // Beancount transaction metadata `time`；YYYY-MM-DD HH:mm:ss
   flag: text('flag'),
   payee: text('payee'),
   narration: text('narration'),

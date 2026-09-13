@@ -9,7 +9,7 @@
 import { ProTable } from '@ant-design/pro-components'
 import type { ProColumns } from '@ant-design/pro-components'
 import { QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, DatePicker, Input, Segmented, Tooltip } from 'antd'
+import { Alert, Button, Card, DatePicker, Input, Segmented, Tooltip, Typography } from 'antd'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
@@ -131,6 +131,25 @@ export default function EntriesView() {
       sorter: true,
       defaultSortOrder: 'descend'
     },
+    {
+      title: '时间',
+      dataIndex: 'time',
+      width: 170,
+      render: (_dom: unknown, row: LedgerEntryRow) => row.time ?? '—'
+    },
+    {
+      title: 'ID',
+      dataIndex: 'externalId',
+      width: 210,
+      render: (_dom: unknown, row: LedgerEntryRow) =>
+        row.externalId ? (
+          <Typography.Text code copyable={{ text: row.externalId }} ellipsis={{ tooltip: row.externalId }}>
+            {row.externalId}
+          </Typography.Text>
+        ) : (
+          '—'
+        )
+    },
     { title: '标志', dataIndex: 'flag', width: 60, render: (_dom: unknown, row: LedgerEntryRow) => row.flag ?? '—' },
     { title: '类型', dataIndex: 'type', width: 90 },
     { title: '交易对象', dataIndex: 'payee', render: (_dom: unknown, row: LedgerEntryRow) => row.payee ?? '—' },
@@ -200,7 +219,7 @@ export default function EntriesView() {
       </div>
       <Card title={`条目（${total}）`}>
         <ProTable<LedgerEntryRow>
-          rowKey="id"
+          rowKey={(row) => row.externalId ?? String(row.id)}
           size="small"
           loading={loading}
           dataSource={entries}

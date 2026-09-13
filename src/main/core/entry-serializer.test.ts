@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AddEntryParams } from '../../shared/ipc'
-import { findUnopenedAccounts, serializeEntry, serializeFirstEntryBlock, serializeOpenLines, serializeOptionsHeader, validateEntryParams } from './entry-serializer'
+import { ensureEntryMetadata, findUnopenedAccounts, replaceEntryById, serializeEntry, serializeFirstEntryBlock, serializeOpenLines, serializeOptionsHeader, validateEntryParams } from './entry-serializer'
 
 const valid: AddEntryParams = {
   date: '2026-08-09',
@@ -90,6 +90,81 @@ describe('serializeEntry', () => {
     expect(serializeEntry({ ...valid, payee: undefined, narration: undefined, links: ['lend-x'] })).toBe(
       '2026-08-09 * ^lend-x\n  Expenses:Food  25.50 CNY\n  Assets:Cash  -25.50 CNY\n'
     )
+  })
+
+  it('id/time：交易级 metadata，写在标题之后、posting 之前', () => {
+    expect(
+      serializeEntry({
+        ...valid,
+        id: 'bw-0123456789abcdef',
+        time: '2026-08-09 08:30:15'
+      } as AddEntryParams)
+    ).toBe(
+      '2026-08-09 * "测试午饭" "M4 E2E"\n' +
+        '  id: "bw-0123456789abcdef"\n' +
+        '  time: "2026-08-09 08:30:15"\n' +
+        '  Expenses:Food  25.50 CNY\n' +
+        '  Assets:Cash  -25.50 CNY\n'
+    )
+  })
+})
+
+describe('ensureEntryMetadata', () => {
+  it('已有 id/time 原样保留', () => {
+    const params: AddEntryParams = {
+      ...valid,
+      id: 'bw-existing',
+      time: '2026-08-09 12:34:56'
+    }
+    expect(ensureEntryMetadata(params, new Date(2026, 7, 9, 18, 0, 0))).toEqual(params)
+  })
+
+  it('缺省时生成稳定格式 ID；当天交易取当前本地秒级时间，历史日期取 00:00:00', () => {
+    const current = ensureEntryMetadata(valid, new Date(2026, 7, 9, 12, 34, 56))
+    expect(current.id).toMatch(/^bw-[0-9a-f-]{36}$/)
+    expect(current.time).toBe('2026-08-09 12:34:56')
+
+    const historical = ensureEntryMetadata({ ...valid, date: '2026-01-02' }, new Date(2026, 7, 9, 12, 34, 56))
+    expect(historical.id).toMatch(/^bw-[0-9a-f-]{36}$/)
+    expect(historical.time).toBe('2026-01-02 00:00:00')
+  })
+})
+
+describe('replaceEntryById', () => {
+  const ledger =
+    'option "title" "T"\n\n' +
+    '2026-01-01 * "A" "first"\n' +
+    '  id: "bw-a"\n' +
+    '  time: "2026-01-01 08:00:00"\n' +
+    '  Expenses:Food  10.00 CNY\n' +
+    '  Assets:Cash  -10.00 CNY\n' +
+    '\n' +
+    '2026-01-02 * "B" "second"\n' +
+    '  Expenses:Food  20.00 CNY\n' +
+    '  Assets:Cash  -20.00 CNY\n'
+
+  it('只替换指定 ID 的交易块，保留其它内容与空行', () => {
+    const replacement = serializeEntry({
+      date: '2026-01-01',
+      id: 'bw-a',
+      time: '2026-01-01 09:30:00',
+      payee: 'A',
+      narration: 'edited',
+      postings: [
+        { account: 'Expenses:Food', number: '11.00', currency: 'CNY' },
+        { account: 'Assets:Cash', number: '-11.00', currency: 'CNY' }
+      ]
+    })
+    const updated = replaceEntryById(ledger, 'bw-a', replacement)
+    expect(updated).toContain('  time: "2026-01-01 09:30:00"')
+    expect(updated).toContain('  Expenses:Food  11.00 CNY')
+    expect(updated).toContain('2026-01-02 * "B" "second"')
+    expect(updated.match(/2026-01-01 \* "A"/g)).toHaveLength(1)
+  })
+
+  it('ID 不存在或重复 → 明确拒绝', () => {
+    expect(() => replaceEntryById(ledger, 'bw-missing', 'x\n')).toThrow(/未找到/)
+    expect(() => replaceEntryById(ledger + ledger, 'bw-a', 'x\n')).toThrow(/重复/)
   })
 })
 
@@ -258,6 +333,19 @@ describe('validateEntryParams', () => {
     expect(() => validateEntryParams(withLinks(Array.from({ length: 21 }, (_, i) => `l${i}`)))).toThrow(/最多/)
     expect(() => validateEntryParams(withLinks('lend-a'))).toThrow(/必须为数组/)
     expect(() => validateEntryParams(withLinks(['x'.repeat(65)]))).toThrow(/长度/)
+  })
+
+  it('id/time 校验：ID 仅 ASCII 安全字符，时间必须为同日 YYYY-MM-DD HH:mm:ss', () => {
+    expect(validateEntryParams({ ...valid, id: 'bw-abc_123', time: '2026-08-09 08:30:15' })).toMatchObject({
+      id: 'bw-abc_123',
+      time: '2026-08-09 08:30:15'
+    })
+    for (const id of ['中文', 'a b', 'a/b', 'x'.repeat(65)]) {
+      expect(() => validateEntryParams({ ...valid, id })).toThrow(/id/)
+    }
+    for (const time of ['2026-08-09', '2026-08-09 8:30:15', '2026-08-10 08:30:15']) {
+      expect(() => validateEntryParams({ ...valid, time })).toThrow(/time/)
+    }
   })
 
   it('posting 数量边界：1 行拒绝 / 21 行拒绝 / 20 行通过', () => {

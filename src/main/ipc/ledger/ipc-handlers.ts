@@ -2,10 +2,10 @@ import { createHash } from 'node:crypto'
 import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, truncateSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { computeBalancingNumber } from '../../../shared/decimal'
-import type { AddEntryParams, AddEntryResult, ClearLedgerResult, ListAccountsResult, ListCounterpartiesResult, ListEntriesParams, ReadFileResult, RefreshResult, SaveFileParams, SaveFileResult } from '../../../shared/ipc'
+import type { AddEntryParams, AddEntryResult, ClearLedgerResult, ListAccountsResult, ListCounterpartiesResult, ListEntriesParams, ReadFileResult, RefreshResult, SaveFileParams, SaveFileResult, UpdateEntryParams } from '../../../shared/ipc'
 import type { DrizzleDb } from '../../db/index'
 import { postings } from '../../db/schema'
-import { findUnopenedAccounts, serializeEntry, serializeFirstEntryBlock, serializeOpenLines, validateEntryParams } from '../../core/entry-serializer'
+import { ensureEntryMetadata, findUnopenedAccounts, replaceEntryById, serializeEntry, serializeFirstEntryBlock, serializeOpenLines, validateEntryParams } from '../../core/entry-serializer'
 import { getLedgerStatus, listEntries, refreshIndex } from '../../core/index-builder'
 import { writeLedgerChecked } from '../../utils/ledger-writer'
 import { computeLoanLedger, isNewLoanPosting, loadLoanRows, newLoanId, pickOpenLoanId } from '../../core/loan-links'
@@ -116,6 +116,12 @@ function validateSaveParams(raw: unknown): SaveFileParams {
   return { content: p.content, expectedFingerprint: p.expectedFingerprint }
 }
 
+function validateUpdateParams(raw: unknown): UpdateEntryParams {
+  const params = validateEntryParams(raw)
+  if (!params.id) throw new Error('id 必须为字符串')
+  return { ...params, id: params.id }
+}
+
 /**
  * 双写互斥说明（M5 终审，实现抽取至 write-lock.ts）：
  * add-entry 与 save-file 写通道串行化（任一时刻至多一个写者，sync 域复用同一把锁）。
@@ -195,7 +201,7 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
   // → 索引 error（理论上仅前置校验漏网）truncate 回滚
   ipc.handle('ledger:add-entry', (_event: unknown, raw: unknown): Promise<AddEntryResult> =>
     withWriteLock(async () => {
-    const params = withAutoLinks(validateEntryParams(raw), deps)
+    const params = withAutoLinks(ensureEntryMetadata(validateEntryParams(raw)), deps)
 
     // 借贷平衡校验（精确十进制加法，禁 parseFloat/Number）
     const diff = computeBalancingNumber(params.postings.map((p) => p.number))
@@ -245,6 +251,35 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
     }
     return { ok: true, status: result.status, entryCount: result.entryCount, errorCount: result.errorCount }
   }))
+
+  // 按稳定 ID 更新单笔交易：文本级替换目标块 → 共享落盘管线校验 → 重建索引。
+  ipc.handle('ledger:update-entry', (_event: unknown, raw: unknown): Promise<AddEntryResult> =>
+    withWriteLock(async () => {
+      const params = validateUpdateParams(raw)
+      const current = readLedgerText(deps.ledgerPath)
+      if (!current) throw new Error('账本文件不存在')
+      const replacement = serializeEntry(ensureEntryMetadata(params))
+      const updated = replaceEntryById(current, params.id, replacement)
+      const written = await writeLedgerChecked(deps, updated)
+      if (!written.ok) {
+        const status = getLedgerStatus(deps.db)
+        return {
+          ok: false,
+          message: written.message,
+          status: status?.status ?? 'error',
+          entryCount: status?.entryCount ?? 0,
+          errorCount: status?.errorCount ?? 0
+        }
+      }
+      const result = await refreshIndex(deps.db, deps.engine, deps.ledgerPath)
+      return {
+        ok: true,
+        status: result.status,
+        entryCount: result.entryCount,
+        errorCount: result.errorCount,
+        ...(result.status === 'error' ? { message: result.message } : {})
+      }
+    }))
 
   // M4：账户列表（录入表单 AutoComplete 数据源，postings 表 DISTINCT）
   ipc.handle('ledger:list-accounts', (): ListAccountsResult => ({

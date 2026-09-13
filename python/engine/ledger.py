@@ -63,6 +63,14 @@ def _counterparty(entry, posting) -> str | None:
     return None
 
 
+def _transaction_meta_text(entry, key: str) -> str | None:
+    """交易级 metadata 的字符串值；缺失或非字符串一律转空。"""
+    if not isinstance(entry.meta, dict) or key not in entry.meta:
+        return None
+    value = entry.meta[key]
+    return value if isinstance(value, str) else str(value)
+
+
 def _serialize_entry(entry) -> dict:
     """把 beancount entry 转成 JSON 友好 dict（M3 SQLite 索引数据源）。
 
@@ -79,6 +87,8 @@ def _serialize_entry(entry) -> dict:
         item["flag"] = entry.flag
         item["payee"] = entry.payee
         item["narration"] = entry.narration
+        item["id"] = _transaction_meta_text(entry, "id")
+        item["time"] = _transaction_meta_text(entry, "time")
         # 交易级 link（ADR 23 P2 核销）：借出笔带自身贷款 ID，还款笔带其结清的贷款 ID。
         # beancount 里是 frozenset —— 排序后输出，保证同一账本每次解析结果稳定可比。
         item["links"] = sorted(entry.links) if entry.links else []

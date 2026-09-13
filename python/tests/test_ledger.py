@@ -9,6 +9,7 @@ BAD = str(FIXTURES / "bad.beancount")
 MISSING = str(FIXTURES / "missing.beancount")
 COUNTERPARTY = str(FIXTURES / "counterparty.beancount")
 LOANS = str(FIXTURES / "loans.beancount")
+ENTRY_META = str(FIXTURES / "entry-meta.beancount")
 
 
 def _tx(result, narration):
@@ -123,3 +124,10 @@ def test_parse_entries_transaction_links():
     assert txs["还4000"]["links"] == ["lend-aaa"]
     assert txs["再借3000"]["links"] == ["lend-bbb"]
     assert txs["借出800"]["links"] == []
+
+
+def test_parse_entries_transaction_id_and_time_metadata():
+    """交易级 id/time metadata 透出给索引层，供稳定编辑定位与秒级时间展示。"""
+    tx = _tx(parse_entries(ENTRY_META), "带元数据")
+    assert tx["id"] == "bw-test-001"
+    assert tx["time"] == "2026-01-02 08:30:15"

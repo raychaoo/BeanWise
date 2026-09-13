@@ -34,6 +34,8 @@ export interface LedgerEntryRow {
   id: number
   type: string
   date: string
+  externalId: string | null
+  time: string | null
   flag: string | null
   payee: string | null
   narration: string | null
@@ -175,6 +177,8 @@ export async function refreshIndex(
         .values({
           type: entry.type as string,
           date: entry.date as string,
+          externalId: (entry.id as string | null) ?? null,
+          time: (entry.time as string | null) ?? null,
           flag: (entry.flag as string | null) ?? null,
           payee: (entry.payee as string | null) ?? null,
           narration: (entry.narration as string | null) ?? null,
@@ -286,7 +290,7 @@ export function listEntries(
   if (filters?.keyword) {
     const kw = `%${filters.keyword.replace(/[\\%_]/g, '\\$&')}%`
     conds.push(
-      sql`(${entries.payee} LIKE ${kw} ESCAPE '\\' OR ${entries.narration} LIKE ${kw} ESCAPE '\\' OR ${entries.account} LIKE ${kw} ESCAPE '\\' OR EXISTS (SELECT 1 FROM postings WHERE postings.entry_id = ${entries.id} AND postings.account LIKE ${kw} ESCAPE '\\'))`
+      sql`(${entries.payee} LIKE ${kw} ESCAPE '\\' OR ${entries.narration} LIKE ${kw} ESCAPE '\\' OR ${entries.externalId} LIKE ${kw} ESCAPE '\\' OR ${entries.account} LIKE ${kw} ESCAPE '\\' OR EXISTS (SELECT 1 FROM postings WHERE postings.entry_id = ${entries.id} AND postings.account LIKE ${kw} ESCAPE '\\'))`
     )
   }
   const where = conds.length > 0 ? and(...conds) : undefined

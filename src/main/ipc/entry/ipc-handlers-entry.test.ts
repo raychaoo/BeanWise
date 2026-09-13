@@ -23,6 +23,8 @@ vi.mock('../../utils/ledger-writer', () => ({ writeLedgerChecked: mocks.writeLed
 
 const validParams: AddEntryParams = {
   date: '2026-08-09',
+  id: 'bw-m4-test',
+  time: '2026-08-09 12:34:56',
   payee: '测试午饭',
   narration: 'M4 单测',
   postings: [
@@ -32,7 +34,11 @@ const validParams: AddEntryParams = {
 }
 
 const SERIALIZED =
-  '2026-08-09 * "测试午饭" "M4 单测"\n  Expenses:Food  25.50 CNY\n  Assets:Cash  -25.50 CNY\n'
+  '2026-08-09 * "测试午饭" "M4 单测"\n' +
+  '  id: "bw-m4-test"\n' +
+  '  time: "2026-08-09 12:34:56"\n' +
+  '  Expenses:Food  25.50 CNY\n' +
+  '  Assets:Cash  -25.50 CNY\n'
 
 describe('IPC handlers ledger:add-entry / list-accounts（M4）', () => {
   let db: ReturnType<typeof createDrizzle>
@@ -87,9 +93,24 @@ describe('IPC handlers ledger:add-entry / list-accounts（M4）', () => {
         '2026-08-09 open Expenses:Food\n' +
         '2026-08-09 open Assets:Cash\n' +
         '2026-08-09 * "测试午饭" "M4 单测"\n' +
+        '  id: "bw-m4-test"\n' +
+        '  time: "2026-08-09 12:34:56"\n' +
         '  Expenses:Food  25.50 CNY\n' +
         '  Assets:Cash  -25.50 CNY\n'
     )
+  })
+
+  it('缺省 id/time → 自动补齐稳定格式后落盘', async () => {
+    const ledgerPath = join(dir, 'auto-meta.beancount')
+    appendFileSync(ledgerPath, '2026-01-01 open Assets:Cash\n2026-01-01 open Expenses:Food\n\n', 'utf8')
+    const handlers = makeHandlers(ledgerPath)
+    const { id: _id, time: _time, ...withoutMeta } = validParams
+
+    await handlers['ledger:add-entry']({}, withoutMeta)
+
+    const content = readFileSync(ledgerPath, 'utf8')
+    expect(content).toMatch(/^  id: "bw-[0-9a-f-]{36}"$/m)
+    expect(content).toMatch(/^  time: "2026-08-09 00:00:00"$/m)
   })
 
   it('余额不平 → throw「借贷不平衡」，文件未创建/未改动', async () => {
@@ -216,5 +237,71 @@ describe('IPC handlers ledger:add-entry / list-accounts（M4）', () => {
     expect(result.entryCount).toBe(0)
     expect(readFileSync(ledgerPath, 'utf8')).toBe('option "title" "我的账本"\noption "operating_currency" "CNY"\n')
     expect(mocks.refreshIndex).toHaveBeenCalledTimes(1)
+  })
+
+  it('ledger:update-entry：按稳定 id 替换单笔交易并重建索引', async () => {
+    const ledgerPath = join(dir, 'update.beancount')
+    appendFileSync(
+      ledgerPath,
+      '2026-01-01 open Assets:Cash\n' +
+        '2026-01-01 open Expenses:Food\n\n' +
+        '2026-08-09 * "旧交易" "旧说明"\n' +
+        '  id: "bw-old"\n' +
+        '  time: "2026-08-09 08:00:00"\n' +
+        '  Expenses:Food  25.50 CNY\n' +
+        '  Assets:Cash  -25.50 CNY\n\n' +
+        '2026-08-10 * "别动" "保留"\n' +
+        '  id: "bw-keep"\n' +
+        '  time: "2026-08-10 09:00:00"\n' +
+        '  Expenses:Food  10.00 CNY\n' +
+        '  Assets:Cash  -10.00 CNY\n',
+      'utf8'
+    )
+    mocks.writeLedgerChecked.mockImplementation(async (_deps: unknown, content: string) => {
+      writeFileSync(ledgerPath, content, 'utf8')
+      return { ok: true }
+    })
+    const handlers = makeHandlers(ledgerPath)
+
+    const result = (await handlers['ledger:update-entry']({}, {
+      id: 'bw-old',
+      date: '2026-08-09',
+      time: '2026-08-09 12:34:56',
+      payee: '新交易',
+      narration: '新说明',
+      postings: [
+        { account: 'Expenses:Food', number: '30.00', currency: 'CNY' },
+        { account: 'Assets:Cash', number: '-30.00', currency: 'CNY' }
+      ]
+    })) as AddEntryResult
+
+    expect(result.ok).toBe(true)
+    expect(mocks.writeLedgerChecked).toHaveBeenCalledTimes(1)
+    expect(mocks.refreshIndex).toHaveBeenCalledTimes(1)
+    const content = readFileSync(ledgerPath, 'utf8')
+    expect(content).toContain('2026-08-09 * "新交易" "新说明"')
+    expect(content).toContain('  time: "2026-08-09 12:34:56"')
+    expect(content).toContain('  Expenses:Food  30.00 CNY')
+    expect(content).toContain('2026-08-10 * "别动" "保留"')
+    expect(content.match(/id: "bw-old"/g)).toHaveLength(1)
+  })
+
+  it('ledger:update-entry：ID 不存在 → 拒绝且不写盘', async () => {
+    const ledgerPath = join(dir, 'update-missing.beancount')
+    appendFileSync(ledgerPath, '2026-01-01 open Assets:Cash\n', 'utf8')
+    const before = readFileSync(ledgerPath, 'utf8')
+    const handlers = makeHandlers(ledgerPath)
+
+    await expect(handlers['ledger:update-entry']({}, {
+      id: 'bw-missing',
+      date: '2026-08-09',
+      payee: 'x',
+      postings: [
+        { account: 'Expenses:Food', number: '1.00', currency: 'CNY' },
+        { account: 'Assets:Cash', number: '-1.00', currency: 'CNY' }
+      ]
+    })).rejects.toThrow(/未找到/)
+    expect(mocks.writeLedgerChecked).not.toHaveBeenCalled()
+    expect(readFileSync(ledgerPath, 'utf8')).toBe(before)
   })
 })
