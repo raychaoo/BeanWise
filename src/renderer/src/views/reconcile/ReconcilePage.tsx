@@ -2,18 +2,21 @@
  * 对账页：Tab① 三栏式科目余额表（批次 G #5：report:trial-balance，期初/发生/期末，
  * 每账户每币种一行；顶部日期 RangePicker → dateFrom/dateTo；币种 CheckableTag 筛选）
  * + Tab② 明细账（批次 F）：账户 TreeSelect（五大类分组）→ listEntries 服务端 account
- * 精确过滤 + order desc 分页查询；本地查询状态（不经共享 store entries 槽，防跨页串扰）。
+ * 精确过滤 + 金额/交易对象/说明关键词 + order desc 分页查询；显示稳定 ID 与秒级交易时间，
+ * 复用 EntryEditDrawer 按 ID 编辑。本地查询状态（不经共享 store entries 槽，防跨页串扰）。
  * 金额 formatAmount 千分位 + .num 右对齐，负数 .num-negative（红色语义唯一化）。
  */
 import { ProTable } from '@ant-design/pro-components'
 import type { ProColumns } from '@ant-design/pro-components'
-import { Alert, Button, DatePicker, Empty, Space, Spin, Tabs, Tag, Tooltip, TreeSelect } from 'antd'
+import { EditOutlined } from '@ant-design/icons'
+import { Alert, Button, DatePicker, Empty, Input, Space, Spin, Tabs, Tag, Tooltip, TreeSelect, Typography } from 'antd'
 import type { Dayjs } from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { LedgerEntryRow, ListEntriesFilters, ReportTrialBalanceParams, TrialBalanceCell, TrialBalanceRow } from '../../../../shared/ipc'
 import { useLedgerStore } from '../../stores/ledger'
 import type { AccountOption } from '../../stores/ledger'
 import { formatAmount } from '../../utils/format'
+import EntryEditDrawer from '../entries/EntryEditDrawer'
 import '../../styles/views/reconcile.less'
 
 /** 三栏单元格：金额千分位 + 币种，右对齐（.num），负数红（.num-negative） */
@@ -72,13 +75,16 @@ function DetailLedgerTab() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [appliedKeyword, setAppliedKeyword] = useState('')
+  const [editEntryId, setEditEntryId] = useState<string | null>(null)
 
-  const loadEntries = useCallback(async (acc: string, p: number, r: [Dayjs, Dayjs] | null) => {
+  const loadEntries = useCallback(async (acc: string, p: number, r: [Dayjs, Dayjs] | null, keyword: string) => {
     setLoading(true)
     setError(null)
     try {
       const filters: ListEntriesFilters = {
-        ...(r ? { dateFrom: r[0].format('YYYY-MM-DD'), dateTo: r[1].format('YYYY-MM-DD') } : {})
+        ...(r ? { dateFrom: r[0].format('YYYY-MM-DD'), dateTo: r[1].format('YYYY-MM-DD') } : {}),
+        ...(keyword ? { keyword } : {})
       }
       const r2 = await window.beanwise.listLedgerEntries({
         account: acc,
@@ -102,31 +108,54 @@ function DetailLedgerTab() {
     setPage(1)
     setRows([])
     setTotal(0)
-    if (value) void loadEntries(value, 1, range)
+    if (value) void loadEntries(value, 1, range, appliedKeyword)
   }
 
   const handleRange = (dates: [Dayjs | null, Dayjs | null] | null) => {
     const valid = dates && dates[0] && dates[1] ? ([dates[0], dates[1]] as [Dayjs, Dayjs]) : null
     setRange(valid)
     setPage(1)
-    if (account) void loadEntries(account, 1, valid)
+    if (account) void loadEntries(account, 1, valid, appliedKeyword)
   }
 
-  const handleSearch = () => {
-    if (!account) return
+  const handleSearch = (raw: string) => {
+    const keyword = raw.trim()
+    setAppliedKeyword(keyword)
     setPage(1)
-    void loadEntries(account, 1, range)
+    if (account) void loadEntries(account, 1, range, keyword)
+  }
+
+  const handleSearchChange = (raw: string) => {
+    if (raw === '' && appliedKeyword !== '') handleSearch('')
   }
 
   const handlePageChange = (p: number) => {
     setPage(p)
-    if (account) void loadEntries(account, p, range)
+    if (account) void loadEntries(account, p, range, appliedKeyword)
   }
 
   const accountLabel = account ? (accountNameMap.get(account) ?? account) : null
 
   const columns: ProColumns<LedgerEntryRow>[] = [
-    { title: '日期', dataIndex: 'date', width: 110 },
+    {
+      title: 'ID',
+      dataIndex: 'externalId',
+      width: 220,
+      render: (_dom: unknown, row: LedgerEntryRow) =>
+        row.externalId ? (
+          <Typography.Text code copyable={{ text: row.externalId }} ellipsis={{ tooltip: row.externalId }}>
+            {row.externalId}
+          </Typography.Text>
+        ) : (
+          '—'
+        )
+    },
+    {
+      title: '交易时间',
+      dataIndex: 'time',
+      width: 180,
+      render: (_dom: unknown, row: LedgerEntryRow) => row.time ?? `${row.date} 00:00:00`
+    },
     { title: '交易对象', dataIndex: 'payee', render: (_dom: unknown, row: LedgerEntryRow) => row.payee ?? '—', ellipsis: true },
     { title: '说明', dataIndex: 'narration', render: (_dom: unknown, row: LedgerEntryRow) => row.narration ?? '—', ellipsis: true },
     {
@@ -151,7 +180,27 @@ function DetailLedgerTab() {
       render: (_dom: unknown, row: LedgerEntryRow) =>
         row.amount === null ? '—' : <span className={`num${row.amount.startsWith('-') ? ' num-negative' : ''}`}>{formatAmount(row.amount)}</span>
     },
-    { title: '币种', dataIndex: 'currency', width: 80, render: (_dom: unknown, row: LedgerEntryRow) => row.currency ?? '—' }
+    { title: '币种', dataIndex: 'currency', width: 80, render: (_dom: unknown, row: LedgerEntryRow) => row.currency ?? '—' },
+    {
+      title: '操作',
+      key: 'action',
+      width: 90,
+      fixed: 'right',
+      render: (_dom: unknown, row: LedgerEntryRow) =>
+        row.externalId ? (
+          <Button
+            type="link"
+            size="small"
+            icon={<EditOutlined />}
+            aria-label={`编辑 ${row.externalId}`}
+            onClick={() => setEditEntryId(row.externalId)}
+          >
+            编辑
+          </Button>
+        ) : (
+          '—'
+        )
+    }
   ]
 
   return (
@@ -174,13 +223,20 @@ function DetailLedgerTab() {
           placeholder={['起始日期', '结束日期']}
           onChange={handleRange}
         />
-        <Button type="primary" disabled={!account} onClick={handleSearch}>
+        <Input.Search
+          allowClear
+          className="reconcile-detail-search"
+          placeholder="搜索金额 / 交易对象 / 说明"
+          onSearch={handleSearch}
+          onChange={(e) => handleSearchChange(e.target.value)}
+        />
+        <Button type="primary" disabled={!account} onClick={() => handleSearch(appliedKeyword)}>
           查询
         </Button>
       </div>
       {error && <Alert type="error" showIcon style={{ marginBottom: 12 }} message={error} />}
       <ProTable<LedgerEntryRow>
-        rowKey="id"
+        rowKey={(row) => row.externalId ?? String(row.id)}
         size="small"
         loading={loading}
         dataSource={rows}
@@ -198,6 +254,14 @@ function DetailLedgerTab() {
         }}
         search={false}
         options={false}
+      />
+      <EntryEditDrawer
+        open={editEntryId !== null}
+        entryId={editEntryId}
+        onClose={() => setEditEntryId(null)}
+        onSaved={() => {
+          if (account) return loadEntries(account, page, range, appliedKeyword)
+        }}
       />
     </>
   )

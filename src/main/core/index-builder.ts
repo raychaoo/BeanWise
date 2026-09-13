@@ -58,7 +58,7 @@ export interface ListEntriesParams {
   /** 起止日期（含端点，YYYY-MM-DD）；超 UI 层 #2：服务端时间过滤 */
   dateFrom?: string
   dateTo?: string
-  /** 搜索词：payee/narration/账户（entry 自身 account 或 postings.account）任一命中即整笔交易命中 */
+  /** 搜索词：payee/narration/交易 ID/账户/金额（postings.unitsNumber 绝对值）任一命中即整笔交易命中 */
   keyword?: string
   /** 账户精确过滤（超 UI 层 #2 收尾）：精确匹配 postings.account，不做前缀展开（层级聚合是余额表职责）；
    * 明细账视角 = 该账户自身分录流，命中交易的其他 posting 行不自动带出；与 keyword/date* 叠加为 AND 语义 */
@@ -342,9 +342,12 @@ export function listEntries(
     )
   }
   if (filters?.keyword) {
-    const kw = `%${filters.keyword.replace(/[\\%_]/g, '\\$&')}%`
+    const escaped = filters.keyword.replace(/[\\%_]/g, '\\$&')
+    const kw = `%${escaped}%`
+    // 金额搜索按绝对值：用户输入 15 / -15 / 15.0 都能命中 15.00 的任一 posting。
+    const amountKw = `%${escaped.replace(/^[+-]/, '')}%`
     conds.push(
-      sql`(${entries.payee} LIKE ${kw} ESCAPE '\\' OR ${entries.narration} LIKE ${kw} ESCAPE '\\' OR ${entries.externalId} LIKE ${kw} ESCAPE '\\' OR ${entries.account} LIKE ${kw} ESCAPE '\\' OR EXISTS (SELECT 1 FROM postings WHERE postings.entry_id = ${entries.id} AND postings.account LIKE ${kw} ESCAPE '\\'))`
+      sql`(${entries.payee} LIKE ${kw} ESCAPE '\\' OR ${entries.narration} LIKE ${kw} ESCAPE '\\' OR ${entries.externalId} LIKE ${kw} ESCAPE '\\' OR ${entries.account} LIKE ${kw} ESCAPE '\\' OR EXISTS (SELECT 1 FROM postings WHERE postings.entry_id = ${entries.id} AND (postings.account LIKE ${kw} ESCAPE '\\' OR REPLACE(postings.units_number, '-', '') LIKE ${amountKw} ESCAPE '\\')))`
     )
   }
   const where = conds.length > 0 ? and(...conds) : undefined

@@ -201,11 +201,18 @@ describe('索引重建管线（M3）', () => {
     expect(() => listEntries(drizzle, 100, 0, 'asc', { account: 'x'.repeat(201) })).toThrow()
   }, 30_000)
 
-  it('listEntries keyword 交易级命中（payee/narration/账户，LIKE 转义）', async () => {
+  it('listEntries keyword 交易级命中（payee/narration/账户/金额，LIKE 转义）', async () => {
     copyFileSync(MAIN_FIXTURE, workFile)
     await refreshIndex(drizzle, engine, workFile)
     const byNarration = listEntries(drizzle, 100, 0, 'asc', { keyword: 'Breakfast' })
     expect(byNarration.total).toBe(1)
+    // 金额命中不看正负号：15 可命中 Breakfast 的 -15/+15 分录
+    const byAmount = listEntries(drizzle, 100, 0, 'asc', { keyword: '15' })
+    expect(byAmount.total).toBe(1)
+    expect(byAmount.entries[0]!.narration).toBe('Breakfast')
+    const byDecimalAmount = listEntries(drizzle, 100, 0, 'asc', { keyword: '25.0' })
+    expect(byDecimalAmount.total).toBe(1)
+    expect(byDecimalAmount.entries[0]!.narration).toBe('Coffee')
     // posting 账户 Assets:Bank:CNB 命中 2 笔交易；Open 行 account 列同样命中 → 共 3
     const byAccount = listEntries(drizzle, 100, 0, 'asc', { keyword: 'Bank' })
     expect(byAccount.total).toBe(3)

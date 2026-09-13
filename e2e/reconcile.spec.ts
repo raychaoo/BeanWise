@@ -3,7 +3,9 @@
  * 进对账页 → Tab② TreeSelect 选 Expenses:Food → 表格出现该账户分录行且账户列含 Food。
  */
 import { _electron as electron, expect, test, type Page } from '@playwright/test'
-import { dirname } from 'node:path'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { cleanupFixture, createFixtureCopy } from './fixtures/setup'
 
 // GitHub Actions 的 ubuntu runner 无 user namespaces，需关 Chromium 沙箱；本机 Windows 不用
@@ -79,5 +81,78 @@ test('批次 F：明细账账户过滤（TreeSelect 选 Expenses:Food → 该账
     await app.close()
   } finally {
     cleanupFixture(ledgerPath)
+  }
+})
+
+test('对账明细账：ID/完整时间展示，金额、交易对象、说明搜索与抽屉编辑', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'beanwise-reconcile-detail-'))
+  const ledgerPath = join(dir, 'main.beancount')
+  writeFileSync(
+    ledgerPath,
+    'option "title" "Reconcile Detail"\noption "operating_currency" "CNY"\n\n' +
+      '2026-01-01 open Assets:Bank:CNB\n' +
+      '2026-01-01 open Expenses:Food\n\n' +
+      '2026-08-22 * "麦当劳" "早餐"\n' +
+      '  id: "bw-reconcile-1"\n' +
+      '  time: "2026-08-22 08:15:30"\n' +
+      '  Expenses:Food  17.40 CNY\n' +
+      '  Assets:Bank:CNB  -17.40 CNY\n\n' +
+      '2026-08-23 * "瑞幸咖啡" "咖啡"\n' +
+      '  id: "bw-reconcile-2"\n' +
+      '  time: "2026-08-23 12:34:56"\n' +
+      '  Expenses:Food  25.00 CNY\n' +
+      '  Assets:Bank:CNB  -25.00 CNY\n',
+    'utf8'
+  )
+
+  try {
+    const app = await electron.launch({ args: launchArgs })
+    const win = await app.firstWindow()
+    await activateWorkspace(win, ledgerPath)
+
+    await win.getByRole('menuitem', { name: '对账' }).click()
+    await win.getByRole('tab', { name: '明细账' }).click()
+    await win.locator('.reconcile-detail-toolbar .ant-select').click()
+    await win.locator('.reconcile-detail-toolbar .ant-select-selection-search-input').fill('Food')
+    await win.locator('.ant-select-tree-title', { hasText: 'Expenses:Food' }).click()
+
+    const pane = win.locator('.ant-tabs-tabpane-active')
+    const rows = pane.locator('.ant-table-tbody .ant-table-row')
+    await expect(rows).toHaveCount(2, { timeout: 15_000 })
+    await expect(rows.first()).toContainText('bw-reconcile-2')
+    await expect(rows.first()).toContainText('2026-08-23 12:34:56')
+    await expect(rows.first()).toContainText('-25')
+
+    const search = pane.getByPlaceholder('搜索金额 / 交易对象 / 说明')
+    await search.fill('17.4')
+    await search.press('Enter')
+    await expect(rows).toHaveCount(1)
+    await expect(rows.first()).toContainText('bw-reconcile-1')
+
+    await search.fill('瑞幸')
+    await search.press('Enter')
+    await expect(rows).toHaveCount(1)
+    await expect(rows.first()).toContainText('bw-reconcile-2')
+
+    await search.fill('早餐')
+    await search.press('Enter')
+    await expect(rows).toHaveCount(1)
+    await expect(rows.first()).toContainText('bw-reconcile-1')
+
+    await search.fill('')
+    await expect(rows).toHaveCount(2)
+    await pane.getByRole('button', { name: '编辑 bw-reconcile-2' }).click()
+    const drawer = win.getByRole('dialog')
+    await expect(drawer.getByText('bw-reconcile-2')).toBeVisible()
+    await expect(drawer.getByLabel('日期')).toHaveValue('2026-08-23 12:34:56')
+    await drawer.getByLabel('说明').fill('抽屉编辑后')
+    await drawer.getByRole('button', { name: '保存修改' }).click()
+    await expect(win.locator('.ant-message')).toContainText('已更新并校验通过')
+    await expect(rows.first()).toContainText('抽屉编辑后')
+    expect(readFileSync(ledgerPath, 'utf8')).toContain('id: "bw-reconcile-2"')
+
+    await app.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
   }
 })
