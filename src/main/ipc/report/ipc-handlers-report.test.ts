@@ -4,8 +4,9 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import { createDrizzle, openDatabase } from '../../db/index'
-import { entries, ledgerMeta, postings } from '../../db/schema'
+import { entries, entryLinks, ledgerMeta, postings } from '../../db/schema'
 import { registerReportHandlers, type ReportDeps } from './ipc-handlers-report'
+import type { ReportCounterpartyLedgerResult } from '../../../shared/ipc'
 
 type IpcListener = (channel: string, listener: (...args: unknown[]) => unknown) => void
 type Registrar = { handle: ReturnType<typeof vi.fn<IpcListener>> }
@@ -438,5 +439,96 @@ describe('report:export-pdf', () => {
     const handlers = registerWithDeps({ db: setup().db, getWindow: () => null, showSaveDialog: vi.fn(), writeFile: vi.fn() })
     const r = (await handlers.get('report:export-pdf')!({})) as { ok: boolean; message?: string }
     expect(r).toEqual({ ok: false, message: expect.stringContaining('未找到应用窗口') })
+  })
+})
+
+/** 插入一条带往来对象的 posting（往来账按对象聚合，ADR 23）；link 可选（P2 核销） */
+function insertCounterpartyPosting(
+  db: ReportDeps['db'],
+  row: {
+    date: string
+    account: string
+    number: string
+    currency: string
+    counterparty: string | null
+    link?: string
+  }
+): void {
+  const entry = db
+    .insert(entries)
+    .values({ type: 'Transaction', date: row.date, narration: 't' })
+    .returning()
+    .get()
+  db.insert(postings)
+    .values({
+      entryId: entry.id,
+      account: row.account,
+      unitsNumber: row.number,
+      unitsCurrency: row.currency,
+      counterparty: row.counterparty
+    })
+    .run()
+  if (row.link) db.insert(entryLinks).values({ entryId: entry.id, link: row.link }).run()
+}
+
+describe('report:counterparty-ledger（ADR 23 往来账）', () => {
+  it('按对象聚合净额；未标注对象单列且置末', async () => {
+    const db = createDrizzle(openDatabase(':memory:'))
+    insertCounterpartyPosting(db, { date: '2026-05-19', account: 'Assets:Receivables:Lend', number: '5000', currency: 'CNY', counterparty: '李志全' })
+    insertCounterpartyPosting(db, { date: '2026-06-01', account: 'Assets:Receivables:Lend', number: '-1000', currency: 'CNY', counterparty: '李志全' })
+    insertCounterpartyPosting(db, { date: '2026-05-01', account: 'Assets:Receivables:Lend', number: '888', currency: 'CNY', counterparty: null })
+
+    const handlers = registerWithDeps({ db, counterpartyAccounts: () => ['Assets:Receivables:Lend'] })
+    const r = (await handlers.get('report:counterparty-ledger')!()) as ReportCounterpartyLedgerResult
+    expect(r.accounts).toEqual(['Assets:Receivables:Lend'])
+    expect(r.rows.map((x) => x.counterparty)).toEqual(['李志全', null])
+    expect(r.rows.map((x) => x.net)).toEqual(['4000', '888'])
+  })
+
+  it('非往来类账户的行不参与（transaction 级 metadata 会给两条腿都打标，靠账户过滤消解）', async () => {
+    const db = createDrizzle(openDatabase(':memory:'))
+    insertCounterpartyPosting(db, { date: '2026-05-19', account: 'Assets:Receivables:Lend', number: '5000', currency: 'CNY', counterparty: '李志全' })
+    insertCounterpartyPosting(db, { date: '2026-05-19', account: 'Assets:Bank:ZSYH', number: '-5000', currency: 'CNY', counterparty: '李志全' })
+
+    const handlers = registerWithDeps({ db, counterpartyAccounts: () => ['Assets:Receivables:Lend'] })
+    const r = (await handlers.get('report:counterparty-ledger')!()) as ReportCounterpartyLedgerResult
+    expect(r.rows).toEqual([
+      { counterparty: '李志全', receivable: '5000', payable: '0', net: '5000', currency: 'CNY' }
+    ])
+  })
+
+  it('账户库未标记任何往来类账户 → 空集（accounts 一并回传，UI 可区分两种空）', async () => {
+    const db = createDrizzle(openDatabase(':memory:'))
+    insertCounterpartyPosting(db, { date: '2026-05-19', account: 'Assets:Receivables:Lend', number: '5000', currency: 'CNY', counterparty: '李志全' })
+
+    const handlers = registerWithDeps({ db, counterpartyAccounts: () => [] })
+    const r = (await handlers.get('report:counterparty-ledger')!()) as ReportCounterpartyLedgerResult
+    expect(r).toEqual({ rows: [], loans: [], accounts: [] })
+  })
+
+  it('借出明细：同一 link 的借出/还款合并为一笔贷款的核销状态（ADR 23 P2）', async () => {
+    const db = createDrizzle(openDatabase(':memory:'))
+    const LEND = 'Assets:Receivables:Lend'
+    insertCounterpartyPosting(db, { date: '2026-05-19', account: LEND, number: '5000', currency: 'CNY', counterparty: '李志全', link: 'lend-aaa' })
+    insertCounterpartyPosting(db, { date: '2026-07-01', account: LEND, number: '-4000', currency: 'CNY', counterparty: '李志全', link: 'lend-aaa' })
+    // 无 link 的历史分录：进汇总，不进逐笔明细
+    insertCounterpartyPosting(db, { date: '2026-08-01', account: LEND, number: '800', currency: 'CNY', counterparty: '李志全' })
+
+    const handlers = registerWithDeps({ db, counterpartyAccounts: () => [LEND] })
+    const r = (await handlers.get('report:counterparty-ledger')!()) as ReportCounterpartyLedgerResult
+    expect(r.loans).toEqual([
+      {
+        id: 'lend-aaa',
+        counterparty: '李志全',
+        date: '2026-05-19',
+        currency: 'CNY',
+        principal: '5000',
+        settled: '4000',
+        outstanding: '1000',
+        closed: false
+      }
+    ])
+    // 汇总口径不变：5000 − 4000 + 800 = 1800
+    expect(r.rows[0]!.net).toBe('1800')
   })
 })

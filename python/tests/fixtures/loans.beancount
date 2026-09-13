@@ -1,0 +1,29 @@
+option "title" "Loans Fixture"
+option "operating_currency" "CNY"
+
+2026-01-01 open Assets:Bank:ZSYH
+2026-01-01 open Assets:Receivables:Lend
+
+; 借出 5000 —— 交易挂自身贷款 ID
+2026-05-19 * "李志全" "借出5000" ^lend-aaa
+  Assets:Receivables:Lend  5000.00 CNY
+    counterparty: "李志全"
+  Assets:Bank:ZSYH  -5000.00 CNY
+
+; 再借 3000 —— 另一笔贷款
+2026-06-01 * "李志全" "再借3000" ^lend-bbb
+  Assets:Receivables:Lend  3000.00 CNY
+    counterparty: "李志全"
+  Assets:Bank:ZSYH  -3000.00 CNY
+
+; 还 4000 —— 挂在第一笔（FIFO 最早未结）上
+2026-07-01 * "李志全还款" "还4000" ^lend-aaa
+  Assets:Bank:ZSYH  4000.00 CNY
+  Assets:Receivables:Lend  -4000.00 CNY
+    counterparty: "李志全"
+
+; 无 link 的往来分录（旧数据）：进 counterparty 汇总，不进逐笔核销
+2026-08-01 * "王五" "借出800"
+  Assets:Receivables:Lend  800.00 CNY
+    counterparty: "王五"
+  Assets:Bank:ZSYH  -800.00 CNY

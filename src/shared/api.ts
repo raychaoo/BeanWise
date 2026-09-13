@@ -21,6 +21,7 @@ import type {
   SaveAccountsParams,
   LedgerStatus,
   ListAccountsResult,
+  ListCounterpartiesResult,
   ListEntriesParams,
   ListEntriesResult,
   ReadFileResult,
@@ -39,6 +40,7 @@ import type {
   ReportYearsResult,
   ReportBreakdownParams,
   ReportBreakdownResult,
+  ReportCounterpartyLedgerResult,
   ResolveConflictParams,
   ResolveConflictResult,
   SaveAiConfigParams,
@@ -79,6 +81,8 @@ export interface BeanWiseApi {
   addLedgerEntry(params: AddEntryParams): Promise<AddEntryResult>
   /** 账户列表（录入表单 AutoComplete 数据源，postings 表 DISTINCT） */
   listLedgerAccounts(): Promise<ListAccountsResult>
+  /** 往来对象候选（录入页「往来对象」历史补全；postings.counterparty 非空 DISTINCT，ADR 23） */
+  listLedgerCounterparties(): Promise<ListCounterpartiesResult>
   /** 读取通用账户库 */
   getAccountConfig(): Promise<AccountsResult>
   /** 保存通用账户库 */
@@ -137,6 +141,8 @@ export interface BeanWiseApi {
   getCashFlowReport(params: ReportCashFlowParams): Promise<ReportCashFlowResult>
   /** 支出/收入类别汇总（顶层段聚合，按金额降序，超出 top 位合并为「其他」；运营货币） */
   getBreakdownReport(params: ReportBreakdownParams): Promise<ReportBreakdownResult>
+  /** 往来账（谁欠我多少 / 我欠谁多少；往来类账户由账户库 counterparty 标志圈定，空 = 未标记） */
+  getCounterpartyLedgerReport(): Promise<ReportCounterpartyLedgerResult>
   /** 导出当前报表页为 PDF（printToPDF + 保存对话框；取消 → ok:true 无 path） */
   exportReportPdf(): Promise<ExportReportPdfResult>
   checkForUpdates(): Promise<UpdateCheckResult>

@@ -55,21 +55,29 @@ export interface EntryRow {
   account?: string
   number?: string | null
   currency?: string
+  /** 往来对象（ADR 23）：仅往来类账户行会填 */
+  counterparty?: string
 }
 
 export interface EntryPosting {
   account: string
   number: string
   currency: string
+  /** 往来对象（ADR 23）：trim 后为空 → undefined（序列化时不写 metadata 行） */
+  counterparty?: string
 }
 
 /** 表单两行 → 落账 postings：按账户类型定向金额符号，其余字段原样（非两行时不做定向） */
 export function buildEntryPostings(rows: EntryRow[]): EntryPosting[] {
-  const plain = (row: EntryRow): EntryPosting => ({
-    account: row.account ?? '',
-    number: (row.number ?? '').trim(),
-    currency: row.currency ?? ''
-  })
+  const plain = (row: EntryRow): EntryPosting => {
+    const counterparty = row.counterparty?.trim()
+    return {
+      account: row.account ?? '',
+      number: (row.number ?? '').trim(),
+      currency: row.currency ?? '',
+      ...(counterparty ? { counterparty } : {})
+    }
+  }
   if (rows.length !== 2) return rows.map(plain)
   const [sign0, sign1] = resolvePostingSigns(rows[0]?.account, rows[1]?.account)
   return rows.map((row, index) => ({

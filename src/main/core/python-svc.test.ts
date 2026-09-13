@@ -35,7 +35,8 @@ describe('PythonSvc 生命周期与 RPC（M3）', () => {
       units_number: '-15.00',
       units_currency: 'CNY',
       cost_number: null,
-      cost_currency: null
+      cost_currency: null,
+      counterparty: null
     })
   }, 30_000)
 

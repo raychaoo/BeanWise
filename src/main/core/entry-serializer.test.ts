@@ -49,6 +49,48 @@ describe('serializeEntry', () => {
     expect(serializeEntry({ ...valid, postings: [{ account: 'Assets:Cash', number: '-100', currency: 'CNY' }] }))
       .toContain('  Assets:Cash  -100 CNY\n')
   })
+
+  it('counterparty：posting 级 metadata，缩进 4 格，只挂在带对象的分录下（ADR 23）', () => {
+    expect(
+      serializeEntry({
+        ...valid,
+        postings: [
+          { account: 'Assets:Receivables:Lend', number: '5000.00', currency: 'CNY', counterparty: '李志全' },
+          { account: 'Assets:Bank:ZSYH', number: '-5000.00', currency: 'CNY' }
+        ]
+      })
+    ).toBe(
+      '2026-08-09 * "测试午饭" "M4 E2E"\n' +
+        '  Assets:Receivables:Lend  5000.00 CNY\n' +
+        '    counterparty: "李志全"\n' +
+        '  Assets:Bank:ZSYH  -5000.00 CNY\n'
+    )
+  })
+
+  it('反斜杠转义：beancount 用 C 风格转义（`\\b` = 退格符），字面反斜杠须写成两个', () => {
+    expect(serializeEntry({ ...valid, payee: 'a\\b' })).toMatch(/^2026-08-09 \* "a\\\\b"/)
+    expect(
+      serializeEntry({
+        ...valid,
+        postings: [
+          { account: 'Assets:Receivables:Lend', number: '1', currency: 'CNY', counterparty: 'x\\y' },
+          { account: 'Assets:Bank:ZSYH', number: '-1', currency: 'CNY' }
+        ]
+      })
+    ).toContain('    counterparty: "x\\\\y"\n')
+  })
+
+  it('links：交易级 ^link，追加在 payee/narration 之后（ADR 23 P2）', () => {
+    expect(serializeEntry({ ...valid, links: ['lend-abc', 'lend-def'] })).toBe(
+      '2026-08-09 * "测试午饭" "M4 E2E" ^lend-abc ^lend-def\n' +
+        '  Expenses:Food  25.50 CNY\n' +
+        '  Assets:Cash  -25.50 CNY\n'
+    )
+    // 无 payee/narration 分支同样成立（link 跟在标志之后）
+    expect(serializeEntry({ ...valid, payee: undefined, narration: undefined, links: ['lend-x'] })).toBe(
+      '2026-08-09 * ^lend-x\n  Expenses:Food  25.50 CNY\n  Assets:Cash  -25.50 CNY\n'
+    )
+  })
 })
 
 describe('findUnopenedAccounts / serializeOpenLines（追加场景补 open 行）', () => {
@@ -185,6 +227,37 @@ describe('validateEntryParams', () => {
         validateEntryParams({ ...valid, postings: [{ ...valid.postings[0], currency }, ...valid.postings.slice(1)] })
       ).toThrow(/currency/)
     }
+  })
+
+  it('posting.counterparty：trim 归一 / 超长拒绝 / 控制字符拒绝 / 空串与缺省等价（ADR 23）', () => {
+    const withCp = (counterparty: unknown): unknown => ({
+      ...valid,
+      postings: [
+        { account: 'Assets:Receivables:Lend', number: '1', currency: 'CNY', counterparty },
+        { account: 'Assets:Bank:ZSYH', number: '-1', currency: 'CNY' }
+      ]
+    })
+    expect(validateEntryParams(withCp('  李志全  ')).postings[0]!.counterparty).toBe('李志全')
+    expect(validateEntryParams(withCp('')).postings[0]!.counterparty).toBeUndefined()
+    expect(validateEntryParams(withCp(undefined)).postings[0]!.counterparty).toBeUndefined()
+    expect(() => validateEntryParams(withCp('x'.repeat(201)))).toThrow(/counterparty/)
+    expect(() => validateEntryParams(withCp('a\nb'))).toThrow(/counterparty/)
+    expect(() => validateEntryParams(withCp(123))).toThrow(/counterparty/)
+  })
+
+  it('links 校验：非法字符 / 重复 / 超量 / 非数组一律拒绝；空数组归缺省（ADR 23 P2）', () => {
+    const withLinks = (links: unknown): unknown => ({ ...valid, links })
+    expect(validateEntryParams(withLinks(['lend-abc'])).links).toEqual(['lend-abc'])
+    expect(validateEntryParams(withLinks([])).links).toBeUndefined()
+    // 中文 / 点 / 斜杠 / 空格：beancount link 词法不吃，必须在入参防线拦掉
+    expect(() => validateEntryParams(withLinks(['lend中文']))).toThrow(/link 非法/)
+    expect(() => validateEntryParams(withLinks(['lend.a']))).toThrow(/link 非法/)
+    expect(() => validateEntryParams(withLinks(['lend/a']))).toThrow(/link 非法/)
+    expect(() => validateEntryParams(withLinks(['a b']))).toThrow(/link 非法/)
+    expect(() => validateEntryParams(withLinks(['a', 'a']))).toThrow(/重复/)
+    expect(() => validateEntryParams(withLinks(Array.from({ length: 21 }, (_, i) => `l${i}`)))).toThrow(/最多/)
+    expect(() => validateEntryParams(withLinks('lend-a'))).toThrow(/必须为数组/)
+    expect(() => validateEntryParams(withLinks(['x'.repeat(65)]))).toThrow(/长度/)
   })
 
   it('posting 数量边界：1 行拒绝 / 21 行拒绝 / 20 行通过', () => {

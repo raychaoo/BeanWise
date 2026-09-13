@@ -49,12 +49,26 @@ def validate(filename: str) -> dict:
     return {"errors": _serialize_errors(errors)}
 
 
+def _counterparty(entry, posting) -> str | None:
+    """往来对象（ADR 23）：posting 级 metadata `counterparty` 优先，缺则回退 transaction 级。
+
+    Beancount 的 meta key 必须 ASCII 开头（中文 key 直接语法报错），故 key 固定为
+    counterparty、值可中文。非字符串值（date / Decimal 等）一律 str() 归一，保证 JSON 可序列化。
+    回退是给手工编辑 / 导入 / 历史数据用的：主用法始终是 posting 级（见 ADR 23）。
+    """
+    for meta in (posting.meta, entry.meta):
+        if isinstance(meta, dict) and "counterparty" in meta:
+            value = meta["counterparty"]
+            return value if isinstance(value, str) else str(value)
+    return None
+
+
 def _serialize_entry(entry) -> dict:
     """把 beancount entry 转成 JSON 友好 dict（M3 SQLite 索引数据源）。
 
     扁平结构：通用字段（type/date/lineno）+ 类型专属字段（Transaction 的
     postings、Open 的 account），其余类型只带通用字段。金额 Decimal 一律
-    str() 保持精度（与 M2 协议一致）。
+    str() 保持精度（与 M2 协议一致）。posting 另带 counterparty（往来对象，ADR 23）。
     """
     item = {
         "type": type(entry).__name__,
@@ -65,6 +79,9 @@ def _serialize_entry(entry) -> dict:
         item["flag"] = entry.flag
         item["payee"] = entry.payee
         item["narration"] = entry.narration
+        # 交易级 link（ADR 23 P2 核销）：借出笔带自身贷款 ID，还款笔带其结清的贷款 ID。
+        # beancount 里是 frozenset —— 排序后输出，保证同一账本每次解析结果稳定可比。
+        item["links"] = sorted(entry.links) if entry.links else []
         item["postings"] = [
             {
                 "account": p.account,
@@ -72,6 +89,7 @@ def _serialize_entry(entry) -> dict:
                 "units_currency": p.units.currency,
                 "cost_number": str(p.cost.number) if p.cost else None,
                 "cost_currency": p.cost.currency if p.cost else None,
+                "counterparty": _counterparty(entry, p),
             }
             for p in entry.postings
         ]

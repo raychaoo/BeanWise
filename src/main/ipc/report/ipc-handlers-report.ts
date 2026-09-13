@@ -4,7 +4,7 @@
  * 运营货币取 ledger_meta.operating_currency[0]；无 option 时按 postings 币种频次兜底识别主币
  * （2026-08-23 回归修复：清空/重建后缺 option 会导致图表按 '' 过滤恒空），再无 → ''（空集）。
  */
-import { and, asc, count, desc, eq, gte, like, lte, max, min, or, type SQL } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gte, inArray, like, lte, max, min, or, type SQL } from 'drizzle-orm'
 import type { SaveDialogOptions, WebContents } from 'electron'
 import type {
   ExportReportPdfResult,
@@ -14,6 +14,7 @@ import type {
   ReportBreakdownResult,
   ReportCashFlowParams,
   ReportCashFlowResult,
+  ReportCounterpartyLedgerResult,
   ReportGranularity,
   ReportIncomeExpenseParams,
   ReportIncomeExpenseResult,
@@ -31,12 +32,15 @@ import {
   buildAccountTree,
   computeBreakdown,
   computeCashFlow,
+  computeCounterpartyLedger,
   computeIncomeExpense,
   computeNetWorth,
   computeTrialBalance,
   type CashFlowPostingRow,
+  type CounterpartyPostingRow,
   type PostingRow
 } from '../../core/report-aggregation'
+import { computeLoanLedger, loadLoanRows } from '../../core/loan-links'
 import type { IpcRegistrar } from '../ledger/ipc-handlers'
 
 /** PDF 导出依赖（index.ts 注入真实实现；测试注入 mock——模块不直接 import electron 运行时） */
@@ -51,6 +55,9 @@ export interface ReportPdfDeps {
 
 export interface ReportDeps extends ReportPdfDeps {
   db: DrizzleDb
+  /** 往来类账户路径提供者（ADR 23）：读账户库 counterparty 标志，查询时实时取值
+   * （账户库可先于账本变化，快照会读到旧值）。未注入 / 未标记任何账户 → 往来账空集。 */
+  counterpartyAccounts?: () => string[]
 }
 
 const YEAR_RE = /^\d{4}$/
@@ -103,7 +110,8 @@ function loadRows(db: DrizzleDb, where: SQL | undefined): PostingRow[] {
       date: entries.date,
       account: postings.account,
       number: postings.unitsNumber,
-      currency: postings.unitsCurrency
+      currency: postings.unitsCurrency,
+      counterparty: postings.counterparty
     })
     .from(postings)
     .innerJoin(entries, eq(postings.entryId, entries.id))
@@ -238,6 +246,22 @@ export function registerReportHandlers(ipc: IpcRegistrar, deps: ReportDeps): voi
     const currency = operatingCurrency(db)
     const rows = loadRows(db, or(like(postings.account, 'Expenses:%'), like(postings.account, 'Income:%')))
     return computeBreakdown(rows, { flow, currency, dateFrom, dateTo, top: params.top })
+  })
+
+  // report:counterparty-ledger（ADR 23）：往来类账户由账户库 counterparty 标志圈定（不硬编码账户名），
+  // 按往来对象聚合净额——谁欠我多少 / 我欠谁多少。未标记任何往来类账户 → 空集（accounts 一并回传，
+  // 供 UI 区分「真没有往来」与「还没标记往来账户」两种空）。未标注对象的行单列，不让历史数据静默消失。
+  ipc.handle('report:counterparty-ledger', (): ReportCounterpartyLedgerResult => {
+    const db = deps.db
+    const accounts = deps.counterpartyAccounts?.() ?? []
+    if (accounts.length === 0) return { rows: [], loans: [], accounts: [] }
+    const rows = loadRows(db, inArray(postings.account, accounts)) as CounterpartyPostingRow[]
+    return {
+      rows: computeCounterpartyLedger(rows),
+      // 逐笔核销明细（P2）：只含带 link 的交易，未回填 link 的历史分录不在此列
+      loans: computeLoanLedger(loadLoanRows(db, accounts)),
+      accounts
+    }
   })
 
   // report:export-pdf（批次 G #8）：webContents.printToPDF → dialog.showSaveDialog → writeFile。

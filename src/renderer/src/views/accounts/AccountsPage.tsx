@@ -143,6 +143,12 @@ export default function AccountsPage() {
     setConfigured((prev) => prev.map((e) => (e.id === id ? { ...e, enabled: checked ? undefined : false } : e)))
   }
 
+  // 往来类标记（ADR 23）：同 enabled 走显式保存模型。仅资产/负债侧有意义——往来账报表只聚合
+  // 这两侧，误标在收支账户上会得到永远空的行，故列渲染也据此禁用。
+  const handleCounterpartyChange = (id: number, checked: boolean) => {
+    setConfigured((prev) => prev.map((e) => (e.id === id ? { ...e, counterparty: checked ? true : undefined } : e)))
+  }
+
   // ---- 批次 I：期初余额 ----
   const openObModal = (record: AccountEntry) => {
     setObRecord(record)
@@ -276,6 +282,22 @@ export default function AccountsPage() {
                         <Switch size="small" checked={record.enabled !== false} onChange={(checked) => handleEnabledChange(record.id, checked)} aria-label={`启停用 ${record.name}`} />
                       </Tooltip>
                     )
+                  },
+                  {
+                    title: '往来',
+                    dataIndex: 'counterparty',
+                    width: 72,
+                    render: (_dom: unknown, record: AccountEntry) => {
+                      const type = record.value.split(':')[0]
+                      if (type !== 'Assets' && type !== 'Liabilities') {
+                        return <Typography.Text type="secondary">—</Typography.Text>
+                      }
+                      return (
+                        <Tooltip title={record.counterparty === true ? '往来类账户：录入时填「往来对象」，参与往来账报表' : '非往来类账户（不参与往来账报表）'}>
+                          <Switch size="small" checked={record.counterparty === true} onChange={(checked) => handleCounterpartyChange(record.id, checked)} aria-label={`往来类 ${record.name}`} />
+                        </Tooltip>
+                      )
+                    }
                   },
                   {
                     title: '路径',

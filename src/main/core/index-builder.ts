@@ -3,7 +3,7 @@ import { readFileSync, statSync } from 'node:fs'
 import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { DrizzleDb } from '../db/index'
-import { entries, ledgerMeta, postings } from '../db/schema'
+import { entries, entryLinks, ledgerMeta, postings } from '../db/schema'
 import { accountType, isPnlAccountType } from '../../shared/account'
 import { addDecimalStrings, negateDecimal } from '../../shared/decimal'
 import type { PythonSvc } from './python-svc'
@@ -166,6 +166,7 @@ export async function refreshIndex(
   // 注意：drizzle better-sqlite3 驱动下 db.transaction 同步执行（BEGIN…COMMIT 包住回调），
   // 返回回调结果；事务内只能同步 API（delete/insert…run），await 一律在事务外。
   db.transaction((drizzle) => {
+    drizzle.delete(entryLinks).run()
     drizzle.delete(postings).run()
     drizzle.delete(entries).run()
     for (const entry of parsed.entries) {
@@ -191,9 +192,14 @@ export async function refreshIndex(
             unitsNumber: p.units_number as string,
             unitsCurrency: p.units_currency as string,
             costNumber: (p.cost_number as string | null) ?? null,
-            costCurrency: (p.cost_currency as string | null) ?? null
+            costCurrency: (p.cost_currency as string | null) ?? null,
+            counterparty: (p.counterparty as string | null) ?? null
           })
           .run()
+      }
+      // 交易级 link（ADR 23 P2 核销）：一笔可有多个，逐条落行
+      for (const link of (entry.links as string[] | undefined) ?? []) {
+        drizzle.insert(entryLinks).values({ entryId: inserted.id, link }).run()
       }
     }
   })

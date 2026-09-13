@@ -2,12 +2,13 @@ import { createHash } from 'node:crypto'
 import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, truncateSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { computeBalancingNumber } from '../../../shared/decimal'
-import type { AddEntryResult, ClearLedgerResult, ListAccountsResult, ListEntriesParams, ReadFileResult, RefreshResult, SaveFileParams, SaveFileResult } from '../../../shared/ipc'
+import type { AddEntryParams, AddEntryResult, ClearLedgerResult, ListAccountsResult, ListCounterpartiesResult, ListEntriesParams, ReadFileResult, RefreshResult, SaveFileParams, SaveFileResult } from '../../../shared/ipc'
 import type { DrizzleDb } from '../../db/index'
 import { postings } from '../../db/schema'
 import { findUnopenedAccounts, serializeEntry, serializeFirstEntryBlock, serializeOpenLines, validateEntryParams } from '../../core/entry-serializer'
 import { getLedgerStatus, listEntries, refreshIndex } from '../../core/index-builder'
 import { writeLedgerChecked } from '../../utils/ledger-writer'
+import { computeLoanLedger, isNewLoanPosting, loadLoanRows, newLoanId, pickOpenLoanId } from '../../core/loan-links'
 import type { PythonSvc } from '../../core/python-svc'
 import { withWriteLock } from '../../utils/write-lock'
 
@@ -21,6 +22,8 @@ export interface LedgerDeps {
   engine: PythonSvc
   /** 账本文件路径（主进程持有，渲染进程不传路径——防目录穿越） */
   ledgerPath: string
+  /** 往来类账户路径（ADR 23 P2）：add-entry 据此自动盖/挂贷款 link。未注入 → 不自动挂链。 */
+  counterpartyAccounts?: () => string[]
 }
 
 const MAX_LIMIT = 1_000
@@ -132,6 +135,44 @@ export function listAccounts(db: DrizzleDb): string[] {
     .map((r) => r.account)
 }
 
+/** 往来对象候选（postings.counterparty 非空 DISTINCT，上限 500）。ADR 23：录入页「往来对象」
+ * 用历史值补全，避免「李志全」与「李志 全」手误分裂成两个对象（分裂即余额算错）。
+ * null 该丢——未标注的历史行不是候选；SELECT DISTINCT 会把 null 排在最前，过滤掉即可。 */
+export function listCounterparties(db: DrizzleDb): string[] {
+  return db
+    .selectDistinct({ counterparty: postings.counterparty })
+    .from(postings)
+    .orderBy(postings.counterparty)
+    .limit(500)
+    .all()
+    .map((r) => r.counterparty)
+    .filter((c): c is string => c !== null)
+}
+
+/**
+ * 自动挂链（ADR 23 P2）：调用方未显式给 links 时——
+ * - **新借出** → 盖一个新贷款 ID（不派生自内容，改账不悬空）；
+ * - **还款** → FIFO 挂到该对象最早的未结贷款；该对象没有未结贷款则不挂
+ *   （beancount 只记不存在的 link 也不报错，故悬空由报表/UI 自行识别）。
+ * 放在主进程而非渲染端：一处覆盖全部写入路径（手工录入 / Excel 导入 / AI 草稿）。
+ */
+export function withAutoLinks(
+  params: AddEntryParams,
+  deps: Pick<LedgerDeps, 'db' | 'counterpartyAccounts'>
+): AddEntryParams {
+  if (params.links && params.links.length > 0) return params // 调用方显式指定优先
+  const accounts = deps.counterpartyAccounts?.() ?? []
+  if (accounts.length === 0) return params
+  const hit = params.postings.find((p) => accounts.includes(p.account))
+  if (!hit) return params
+  if (isNewLoanPosting(hit.account, hit.number)) {
+    return { ...params, links: [newLoanId()] }
+  }
+  if (!hit.counterparty) return params
+  const loan = pickOpenLoanId(computeLoanLedger(loadLoanRows(deps.db, accounts)), hit.counterparty)
+  return loan ? { ...params, links: [loan] } : params
+}
+
 /** 注册 ledger 域 IPC 通道（roadmap「IPC 契约」：类型唯一来源 ipc.ts → preload 白名单 → main handler） */
 export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): void {
   ipc.handle('ledger:refresh-index', async (): Promise<RefreshResult> => {
@@ -154,7 +195,7 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
   // → 索引 error（理论上仅前置校验漏网）truncate 回滚
   ipc.handle('ledger:add-entry', (_event: unknown, raw: unknown): Promise<AddEntryResult> =>
     withWriteLock(async () => {
-    const params = validateEntryParams(raw)
+    const params = withAutoLinks(validateEntryParams(raw), deps)
 
     // 借贷平衡校验（精确十进制加法，禁 parseFloat/Number）
     const diff = computeBalancingNumber(params.postings.map((p) => p.number))
@@ -208,6 +249,11 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
   // M4：账户列表（录入表单 AutoComplete 数据源，postings 表 DISTINCT）
   ipc.handle('ledger:list-accounts', (): ListAccountsResult => ({
     accounts: listAccounts(deps.db)
+  }))
+
+  // ADR 23：往来对象候选（录入页「往来对象」输入的历史补全）
+  ipc.handle('ledger:list-counterparties', (): ListCounterpartiesResult => ({
+    counterparties: listCounterparties(deps.db)
   }))
 
   // M5：读账本全文（渲染端编辑基线；ENOENT → ok:false，编辑器 Empty 态）

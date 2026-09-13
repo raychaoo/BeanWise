@@ -1,0 +1,23 @@
+option "title" "Counterparty Fixture"
+option "operating_currency" "CNY"
+
+2026-01-01 open Assets:Bank:ZSYH
+2026-01-01 open Assets:Receivables:Lend
+2026-01-01 open Expenses:Food
+
+; posting 级 metadata——ADR 23 主用法（「人」挂在往来类账户的分录上）
+2026-05-19 * "李素珍" "转账汇款"
+  Assets:Receivables:Lend  20000.00 CNY
+    counterparty: "李素珍"
+  Assets:Bank:ZSYH  -20000.00 CNY
+
+; transaction 级 metadata——回退路径（手工编辑 / 导入 / 历史数据）
+2026-05-22 * "微信转账" "快捷支付"
+  counterparty: "李志全"
+  Assets:Receivables:Lend  5000.00 CNY
+  Assets:Bank:ZSYH  -5000.00 CNY
+
+; 无 counterparty——非往来类交易，索引该列为 null
+2026-06-01 * "超市" "买菜"
+  Expenses:Food  30.00 CNY
+  Assets:Bank:ZSYH  -30.00 CNY

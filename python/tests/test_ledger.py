@@ -7,6 +7,16 @@ FIXTURES = Path(__file__).parent / "fixtures"
 MAIN = str(FIXTURES / "main.beancount")
 BAD = str(FIXTURES / "bad.beancount")
 MISSING = str(FIXTURES / "missing.beancount")
+COUNTERPARTY = str(FIXTURES / "counterparty.beancount")
+LOANS = str(FIXTURES / "loans.beancount")
+
+
+def _tx(result, narration):
+    """按 narration 取出交易（fixture 内 narration 唯一）。"""
+    return next(
+        e for e in result["entries"]
+        if e["type"] == "Transaction" and e["narration"] == narration
+    )
 
 
 def test_parse_file_valid_ledger():
@@ -52,9 +62,11 @@ def test_parse_entries_transaction_structure():
     assert isinstance(first["lineno"], int)
     assert first["postings"] == [
         {"account": "Assets:Bank:CNB", "units_number": "-15.00",
-         "units_currency": "CNY", "cost_number": None, "cost_currency": None},
+         "units_currency": "CNY", "cost_number": None, "cost_currency": None,
+         "counterparty": None},
         {"account": "Expenses:Food", "units_number": "15.00",
-         "units_currency": "CNY", "cost_number": None, "cost_currency": None},
+         "units_currency": "CNY", "cost_number": None, "cost_currency": None,
+         "counterparty": None},
     ]
 
 
@@ -70,3 +82,44 @@ def test_parse_entries_bad_ledger_keeps_errors():
     result = parse_entries(BAD)
     assert len(result["errors"]) == 1
     assert result["errors"][0]["type"] == "ValidationError"
+
+
+# --- 往来对象 counterparty（ADR 23）---
+
+def test_parse_entries_counterparty_posting_level():
+    """posting 级 metadata 优先：只有挂了 metadata 的那条分录带 counterparty。"""
+    tx = _tx(parse_entries(COUNTERPARTY), "转账汇款")
+    assert tx["postings"] == [
+        {"account": "Assets:Receivables:Lend", "units_number": "20000.00",
+         "units_currency": "CNY", "cost_number": None, "cost_currency": None,
+         "counterparty": "李素珍"},
+        {"account": "Assets:Bank:ZSYH", "units_number": "-20000.00",
+         "units_currency": "CNY", "cost_number": None, "cost_currency": None,
+         "counterparty": None},
+    ]
+
+
+def test_parse_entries_counterparty_transaction_level_fallback():
+    """transaction 级 metadata 回退：该笔所有分录都带上同一个对象。"""
+    tx = _tx(parse_entries(COUNTERPARTY), "快捷支付")
+    assert [p["counterparty"] for p in tx["postings"]] == ["李志全", "李志全"]
+
+
+def test_parse_entries_counterparty_absent_is_none():
+    """无 counterparty 的交易（非往来类）→ 所有分录为 None，不臆造值。"""
+    tx = _tx(parse_entries(COUNTERPARTY), "买菜")
+    assert [p["counterparty"] for p in tx["postings"]] == [None, None]
+
+
+# --- 贷款核销 link（ADR 23 P2）---
+
+def test_parse_entries_transaction_links():
+    """交易级 link 透出为排序后的 list；无 link → 空 list（不是 None）。"""
+    result = parse_entries(LOANS)
+    assert result["errors"] == []
+    txs = {e["narration"]: e for e in result["entries"] if e["type"] == "Transaction"}
+    assert txs["借出5000"]["links"] == ["lend-aaa"]
+    # 还款笔挂的是它所结清的贷款 ID（与借出笔同一个值）
+    assert txs["还4000"]["links"] == ["lend-aaa"]
+    assert txs["再借3000"]["links"] == ["lend-bbb"]
+    assert txs["借出800"]["links"] == []

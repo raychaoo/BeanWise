@@ -1,6 +1,6 @@
 /**
  * M8 报表视图（T4）+ 批次 E Task 3 三表排版 + 批次 G 现金流量表：外层 Tabs
- * （趋势图表 / 资产负债表 / 利润表 / 现金流量表）。
+ * （趋势图表 / 资产负债表 / 利润表 / 现金流量表 / 往来账）。
  * 默认 Tab「趋势图表」保持既有 DOM（粒度 Segmented + 起止年 Select + 三卡片——
  * e2e/reports.spec.ts 依赖，不得移动）；资产负债表/利润表见 views/reports/*。
  * 图表 y 值 Number() 仅显示层，精确金额由报表 Tab 十进制字符串提供。
@@ -21,6 +21,7 @@ import { useThemeContext } from '../../theme/ThemeProvider'
 import { formatAmount } from '../../utils/format'
 import BalanceSheetTable from './BalanceSheetTable'
 import CashFlowTable from './CashFlowTable'
+import CounterpartyLedgerTable from './CounterpartyLedgerTable'
 import IncomeStatementTable from './IncomeStatementTable'
 import '../../styles/views/reports.less'
 
@@ -387,7 +388,8 @@ export default function ReportsView() {
           { key: 'trend', label: '趋势图表', children: <div className="print-area"><TrendPane /></div> },
           { key: 'balance', label: '资产负债表', children: <div className="print-area"><BalanceSheetTable /></div> },
           { key: 'income', label: '利润表', children: <div className="print-area"><IncomeStatementTable /></div> },
-          { key: 'cash-flow', label: '现金流量表', children: <div className="print-area"><CashFlowTable /></div> }
+          { key: 'cash-flow', label: '现金流量表', children: <div className="print-area"><CashFlowTable /></div> },
+          { key: 'counterparty', label: '往来账', children: <div className="print-area"><CounterpartyLedgerTable /></div> }
         ]}
       />
     </div>

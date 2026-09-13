@@ -39,12 +39,16 @@ export function normalizeAccounts(raw: unknown): AccountEntry[] {
     if (value.length > MAX_ACCOUNT_LEN) throw new Error(`accounts[${idx}].value 长度不能超过 ${MAX_ACCOUNT_LEN} 字符`)
     // 批次 I：enabled 停用标记透传（非 boolean 视为未设置；undefined 序列化时省略）
     const enabled = typeof e.enabled === 'boolean' ? e.enabled : undefined
+    // ADR 23：counterparty 往来类标志透传（同上——本函数逐字段白名单构造，
+    // 不显式透传的字段会在保存时被静默丢弃）
+    const counterparty = typeof e.counterparty === 'boolean' ? e.counterparty : undefined
     return {
       id: e.id,
       name: e.name.trim(),
       value,
       description,
-      ...(enabled === undefined ? {} : { enabled })
+      ...(enabled === undefined ? {} : { enabled }),
+      ...(counterparty === undefined ? {} : { counterparty })
     }
   })
   const values = entries.map((e) => e.value)

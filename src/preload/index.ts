@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { APP_NAME } from '../shared/app'
 import type { BeanWiseApi } from '../shared/api'
 import { UPDATE_STATUS_CHANNEL } from '../shared/ipc'
-import type { AddEntryParams, AiParseParams, ConfigureSyncParams, ExcelImportParams, ExcelImportTemplate, ExcelParseParams, ExcelPreviewParams, ListEntriesParams, ReportBalancesParams, ReportBreakdownParams, ReportCashFlowParams, ReportIncomeExpenseParams, ReportNetWorthParams, ReportTrialBalanceParams, ReportYearsResult, ResolveConflictParams, SaveAccountsParams, SaveAiConfigParams, SaveFileParams, UpdateState } from '../shared/ipc'
+import type { AddEntryParams, AiParseParams, ConfigureSyncParams, ExcelImportParams, ExcelImportTemplate, ExcelParseParams, ExcelPreviewParams, ListEntriesParams, ReportBalancesParams, ReportBreakdownParams, ReportCashFlowParams, ReportCounterpartyLedgerResult, ReportIncomeExpenseParams, ReportNetWorthParams, ReportTrialBalanceParams, ReportYearsResult, ResolveConflictParams, SaveAccountsParams, SaveAiConfigParams, SaveFileParams, UpdateState } from '../shared/ipc'
 
 const api: BeanWiseApi = {
   appName: APP_NAME,
@@ -18,6 +18,7 @@ const api: BeanWiseApi = {
   listLedgerEntries: (params: ListEntriesParams) => ipcRenderer.invoke('ledger:list-entries', params),
   addLedgerEntry: (params: AddEntryParams) => ipcRenderer.invoke('ledger:add-entry', params),
   listLedgerAccounts: () => ipcRenderer.invoke('ledger:list-accounts'),
+  listLedgerCounterparties: () => ipcRenderer.invoke('ledger:list-counterparties'),
   getAccountConfig: () => ipcRenderer.invoke('accounts:get'),
   saveAccountConfig: (params: SaveAccountsParams) => ipcRenderer.invoke('accounts:save', params),
   chooseExcelFile: () => ipcRenderer.invoke('excel:choose'),
@@ -47,6 +48,7 @@ const api: BeanWiseApi = {
   getTrialBalanceReport: (params?: ReportTrialBalanceParams) => ipcRenderer.invoke('report:trial-balance', params),
   getCashFlowReport: (params: ReportCashFlowParams) => ipcRenderer.invoke('report:cash-flow', params),
   getBreakdownReport: (params: ReportBreakdownParams) => ipcRenderer.invoke('report:breakdown', params),
+  getCounterpartyLedgerReport: (): Promise<ReportCounterpartyLedgerResult> => ipcRenderer.invoke('report:counterparty-ledger'),
   exportReportPdf: () => ipcRenderer.invoke('report:export-pdf'),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   getUpdateStatus: () => ipcRenderer.invoke('update:status'),

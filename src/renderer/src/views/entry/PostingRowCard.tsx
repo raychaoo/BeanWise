@@ -3,6 +3,8 @@
  * 行头为「借方/贷方」语义标签 + 账户类型决定的余额变动方向（资金增加/收入增加…）。
  * 方向不按行序硬编码，而由账户类型推导（见 postingDirection.ts）——账户填在哪一行都记对。
  * 金额框的符号只体现在显示上（displaySignedNumber），表单存值仍是用户输入的数值。
+ * 账户为往来类时（ADR 23）额外显示「往来对象」输入（历史值补全）——该对象随分录写入
+ * posting 级 metadata，供往来账报表聚合；非往来类账户不显示，避免无谓字段干扰录入。
  * label「账户/金额/货币」为 e2e getByLabel 依赖，不得改名。
  */
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons'
@@ -30,6 +32,10 @@ interface Props {
   accountOptions: AccountOption[]
   accountRules: Rule[]
   numberRules: Rule[]
+  /** 该行账户是往来类账户（ADR 23）→ 显示「往来对象」输入 */
+  counterpartyEnabled?: boolean
+  /** 往来对象历史候选（补全防手误分裂成两个对象） */
+  counterpartyOptions?: string[]
 }
 
 const DIRECTION_META: Record<PostingSign, { tone: string; icon: ReactNode; tag: string; placeholder: string }> = {
@@ -55,7 +61,9 @@ export default function PostingRowCard({
   currencyOptions,
   accountOptions,
   accountRules,
-  numberRules
+  numberRules,
+  counterpartyEnabled,
+  counterpartyOptions
 }: Props) {
   const meta = DIRECTION_META[sign]
   return (
@@ -94,6 +102,20 @@ export default function PostingRowCard({
           </Form.Item>
         </div>
       </div>
+      {counterpartyEnabled && (
+        <Form.Item
+          className="posting-row__counterparty"
+          name={[index, 'counterparty']}
+          label="往来对象"
+          tooltip="这一行记的是谁的钱（借给谁 / 谁还的）；往来账报表按此聚合"
+        >
+          <AutoComplete
+            options={(counterpartyOptions ?? []).map((c) => ({ value: c }))}
+            placeholder="如 李志全"
+            allowClear
+          />
+        </Form.Item>
+      )}
     </div>
   )
 }

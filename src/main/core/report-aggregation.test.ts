@@ -5,8 +5,8 @@
 import { describe, expect, it } from 'vitest'
 import type { AccountBalance } from '../../shared/ipc'
 import type { PostingRow } from './report-aggregation'
-import { buildAccountTree, computeBreakdown, computeCashFlow, computeIncomeExpense, computeNetWorth, computeTrialBalance, periodKey } from './report-aggregation'
-import type { CashFlowPostingRow } from './report-aggregation'
+import { buildAccountTree, computeBreakdown, computeCashFlow, computeCounterpartyLedger, computeIncomeExpense, computeNetWorth, computeTrialBalance, periodKey } from './report-aggregation'
+import type { CashFlowPostingRow, CounterpartyPostingRow } from './report-aggregation'
 
 const rows: PostingRow[] = [
   // 2025-03 收入 + 支出
@@ -440,5 +440,57 @@ describe('computeBreakdown（顶层段聚合，按金额降序，超出 top 位�
 
   it('空输入 → 空 items + total 0', () => {
     expect(computeBreakdown([], { flow: 'expense', currency: 'CNY' })).toEqual({ items: [], total: '0', currency: 'CNY' })
+  })
+})
+
+describe('computeCounterpartyLedger（往来账：谁欠我多少 / 我欠谁多少，ADR 23）', () => {
+  const cpRows: CounterpartyPostingRow[] = [
+    // 李志全：借出 5000 + 3000，还 1000 → 未结 7000
+    { date: '2026-05-19', account: 'Assets:Receivables:Lend', number: '5000', currency: 'CNY', counterparty: '李志全' },
+    { date: '2026-05-22', account: 'Assets:Receivables:Lend', number: '3000', currency: 'CNY', counterparty: '李志全' },
+    { date: '2026-06-01', account: 'Assets:Receivables:Lend', number: '-1000', currency: 'CNY', counterparty: '李志全' },
+    // 王五：借出 200
+    { date: '2026-06-02', account: 'Assets:Receivables:Lend', number: '200', currency: 'CNY', counterparty: '王五' },
+    // 未标注对象的历史数据
+    { date: '2026-05-01', account: 'Assets:Receivables:Lend', number: '888', currency: 'CNY', counterparty: null }
+  ]
+
+  it('按对象聚合：借出扣还款 = 未结；|net| 降序，未标注对象恒置末', () => {
+    const r = computeCounterpartyLedger(cpRows)
+    expect(r.map((x) => x.counterparty)).toEqual(['李志全', '王五', null])
+    expect(r.map((x) => x.net)).toEqual(['7000', '200', '888'])
+    expect(r[0]).toEqual({ counterparty: '李志全', receivable: '7000', payable: '0', net: '7000', currency: 'CNY' })
+  })
+
+  it('同一对象两侧合并：对方欠我 5000、我欠他 2000 → net 3000（Assets 正 + Liabilities 负）', () => {
+    const r = computeCounterpartyLedger([
+      { date: '2026-01-01', account: 'Assets:Receivables:Lend', number: '5000', currency: 'CNY', counterparty: '张三' },
+      { date: '2026-01-02', account: 'Liabilities:Loans:Repay', number: '-2000', currency: 'CNY', counterparty: '张三' }
+    ])
+    expect(r).toEqual([
+      { counterparty: '张三', receivable: '5000', payable: '-2000', net: '3000', currency: 'CNY' }
+    ])
+  })
+
+  it('多币种分行（不做币种过滤——外币应收漏不得）', () => {
+    const r = computeCounterpartyLedger([
+      { date: '2026-01-01', account: 'Assets:Receivables:Lend', number: '1000', currency: 'CNY', counterparty: '李四' },
+      { date: '2026-01-02', account: 'Assets:Receivables:Lend', number: '100', currency: 'USD', counterparty: '李四' }
+    ])
+    expect(r.map((x) => x.currency)).toEqual(['CNY', 'USD'])
+    expect(r.map((x) => x.net)).toEqual(['1000', '100'])
+  })
+
+  it('非资产/负债账户的行整条跳过（不给误标账户造零值行）', () => {
+    expect(
+      computeCounterpartyLedger([
+        { date: '2026-01-01', account: 'Expenses:Food', number: '50', currency: 'CNY', counterparty: '王五' },
+        { date: '2026-01-02', account: 'Income:Other', number: '-50', currency: 'CNY', counterparty: '王五' }
+      ])
+    ).toEqual([])
+  })
+
+  it('空输入 → 空数组', () => {
+    expect(computeCounterpartyLedger([])).toEqual([])
   })
 })

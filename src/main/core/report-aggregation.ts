@@ -5,8 +5,9 @@
  */
 import dayjs from 'dayjs'
 import isoWeek from 'dayjs/plugin/isoWeek'
+import { accountType } from '../../shared/account'
 import { addDecimalStrings, compareDecimalStrings, negateDecimal } from '../../shared/decimal'
-import type { AccountBalance, CashFlowPoint, IncomeExpensePoint, NetWorthPoint, ReportBreakdownParams, ReportGranularity, ReportYearRange, TrialBalanceRow } from '../../shared/ipc'
+import type { AccountBalance, CashFlowPoint, CounterpartyBalance, IncomeExpensePoint, NetWorthPoint, ReportBreakdownParams, ReportGranularity, ReportYearRange, TrialBalanceRow } from '../../shared/ipc'
 
 dayjs.extend(isoWeek)
 
@@ -412,4 +413,63 @@ export function computeBreakdown(
     })
   }
   return { items, total, currency: opts.currency ?? '' }
+}
+
+/**
+ * 往来账输入行（ADR 23）：PostingRow + 往来对象（索引 postings.counterparty；未标注 → null）。
+ * 行须已按「往来类账户」过滤——判定来自账户库 counterparty 标志，在 handler 侧完成。
+ */
+export interface CounterpartyPostingRow extends PostingRow {
+  counterparty: string | null
+}
+
+/** 绝对值（十进制字符串去符号），仅用于 |net| 排序比较 */
+function absDecimal(s: string): string {
+  return s.startsWith('-') ? s.slice(1) : s
+}
+
+/**
+ * 往来账（ADR 23）：按 (往来对象, 币种) 聚合往来类账户净额 → 谁欠我多少 / 我欠谁多少。
+ * receivable = Σ Assets 侧往来账户（正 = 对方欠我，还款冲减后递减）；
+ * payable = Σ Liabilities 侧（Beancount 符号：借入为负 = 我欠对方，与负债表口径一致）；
+ * net = receivable + payable（同一对象两侧合并：> 0 对方净欠我，< 0 我净欠对方）。
+ * counterparty 为 null 的行单独成行（历史未标注数据，UI 显示「未指定」），恒排在有名对象之后。
+ * 排序：|net| 降序（金额大的先看），同额按对象名、再按币种。多币种分行，不做币种过滤
+ * （往来余额不像图表需要单一口径，漏掉外币应收是错的）。金额全程 addDecimalStrings，禁浮点。
+ */
+export function computeCounterpartyLedger(rows: CounterpartyPostingRow[]): CounterpartyBalance[] {
+  const acc = new Map<
+    string,
+    { counterparty: string | null; currency: string; receivable: string; payable: string }
+  >()
+  for (const r of rows) {
+    // 只有资产/负债侧的往来账户参与：Equity/Income/Expenses 非往来语义。
+    // 先判类型再建格子——否则误标的账户会凭空多出一行 0（防御，handler 已按账户过滤）。
+    const type = accountType(r.account)
+    if (type !== 'Assets' && type !== 'Liabilities') continue
+    const key = JSON.stringify([r.counterparty, r.currency])
+    let cell = acc.get(key)
+    if (!cell) {
+      cell = { counterparty: r.counterparty, currency: r.currency, receivable: '0', payable: '0' }
+      acc.set(key, cell)
+    }
+    if (type === 'Assets') cell.receivable = addDecimalStrings(cell.receivable, r.number)
+    else cell.payable = addDecimalStrings(cell.payable, r.number)
+  }
+  const out: CounterpartyBalance[] = [...acc.values()].map((c) => ({
+    counterparty: c.counterparty,
+    receivable: c.receivable,
+    payable: c.payable,
+    net: addDecimalStrings(c.receivable, c.payable),
+    currency: c.currency
+  }))
+  out.sort((a, b) => {
+    if ((a.counterparty === null) !== (b.counterparty === null)) return a.counterparty === null ? 1 : -1
+    const cmp = cmpMag(absDecimal(b.net), absDecimal(a.net))
+    if (cmp !== 0) return cmp
+    return (
+      (a.counterparty ?? '').localeCompare(b.counterparty ?? '') || a.currency.localeCompare(b.currency)
+    )
+  })
+  return out
 }

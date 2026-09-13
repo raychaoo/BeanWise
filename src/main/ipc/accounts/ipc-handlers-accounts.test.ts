@@ -38,6 +38,20 @@ describe('normalizeAccounts（id/name/value/description 结构）', () => {
     expect(normalized.find((a) => a.id === 3)).not.toHaveProperty('enabled')
     expect(normalized.find((a) => a.id === 4)?.enabled).toBeUndefined()
   })
+
+  it('counterparty 往来类标记透传：boolean 原样保留，非 boolean 归一为 undefined（ADR 23）', () => {
+    // 本函数逐字段白名单构造返回值——不显式透传的字段会在保存时被静默丢弃，故必须锁住
+    const normalized = normalizeAccounts([
+      { id: 1, name: '借出', value: 'Assets:Receivables:Lend', counterparty: true },
+      { id: 2, name: '借入', value: 'Liabilities:Loans:Repay', counterparty: false },
+      { id: 3, name: '银行卡', value: 'Assets:Bank:CNB' },
+      { id: 4, name: '脏值卡', value: 'Assets:Dirty', counterparty: 'yes' as unknown as boolean }
+    ])
+    expect(normalized.find((a) => a.id === 1)?.counterparty).toBe(true)
+    expect(normalized.find((a) => a.id === 2)?.counterparty).toBe(false)
+    expect(normalized.find((a) => a.id === 3)).not.toHaveProperty('counterparty')
+    expect(normalized.find((a) => a.id === 4)?.counterparty).toBeUndefined()
+  })
 })
 
 describe('accounts:save（新建条目自增 id）', () => {

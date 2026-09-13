@@ -26,7 +26,7 @@ export type {
 }
 
 export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list-entries'
-  | 'ledger:add-entry' | 'ledger:list-accounts' | 'ledger:read-file' | 'ledger:save-file' | 'ledger:clear'
+  | 'ledger:add-entry' | 'ledger:list-accounts' | 'ledger:read-file' | 'ledger:save-file' | 'ledger:clear' | 'ledger:list-counterparties'
   | 'accounts:get' | 'accounts:save'
   | 'excel:choose' | 'excel:parse' | 'excel:preview' | 'excel:import' | 'excel:get-templates' | 'excel:save-template' | 'excel:delete-template'
   | 'workspace:get-status' | 'workspace:choose' | 'workspace:open' | 'workspace:recents'
@@ -34,7 +34,7 @@ export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list
   | 'sync:get-status' | 'sync:configure' | 'sync:push' | 'sync:pull'
   | 'sync:resolve-conflict' | 'sync:clear'
   | 'ai:get-status' | 'ai:save-config' | 'ai:clear-config' | 'ai:parse'
-  | 'report:net-worth' | 'report:balances' | 'report:income-expense' | 'report:years' | 'report:trial-balance' | 'report:cash-flow' | 'report:breakdown' | 'report:export-pdf'
+  | 'report:net-worth' | 'report:balances' | 'report:income-expense' | 'report:years' | 'report:trial-balance' | 'report:cash-flow' | 'report:breakdown' | 'report:export-pdf' | 'report:counterparty-ledger'
   | 'update:check' | 'update:status' | 'update:install'
 
 /** ledger:read-file 结果（ENOENT → ok:false + message，编辑器 Empty 态） */
@@ -86,6 +86,9 @@ export interface AddEntryPosting {
   number: string
   /** 货币符号：非空、无空白、≤24 字符 */
   currency: string
+  /** 往来对象（ADR 23）：仅往来类账户需要。写入该分录的 posting 级 metadata `counterparty`，
+   * 供往来账报表按对象聚合；缺省不写 metadata 行。 */
+  counterparty?: string
 }
 
 /** ledger:add-entry 入参（postings 2~20 行） */
@@ -96,6 +99,9 @@ export interface AddEntryParams {
   /** ≤200 字符、无控制字符（trim 后空视为缺省） */
   payee?: string
   narration?: string
+  /** 交易级 link（ADR 23 P2 核销）：借出笔挂自身贷款 ID，还款笔挂其结清的贷款 ID。
+   * 仅允许 [A-Za-z0-9_-]（beancount link 词法受限，中文/点/斜杠一律非法）。缺省不写。 */
+  links?: string[]
   postings: AddEntryPosting[]
 }
 
@@ -113,6 +119,12 @@ export interface ListAccountsResult {
   accounts: string[]
 }
 
+/** ledger:list-counterparties 结果（postings.counterparty 非空 DISTINCT——录入页「往来对象」候选，
+ * 防止「李志全」与「李志 全」手误分裂成两个对象，ADR 23） */
+export interface ListCounterpartiesResult {
+  counterparties: string[]
+}
+
 /** 通用账户条目：name 为中文显示名，value 为 Beancount 账户路径（如 Assets:Bank:CNB） */
 export interface AccountEntry {
   /** 自增主键，创建后不可编辑 */
@@ -125,6 +137,9 @@ export interface AccountEntry {
   description?: string
   /** 停用后不进录入下拉；缺省视为启用（批次 I：过滤发生在渲染端 mergeAccountOptions） */
   enabled?: boolean
+  /** 往来类账户（ADR 23）：标记后该账户的分录应填「往来对象」，往来账报表按此聚合。
+   * 缺省视为非往来类（与 enabled 同为可选字段，JsonAccountConfigStore 原样透传）。 */
+  counterparty?: boolean
 }
 
 /** accounts:save 入参 */
@@ -599,6 +614,48 @@ export interface ReportBreakdownResult {
   items: BreakdownItem[]
   total: string
   currency: string
+  message?: string
+}
+
+/** 往来对象余额（ADR 23）：按 (往来对象, 币种) 聚合「往来类账户」净额——谁欠我多少 / 我欠谁多少 */
+export interface CounterpartyBalance {
+  /** 往来对象（posting metadata counterparty）；null = 未标注对象（历史数据，UI 显示「未指定」） */
+  counterparty: string | null
+  /** 对方欠我：往来类 Assets 侧账户净额（正 = 对方欠我；负 = 还款冲减过头） */
+  receivable: string
+  /** 我欠对方：往来类 Liabilities 侧账户净额（Beancount 符号，负 = 我欠对方，与负债表口径一致） */
+  payable: string
+  /** net = receivable + payable（同一对象两侧合并：> 0 对方净欠我，< 0 我净欠对方） */
+  net: string
+  /** 币种（每对象每币种一行，不做币种过滤） */
+  currency: string
+}
+
+/** 单笔贷款核销状态（ADR 23 P2）：id 即交易级 link 值（lend-xxx） */
+export interface CounterpartyLoan {
+  /** 贷款 ID（link 值） */
+  id: string
+  counterparty: string | null
+  /** 借出日（该 link 首笔分录日期） */
+  date: string
+  currency: string
+  /** 借出金额（正） */
+  principal: string
+  /** 已冲减（正） */
+  settled: string
+  /** 未结 = principal − settled（负 = 还超了） */
+  outstanding: string
+  /** 已结清（未结 <= 0） */
+  closed: boolean
+}
+
+/** report:counterparty-ledger 结果（按 |net| 降序；未标注对象行恒置末） */
+export interface ReportCounterpartyLedgerResult {
+  rows: CounterpartyBalance[]
+  /** 逐笔借出核销明细（ADR 23 P2，按借出日升序）；无 link 的历史分录不在此列 */
+  loans: CounterpartyLoan[]
+  /** 参与聚合的往来类账户路径（来自账户库 counterparty 标志；空数组 = 尚未标记任何往来类账户） */
+  accounts: string[]
   message?: string
 }
 

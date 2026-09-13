@@ -1,8 +1,10 @@
-import { copyFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import Database from 'better-sqlite3'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createDrizzle, openDatabase } from '../db/index'
+import { SCHEMA_VERSION, createDrizzle, openDatabase } from '../db/index'
+import { entries, entryLinks, postings } from '../db/schema'
 import { getLedgerStatus, listEntries, refreshIndex } from './index-builder'
 import { PythonSvc } from './python-svc'
 
@@ -12,6 +14,8 @@ const PYTHON =
 const SERVICE = resolve('python/service.py')
 const MAIN_FIXTURE = resolve('python/tests/fixtures/main.beancount')
 const BAD_FIXTURE = resolve('python/tests/fixtures/bad.beancount')
+const COUNTERPARTY_FIXTURE = resolve('python/tests/fixtures/counterparty.beancount')
+const LOANS_FIXTURE = resolve('python/tests/fixtures/loans.beancount')
 
 describe('索引重建管线（M3）', () => {
   let db: ReturnType<typeof openDatabase>
@@ -189,4 +193,62 @@ describe('索引重建管线（M3）', () => {
     const literal = listEntries(drizzle, 100, 0, 'asc', { keyword: '%' })
     expect(literal.total).toBe(0)
   }, 30_000)
+
+  it('postings.counterparty：posting 级优先 / transaction 级回退 / 缺席 null（ADR 23）', async () => {
+    copyFileSync(COUNTERPARTY_FIXTURE, workFile)
+    const result = await refreshIndex(drizzle, engine, workFile)
+    expect(result.status).toBe('ok')
+
+    const all = drizzle.select().from(postings).all()
+    // 「人」只落在往来类分录上：李素珍挂在 posting 级（1 条），李志全挂在 transaction 级（两行都带）
+    const counts = all
+      .filter((p) => p.counterparty !== null)
+      .reduce<Record<string, number>>((acc, p) => {
+        acc[p.counterparty!] = (acc[p.counterparty!] ?? 0) + 1
+        return acc
+      }, {})
+    expect(counts).toEqual({ 李素珍: 1, 李志全: 2 })
+
+    // 非往来类交易（买菜）不臆造对象
+    const food = all.filter((p) => p.account === 'Expenses:Food')
+    expect(food).toHaveLength(1)
+    expect(food[0]!.counterparty).toBeNull()
+  }, 30_000)
+
+  it('entry_links：交易级 link 落库，无 link 的交易不落行（ADR 23 P2）', async () => {
+    copyFileSync(LOANS_FIXTURE, workFile)
+    const result = await refreshIndex(drizzle, engine, workFile)
+    expect(result.status).toBe('ok')
+
+    const links = drizzle.select().from(entryLinks).all()
+    // 借出5000 / 再借3000 / 还4000 三笔带 link；无 link 的「借出800」不落行
+    expect(links).toHaveLength(3)
+    expect(new Set(links.map((l) => l.link))).toEqual(new Set(['lend-aaa', 'lend-bbb']))
+    // 关联行指向的是同一笔贷款（还款笔与借出笔共用 link 值）
+    const aaa = links.filter((l) => l.link === 'lend-aaa')
+    expect(aaa).toHaveLength(2)
+    expect(new Set(aaa.map((l) => l.entryId)).size).toBe(2)
+  }, 30_000)
+})
+
+describe('索引 schema 版本闸门', () => {
+  it('旧版本索引（postings 无 counterparty 列）→ 打开即整表重建，列就位', () => {
+    const file = join(tmpdir(), `beanwise-schema-${process.pid}.db`)
+    rmSync(file, { force: true })
+    // 伪造一个 v1 索引：只有旧列、无 counterparty
+    const legacy = new Database(file)
+    legacy.exec(
+      'CREATE TABLE postings (id INTEGER PRIMARY KEY AUTOINCREMENT, entry_id INTEGER NOT NULL, ' +
+        'account TEXT NOT NULL, units_number TEXT NOT NULL, units_currency TEXT NOT NULL)'
+    )
+    legacy.pragma('user_version = 1')
+    legacy.close()
+
+    const db = openDatabase(file)
+    const columns = (db.pragma('table_info(postings)') as Array<{ name: string }>).map((c) => c.name)
+    expect(columns).toContain('counterparty')
+    expect(db.pragma('user_version', { simple: true })).toBe(SCHEMA_VERSION)
+    db.close()
+    rmSync(file, { force: true })
+  })
 })

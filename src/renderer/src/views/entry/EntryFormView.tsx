@@ -33,6 +33,8 @@ interface PostingRow {
   account?: string
   number?: string | null
   currency?: string
+  /** 往来对象（ADR 23）：仅往来类账户行显示此输入 */
+  counterparty?: string
 }
 
 interface EntryFormValues {
@@ -56,6 +58,9 @@ export default function EntryFormView() {
   const [aiOpen, setAiOpen] = useState(false)
   const postings = Form.useWatch('postings', form)
   const accountNameMap = new Map(accountOptions.map((o) => [o.value, o.label]))
+  // 往来类账户（ADR 23）：只有这些行显示「往来对象」输入；候选来自历史值补全
+  const counterpartyValues = useLedgerStore((s) => s.counterpartyValues)
+  const counterpartyOptions = useLedgerStore((s) => s.counterpartyOptions)
 
   useEffect(() => {
     void loadAccounts()
@@ -266,6 +271,8 @@ export default function EntryFormView() {
                       accountOptions={accountOptionsFor(field.name)}
                       accountRules={accountRules}
                       numberRules={[numberRule(field.name)]}
+                      counterpartyEnabled={counterpartyValues.includes((postings?.[field.name]?.account ?? '').trim())}
+                      counterpartyOptions={counterpartyOptions}
                     />
                   ))}
                 </>
@@ -357,6 +364,6 @@ export function draftToFormValues(draft: AddEntryParams): DraftFormValues {
     flag: draft.flag ?? '*',
     payee: draft.payee,
     narration: draft.narration,
-    postings: draft.postings.map((p) => ({ account: p.account, number: p.number, currency: p.currency }))
+    postings: draft.postings.map((p) => ({ account: p.account, number: p.number, currency: p.currency, counterparty: p.counterparty }))
   }
 }

@@ -93,6 +93,12 @@ let pythonSvc: PythonSvc | null = null
 let quitHandled = false
 let workspaceStore: ElectronWorkspaceStore | null = null
 
+/** 往来类账户路径（ADR 23）：读账户库 counterparty 标志，**调用时实时取值**
+ * （账户库可先于账本变化，注册时快照会读到旧值）。录入挂链与往来账报表共用此源。 */
+function counterpartyAccounts(): string[] {
+  return (runtime.accountConfig?.load() ?? []).filter((a) => a.counterparty === true).map((a) => a.value)
+}
+
 /** 为指定工作目录创建运行时组件并刷新索引；旧 db 先关闭防泄漏 */
 function activateWorkspace(workspaceDir: string): void {
   // 关闭旧数据库连接
@@ -155,7 +161,9 @@ app.whenReady().then(() => {
   registerLedgerHandlers(ipcMain, {
     get engine() { return pythonSvc! },
     get db() { return runtime.db! },
-    get ledgerPath() { return runtime.ledgerPath ?? '' }
+    get ledgerPath() { return runtime.ledgerPath ?? '' },
+    // ADR 23 P2：录入时自动盖/挂贷款 link
+    counterpartyAccounts
   })
 
   // 通用账户库（跟随工作目录）
@@ -237,7 +245,8 @@ app.whenReady().then(() => {
     get db() { return runtime.db! },
     getWindow: () => BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null,
     showSaveDialog: (options) => dialog.showSaveDialog(options),
-    writeFile: (filePath, data) => writeFile(filePath, data)
+    writeFile: (filePath, data) => writeFile(filePath, data),
+    counterpartyAccounts
   })
 
   // 启动引擎（不自动激活 workspace——由渲染端通过 workspace:get-status 决定是否需要选择界面）

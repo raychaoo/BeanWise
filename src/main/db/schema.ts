@@ -27,6 +27,16 @@ export const entries = sqliteTable('entries', {
   lineno: integer('lineno')
 })
 
+/** 交易级 link（ADR 23 P2 核销）：一笔交易可带多个 link，故独立成表而非列上拼接。
+ * 借出笔挂自身贷款 ID（lend-xxx），还款笔挂其结清的贷款 ID；同一 link 可能横跨多笔交易。 */
+export const entryLinks = sqliteTable('entry_links', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  entryId: integer('entry_id')
+    .notNull()
+    .references(() => entries.id, { onDelete: 'cascade' }),
+  link: text('link').notNull()
+})
+
 export const postings = sqliteTable('postings', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   entryId: integer('entry_id')
@@ -36,5 +46,8 @@ export const postings = sqliteTable('postings', {
   unitsNumber: text('units_number').notNull(),
   unitsCurrency: text('units_currency').notNull(),
   costNumber: text('cost_number'),
-  costCurrency: text('cost_currency')
+  costCurrency: text('cost_currency'),
+  /** 往来对象（ADR 23）：来自 posting 级 metadata `counterparty`，缺则回退 transaction 级；
+   * 无 → null。仅「往来类账户」的分录会带（借出 / 还款），是「谁欠我多少」的聚合键。 */
+  counterparty: text('counterparty')
 })

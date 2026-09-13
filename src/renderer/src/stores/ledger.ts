@@ -29,6 +29,10 @@ interface LedgerState {
   accountOptions: AccountOption[]
   /** 原始 Beancount 账户路径列表（自动平衡找 Assets 用） */
   accountValues: string[]
+  /** 往来类账户路径（账户库 counterparty 标志；ADR 23——录入页据此决定该行是否显示「往来对象」） */
+  counterpartyValues: string[]
+  /** 往来对象候选（postings 历史值，录入页补全用，防手误分裂对象） */
+  counterpartyOptions: string[]
   loading: boolean
   error: string | null
   refresh(): Promise<void>
@@ -83,7 +87,7 @@ export const useLedgerStore = create<LedgerState>((set, get) => {
   }
 
   /** 合并配置账户 + 账本历史账户为下拉选项和值列表 */
-  function mergeAccountOptions(configAccounts: AccountEntry[], ledgerAccounts: string[]): { accountOptions: AccountOption[]; accountValues: string[] } {
+  function mergeAccountOptions(configAccounts: AccountEntry[], ledgerAccounts: string[]): { accountOptions: AccountOption[]; accountValues: string[]; counterpartyValues: string[] } {
     // 批次 I 语义边界：只有账户库配置条目可停用（enabled === false 排除，缺省视为启用）；
     // 账本中存在但账户库没有的账户（历史交易产生）无停用载体，始终出现。
     // 停用配置账户即使账本有历史交易也不回灌下拉（configuredValues 按全量去重防其以
@@ -96,7 +100,9 @@ export const useLedgerStore = create<LedgerState>((set, get) => {
     }
     options.sort((a, b) => a.label.localeCompare(b.label))
     const values = [...new Set([...activeEntries.map((e) => e.value), ...ledgerAccounts])]
-    return { accountOptions: options, accountValues: values }
+    // 往来类账户只认账户库标志（账本历史账户无载体）；停用账户让出录入位（历史聚合另在报表侧）
+    const counterpartyValues = activeEntries.filter((e) => e.counterparty === true).map((e) => e.value)
+    return { accountOptions: options, accountValues: values, counterpartyValues }
   }
 
   return {
@@ -105,6 +111,8 @@ export const useLedgerStore = create<LedgerState>((set, get) => {
     total: 0,
     accountOptions: [],
     accountValues: [],
+    counterpartyValues: [],
+    counterpartyOptions: [],
     loading: false,
     error: null,
 
@@ -138,11 +146,12 @@ export const useLedgerStore = create<LedgerState>((set, get) => {
 
     loadAccounts: async () => {
       try {
-        const [r, config] = await Promise.all([
+        const [r, config, cps] = await Promise.all([
           window.beanwise.listLedgerAccounts(),
-          window.beanwise.getAccountConfig()
+          window.beanwise.getAccountConfig(),
+          window.beanwise.listLedgerCounterparties()
         ])
-        set(mergeAccountOptions(config.accounts ?? [], r.accounts))
+        set({ ...mergeAccountOptions(config.accounts ?? [], r.accounts), counterpartyOptions: cps.counterparties })
       } catch (err) {
         set({ error: String(err) })
       }

@@ -153,4 +153,22 @@ describe('buildEntryPostings（表单两行 → 落账 postings）', () => {
       ]).map((p) => p.number)
     ).toEqual(['10', '-10', '0'])
   })
+
+  it('counterparty 透传并 trim；空白视为未填、不落该字段（ADR 23）', () => {
+    expect(
+      buildEntryPostings([
+        { account: 'Assets:Receivables:Lend', number: '5000', currency: 'CNY', counterparty: '  李志全  ' },
+        { account: 'Assets:Bank:ZSYH', number: '-5000', currency: 'CNY' }
+      ])
+    ).toEqual([
+      { account: 'Assets:Receivables:Lend', number: '5000', currency: 'CNY', counterparty: '李志全' },
+      { account: 'Assets:Bank:ZSYH', number: '-5000', currency: 'CNY' }
+    ])
+    expect(
+      buildEntryPostings([
+        { account: 'Assets:Receivables:Lend', number: '1', currency: 'CNY', counterparty: '   ' },
+        { account: 'Assets:Bank:ZSYH', number: '-1', currency: 'CNY' }
+      ])[0]
+    ).not.toHaveProperty('counterparty')
+  })
 })
