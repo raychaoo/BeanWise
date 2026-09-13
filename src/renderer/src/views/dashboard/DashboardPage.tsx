@@ -248,9 +248,9 @@ export default function DashboardPage() {
               <Skeleton active title={false} paragraph={{ rows: 5 }} className="dashboard-trend-skeleton" />
             ) : (
               <LazyLine
-                data={cashFlow.map((p) => ({ period: p.period, value: Number(p.net) }))}
+                data={cashFlow.map((p) => ({ period: p.period, 净现金流: Number(p.net) }))}
                 xField="period"
-                yField="value"
+                yField="净现金流"
                 theme={mode}
                 height={240}
                 style={{
