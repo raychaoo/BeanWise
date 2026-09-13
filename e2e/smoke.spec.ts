@@ -44,6 +44,12 @@ test('应用启动并渲染主窗口（总览默认选中 + 四页骨架可用�
     await win.getByRole('menuitem', { name: '录入' }).click()
     await expect(win.getByRole('button', { name: '写入账本' })).toBeVisible()
 
+    // antd 中文 locale 生效回归：ProFormDatePicker 面板须出中文（曾因 antd/locale/zh_CN 的 CJS
+    // default 双重包装，locale 拿到 { default: zhCN } 而整体静默回落英文）
+    await win.locator('.ant-picker-input input').click()
+    await expect(win.getByText('此刻')).toBeVisible()
+    await win.keyboard.press('Escape')
+
     await app.close()
   } finally {
     cleanupFixture(ledgerPath)

@@ -5,7 +5,9 @@ import './monaco/setup'
 import 'dayjs/locale/zh-cn'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import zhCN from 'antd/locale/zh_CN'
+// 必须走 antd/es/ 路径：`antd/locale/zh_CN` 是 CJS 转发文件，rolldown 互操作会再包一层 default，
+// 使 locale 变成 { default: zhCN } 这种「真假值」——ConfigProvider 照单收下，全站 antd 文案静默回落英文
+import zhCN from 'antd/es/locale/zh_CN'
 import { createGlobalStyle } from 'antd-style'
 import dayjs from 'dayjs'
 import App from './App'
