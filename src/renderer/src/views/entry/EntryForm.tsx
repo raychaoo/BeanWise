@@ -9,11 +9,12 @@ import type { FormInstance } from 'antd'
 import type { Rule } from 'antd/es/form'
 import { useEffect, useState } from 'react'
 import type { AddEntryParams } from '../../../../shared/ipc'
-import { accountType, filterAccountOptions, isAllPnlAccounts, isEntryAccountPairValid } from '../../../../shared/account'
+import { accountType, isAllPnlAccounts, isEntryAccountPairValid } from '../../../../shared/account'
 import { useEntryFormStore } from '../../stores/entry-form'
 import { useLedgerStore } from '../../stores/ledger'
 import BalanceHint from './BalanceHint'
 import PostingRowCard from './PostingRowCard'
+import { filterEntryAccountOptions } from './accountOptions'
 import { formValuesToEntryParams, nextBalancingNumber } from './entryFormValues'
 import type { EntryFormMeta, EntryFormValues, PostingRow } from './entryFormValues'
 import { postingEffectLabel, resolvePostingSigns } from './postingDirection'
@@ -78,13 +79,6 @@ export default function EntryForm({ form, mode, initialValues, meta, onSubmit }:
     { required: true, message: '请输入账户' },
     { pattern: /^[A-Z]\S*:\S*$/, message: '账户须大写字母开头、含冒号、无空格' }
   ]
-
-  const accountOptionsFor = (rowIndex: number) => {
-    const otherAccount = (postings ?? [])
-      .map((row, index) => (index === rowIndex ? undefined : row?.account?.trim()))
-      .find((account) => !!account)
-    return filterAccountOptions(accountOptions, otherAccount)
-  }
 
   const signForRow = (row: PostingRow | undefined, index: number): PostingSign => {
     if (mode === 'edit' || (postings?.length ?? 0) > 2) {
@@ -195,7 +189,7 @@ export default function EntryForm({ form, mode, initialValues, meta, onSubmit }:
                     removable={fields.length > 2}
                     onRemove={() => remove(field.name)}
                     currencyOptions={currencyOptions}
-                    accountOptions={accountOptionsFor(field.name)}
+                    accountOptions={filterEntryAccountOptions(accountOptions, postings ?? [], field.name)}
                     accountRules={accountRules}
                     numberRules={[numberRule(field.name)]}
                     counterpartyEnabled={counterpartyValues.includes((row?.account ?? '').trim())}

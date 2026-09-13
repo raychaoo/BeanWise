@@ -1,4 +1,4 @@
-import { _electron as electron, expect, test, type Page } from '@playwright/test'
+import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -225,19 +225,26 @@ test('M4+ 编辑：明细抽屉按 ID 回填多分录，保存后 ID 不变', as
   writeFileSync(
     ledgerPath,
     'option "title" "Edit Test"\noption "operating_currency" "CNY"\n\n' +
-      '2026-08-01 open Expenses:Food\n' +
+      '2026-08-01 open Expenses:Uncategorized\n' +
       '2026-08-01 open Expenses:Daily\n' +
-      '2026-08-01 open Assets:Bank:CNB\n\n' +
+      '2026-08-01 open Assets:Bank:CNB\n' +
+      '2026-09-01 open Expenses:Food\n\n' +
       '2026-08-22 * "旧交易" "编辑前"\n' +
       '  id: "bw-edit-multi"\n' +
       '  time: "2026-08-22 17:32:10"\n' +
-      '  Expenses:Food  10.00 CNY\n' +
+      '  Expenses:Uncategorized  10.00 CNY\n' +
       '  Expenses:Daily  20.00 CNY\n' +
-      '  Assets:Bank:CNB  -30.00 CNY\n',
+      '  Assets:Bank:CNB  -30.00 CNY\n\n' +
+      '2026-09-02 * "后续餐饮" "已有" \n' +
+      '  id: "bw-food-future"\n' +
+      '  time: "2026-09-02 12:00:00"\n' +
+      '  Expenses:Food  5.00 CNY\n' +
+      '  Assets:Bank:CNB  -5.00 CNY\n',
     'utf8'
   )
+  let app: ElectronApplication | undefined
   try {
-    const app = await electron.launch({ args: launchArgs })
+    app = await electron.launch({ args: launchArgs })
     const win = await app.firstWindow()
     await activateWorkspace(win, ledgerPath)
     await win.getByRole('menuitem', { name: '明细' }).click()
@@ -251,6 +258,13 @@ test('M4+ 编辑：明细抽屉按 ID 回填多分录，保存后 ID 不变', as
     await expect(drawer.getByLabel('金额')).toHaveCount(3)
     await expect(drawer.getByText('bw-edit-multi')).toBeVisible()
 
+    const firstPosting = drawer.locator('.posting-row').first()
+    await firstPosting.locator('.posting-row__account .ant-select-selector').click()
+    await win
+      .locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option')
+      .filter({ hasText: 'Expenses:Food' })
+      .click()
+    await expect(firstPosting.locator('.ant-select-selection-item')).toContainText('Expenses:Food')
     await drawer.getByLabel('交易对象').fill('新交易')
     await drawer.getByLabel('说明').fill('编辑后')
     await drawer.getByRole('button', { name: '保存修改' }).click()
@@ -262,10 +276,13 @@ test('M4+ 编辑：明细抽屉按 ID 回填多分录，保存后 ID 不变', as
     expect(content).toContain('id: "bw-edit-multi"')
     expect(content.match(/id: "bw-edit-multi"/g)).toHaveLength(1)
     expect(content).toContain('time: "2026-08-22 17:32:10"')
+    expect(content).toContain('2026-08-22 open Expenses:Food')
+    expect(content).not.toContain('2026-09-01 open Expenses:Food')
+    expect(content).toContain('Expenses:Food  10.00 CNY')
     expect(content).toContain('Expenses:Daily  20.00 CNY')
     expect(content).toContain('Assets:Bank:CNB  -30.00 CNY')
-    await app.close()
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    await app?.close().catch(() => {})
+    cleanupFixture(ledgerPath)
   }
 })

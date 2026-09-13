@@ -173,8 +173,7 @@ export function ensureEntryMetadata(params: AddEntryParams, now = new Date()): A
 }
 
 /** 按交易级 `id` metadata 替换一整笔交易；找不到或重复 ID 一律拒绝。 */
-export function replaceEntryById(content: string, id: string, replacement: string): string {
-  const lines = content.split('\n')
+function findEntryBlockById(lines: string[], id: string): { start: number; end: number } {
   const matches: Array<{ start: number; end: number }> = []
   for (let i = 0; i < lines.length; i++) {
     if (!TRANSACTION_HEADER_RE.test(lines[i]!)) continue
@@ -192,9 +191,50 @@ export function replaceEntryById(content: string, id: string, replacement: strin
   }
   if (matches.length === 0) throw new Error(`未找到交易 ID: ${id}`)
   if (matches.length > 1) throw new Error(`交易 ID 重复: ${id}`)
-  const { start, end } = matches[0]!
+  return matches[0]!
+}
+
+/** 按交易级 `id` metadata 替换一整笔交易；找不到或重复 ID 一律拒绝。 */
+export function replaceEntryById(content: string, id: string, replacement: string): string {
+  const lines = content.split('\n')
+  const { start, end } = findEntryBlockById(lines, id)
   const replacementLines = replacement.replace(/\n$/, '').split('\n')
   return [...lines.slice(0, start), ...replacementLines, ...lines.slice(end)].join('\n')
+}
+
+/**
+ * 编辑单笔交易前保证分录账户在交易日期可用：
+ * - 已有 open 且日期晚于交易 → 前移到交易日期（open 早开不影响余额）；
+ * - 尚未 open → 在目标交易前补 open 行。
+ * 这样把历史交易改分类到后来才首次使用的账户时，不会触发 Beancount
+ * `Invalid reference to inactive account`。
+ */
+export function ensureEntryAccountsOpen(content: string, id: string, date: string, accounts: string[]): string {
+  const uniqueAccounts = [...new Set(accounts)]
+  if (uniqueAccounts.length === 0) return content
+
+  const lines = content.split('\n')
+  const { start } = findEntryBlockById(lines, id)
+  const accountSet = new Set(uniqueAccounts)
+  const found = new Set<string>()
+
+  for (let i = 0; i < lines.length; i++) {
+    const match = /^(\d{4}-\d{2}-\d{2})(\s+open\s+)(\S+)(.*?)(\r?)$/.exec(lines[i]!)
+    if (!match) continue
+    const openDate = match[1]!
+    const account = match[3]!
+    if (!accountSet.has(account)) continue
+    found.add(account)
+    if (openDate > date) {
+      lines[i] = `${date}${match[2]}${account}${match[4]}${match[5]}`
+    }
+  }
+
+  const missing = uniqueAccounts.filter((account) => !found.has(account))
+  if (missing.length === 0) return lines.join('\n')
+  const eol = lines[start]!.endsWith('\r') ? '\r' : ''
+  const openLines = missing.map((account) => `${date} open ${account}${eol}`)
+  return [...lines.slice(0, start), ...openLines, ...lines.slice(start)].join('\n')
 }
 
 /**

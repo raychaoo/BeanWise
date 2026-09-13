@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AddEntryParams } from '../../shared/ipc'
-import { ensureEntryMetadata, findUnopenedAccounts, replaceEntryById, serializeEntry, serializeFirstEntryBlock, serializeOpenLines, serializeOptionsHeader, validateEntryParams } from './entry-serializer'
+import { ensureEntryAccountsOpen, ensureEntryMetadata, findUnopenedAccounts, replaceEntryById, serializeEntry, serializeFirstEntryBlock, serializeOpenLines, serializeOptionsHeader, validateEntryParams } from './entry-serializer'
 
 const valid: AddEntryParams = {
   date: '2026-08-09',
@@ -165,6 +165,33 @@ describe('replaceEntryById', () => {
   it('ID 不存在或重复 → 明确拒绝', () => {
     expect(() => replaceEntryById(ledger, 'bw-missing', 'x\n')).toThrow(/未找到/)
     expect(() => replaceEntryById(ledger + ledger, 'bw-a', 'x\n')).toThrow(/重复/)
+  })
+})
+
+describe('ensureEntryAccountsOpen', () => {
+  const ledger =
+    'option "title" "T"\n\n' +
+    '2026-01-01 open Assets:Cash\n' +
+    '2026-09-01 open Expenses:Food\n\n' +
+    '2026-01-02 * "A" "first"\n' +
+    '  id: "bw-a"\n' +
+    '  time: "2026-01-02 08:00:00"\n' +
+    '  Expenses:Uncategorized  10.00 CNY\n' +
+    '  Assets:Cash  -10.00 CNY\n'
+
+  it('已开但日期晚于交易：前移该账户 open 日期', () => {
+    const updated = ensureEntryAccountsOpen(ledger, 'bw-a', '2026-01-02', ['Expenses:Food'])
+    expect(updated).toContain('2026-01-02 open Expenses:Food')
+    expect(updated).not.toContain('2026-09-01 open Expenses:Food')
+  })
+
+  it('尚未开立：在目标交易前补 open 行，打乱其它交易顺序', () => {
+    const updated = ensureEntryAccountsOpen(ledger, 'bw-a', '2026-01-02', ['Expenses:Travel'])
+    expect(updated).toContain(
+      '2026-01-02 open Expenses:Travel\n' +
+        '2026-01-02 * "A" "first"'
+    )
+    expect(updated.match(/2026-01-01 open Assets:Cash/g)).toHaveLength(1)
   })
 })
 

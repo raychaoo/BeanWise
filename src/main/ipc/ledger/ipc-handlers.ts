@@ -5,7 +5,7 @@ import { computeBalancingNumber } from '../../../shared/decimal'
 import type { AddEntryParams, AddEntryResult, ClearLedgerResult, GetEntryResult, ListAccountsResult, ListCounterpartiesResult, ListEntriesParams, ReadFileResult, RefreshResult, SaveFileParams, SaveFileResult, UpdateEntryParams } from '../../../shared/ipc'
 import type { DrizzleDb } from '../../db/index'
 import { postings } from '../../db/schema'
-import { ensureEntryMetadata, findUnopenedAccounts, replaceEntryById, serializeEntry, serializeFirstEntryBlock, serializeOpenLines, validateEntryParams } from '../../core/entry-serializer'
+import { ensureEntryAccountsOpen, ensureEntryMetadata, findUnopenedAccounts, replaceEntryById, serializeEntry, serializeFirstEntryBlock, serializeOpenLines, validateEntryParams } from '../../core/entry-serializer'
 import { getEntryById, getLedgerStatus, listEntries, refreshIndex } from '../../core/index-builder'
 import { writeLedgerChecked } from '../../utils/ledger-writer'
 import { computeLoanLedger, isNewLoanPosting, loadLoanRows, newLoanId, pickOpenLoanId } from '../../core/loan-links'
@@ -273,7 +273,13 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
       const current = readLedgerText(deps.ledgerPath)
       if (!current) throw new Error('账本文件不存在')
       const replacement = serializeEntry(ensureEntryMetadata(params))
-      const updated = replaceEntryById(current, params.id, replacement)
+      const withOpenAccounts = ensureEntryAccountsOpen(
+        current,
+        params.id,
+        params.date,
+        params.postings.map((p) => p.account)
+      )
+      const updated = replaceEntryById(withOpenAccounts, params.id, replacement)
       const written = await writeLedgerChecked(deps, updated)
       if (!written.ok) {
         const status = getLedgerStatus(deps.db)

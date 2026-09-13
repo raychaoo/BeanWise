@@ -289,6 +289,45 @@ describe('IPC handlers ledger:add-entry / list-accounts（M4）', () => {
     expect(content.match(/id: "bw-old"/g)).toHaveLength(1)
   })
 
+  it('ledger:update-entry：账户 open 晚于交易日期 → 写盘前自动前移 open', async () => {
+    const ledgerPath = join(dir, 'update-inactive-account.beancount')
+    appendFileSync(
+      ledgerPath,
+      '2020-01-01 open Assets:Cash\n' +
+        '2026-08-11 open Expenses:Food\n\n' +
+        '2020-07-03 * "旧交易" "改用餐饮"\n' +
+        '  id: "bw-old"\n' +
+        '  time: "2020-07-03 17:25:21"\n' +
+        '  Expenses:Uncategorized  31.40 CNY\n' +
+        '  Assets:Cash  -31.40 CNY\n',
+      'utf8'
+    )
+    let written = ''
+    mocks.writeLedgerChecked.mockImplementation(async (_deps: unknown, content: string) => {
+      written = content
+      writeFileSync(ledgerPath, content, 'utf8')
+      return { ok: true }
+    })
+    const handlers = makeHandlers(ledgerPath)
+
+    const result = (await handlers['ledger:update-entry']({}, {
+      id: 'bw-old',
+      date: '2020-07-03',
+      time: '2020-07-03 17:25:21',
+      payee: '旧交易',
+      narration: '改用餐饮',
+      postings: [
+        { account: 'Expenses:Food', number: '31.40', currency: 'CNY' },
+        { account: 'Assets:Cash', number: '-31.40', currency: 'CNY' }
+      ]
+    })) as AddEntryResult
+
+    expect(result.ok).toBe(true)
+    expect(written).toContain('2020-07-03 open Expenses:Food')
+    expect(written).not.toContain('2026-08-11 open Expenses:Food')
+    expect(readFileSync(ledgerPath, 'utf8')).toContain('2020-07-03 open Expenses:Food')
+  })
+
   it('ledger:update-entry：ID 不存在 → 拒绝且不写盘', async () => {
     const ledgerPath = join(dir, 'update-missing.beancount')
     appendFileSync(ledgerPath, '2026-01-01 open Assets:Cash\n', 'utf8')
