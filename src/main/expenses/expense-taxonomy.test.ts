@@ -10,7 +10,7 @@ describe('expense taxonomy', () => {
   it('contains the complete author.md hierarchy with unique ASCII account paths', () => {
     const accounts = flattenExpenseTaxonomy()
 
-    expect(accounts).toHaveLength(123)
+    expect(accounts).toHaveLength(132)
     expect(new Set(accounts.map((a) => a.path)).size).toBe(accounts.length)
     expect(accounts.every((a) => /^Expenses:[A-Za-z0-9:]+$/.test(a.path))).toBe(true)
     expect(EXPENSE_TAXONOMY.map((node) => node.label)).toEqual([
@@ -32,13 +32,27 @@ describe('expense taxonomy', () => {
     ])
   })
 
+  it('gives every parent account an Other child', () => {
+    const accounts = flattenExpenseTaxonomy()
+    const parents = accounts.filter((account) => !account.leaf)
+
+    for (const parent of parents) {
+      expect(
+        accounts.some((account) => account.parent === parent.path && account.label === '其他'),
+        `${parent.path} 缺少 其他 子账户`
+      ).toBe(true)
+    }
+  })
+
   it('keeps the old flat accounts mapped into the new hierarchy', () => {
     expect(EXPENSE_ACCOUNT_RENAMES).toMatchObject({
-      'Expenses:Food': 'Expenses:Life:Food',
+      'Expenses:Food': 'Expenses:Life:Food:Other',
       'Expenses:Smoke': 'Expenses:Life:TobaccoAlcohol:Tobacco',
       'Expenses:Ai': 'Expenses:Digital:AI',
       'Expenses:Billing': 'Expenses:Digital:Software',
-      'Expenses:Recreation': 'Expenses:Entertainment:Leisure',
+      'Expenses:Recreation': 'Expenses:Entertainment:Leisure:Other',
+      'Expenses:Life:Food': 'Expenses:Life:Food:Other',
+      'Expenses:Entertainment:Leisure': 'Expenses:Entertainment:Leisure:Other',
       'Expenses:Shopping': 'Expenses:Shopping:Other',
       'Expenses:Uncategorized': 'Expenses:Other'
     })
@@ -48,13 +62,13 @@ describe('expense taxonomy', () => {
 describe('classifyExpense', () => {
   it.each([
     ['麦当劳', '早餐', 'Expenses:Life:Food:Breakfast'],
-    ['胖哆哆猪脚饭深圳富士嘉园店', '消费', 'Expenses:Life:Food'],
+    ['胖哆哆猪脚饭深圳富士嘉园店', '消费', 'Expenses:Life:Food:Other'],
     ['美宜佳', '红玫王', 'Expenses:Life:TobaccoAlcohol:Tobacco'],
-    ['粤华小卖部', '商品', 'Expenses:Life:Food'],
-    ['小象生鲜', '水果', 'Expenses:Life:Food'],
-    ['日海智能', '日海超市', 'Expenses:Life:Food'],
-    ['茶油猪头肉观湖店', '快捷支付', 'Expenses:Life:Food'],
-    ['UHOME有家', '快捷支付', 'Expenses:Life:Food'],
+    ['粤华小卖部', '商品', 'Expenses:Life:Food:Other'],
+    ['小象生鲜', '水果', 'Expenses:Life:Food:Other'],
+    ['日海智能', '日海超市', 'Expenses:Life:Food:Other'],
+    ['茶油猪头肉观湖店', '快捷支付', 'Expenses:Life:Food:Other'],
+    ['UHOME有家', '快捷支付', 'Expenses:Life:Food:Other'],
     ['名扬造型', '商品', 'Expenses:Life:PersonalCare:Haircut'],
     ['滴滴出行', '滴滴出行服务', 'Expenses:Transport:Taxi'],
     ['深圳市地铁相关运营主体', '深圳地铁', 'Expenses:Transport:PublicTransit:Metro'],
@@ -65,6 +79,7 @@ describe('classifyExpense', () => {
     ['杭州深度求索', 'DeepSeek API', 'Expenses:Digital:AI'],
     ['App Store _ Apple Music', 'Apple Music 订阅', 'Expenses:Entertainment:Music:Membership'],
     ['宜章县外星人电竞馆', '移动支付', 'Expenses:Entertainment:Leisure:InternetCafe'],
+    ['胡麻了休闲娱乐中心', '移动支付', 'Expenses:Entertainment:Leisure:Other'],
     ['京东商城平台商户', '京东订单', 'Expenses:Shopping:Other'],
     ['携程旅行网', '酒店预订', 'Expenses:Travel:Accommodation'],
     ['韶关市第一人民医院', '第一人民医院微信支付', 'Expenses:Health:Registration'],

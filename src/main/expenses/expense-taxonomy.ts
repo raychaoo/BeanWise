@@ -36,7 +36,8 @@ export const EXPENSE_TAXONOMY: readonly ExpenseTaxonomyNode[] = [
       node('Dinner', '晚餐'),
       node('LateNight', '宵夜'),
       node('Snacks', '零食'),
-      node('Drinks', '饮品')
+      node('Drinks', '饮品'),
+      node('Other', '其他')
     ]),
     node('Household', '日用品', [
       node('Cleaning', '清洁用品'),
@@ -57,7 +58,8 @@ export const EXPENSE_TAXONOMY: readonly ExpenseTaxonomyNode[] = [
     node('TobaccoAlcohol', '烟酒槟榔', [
       node('Tobacco', '烟'),
       node('Alcohol', '酒'),
-      node('BetelNut', '槟榔')
+      node('BetelNut', '槟榔'),
+      node('Other', '其他')
     ]),
     node('Other', '其他')
   ]),
@@ -75,7 +77,8 @@ export const EXPENSE_TAXONOMY: readonly ExpenseTaxonomyNode[] = [
     node('PublicTransit', '公共交通', [
       node('Metro', '地铁'),
       node('Bus', '公交'),
-      node('Train', '火车、高铁')
+      node('Train', '火车、高铁'),
+      node('Other', '其他')
     ]),
     node('Taxi', '打车'),
     node('Rideshare', '顺风车'),
@@ -85,7 +88,8 @@ export const EXPENSE_TAXONOMY: readonly ExpenseTaxonomyNode[] = [
       node('Parking', '停车'),
       node('Toll', '过路费'),
       node('Maintenance', '维修保养'),
-      node('Insurance', '保险')
+      node('Insurance', '保险'),
+      node('Other', '其他')
     ]),
     node('Other', '其他')
   ]),
@@ -103,27 +107,32 @@ export const EXPENSE_TAXONOMY: readonly ExpenseTaxonomyNode[] = [
   node('Entertainment', '娱乐', [
     node('Games', '游戏', [
       node('Purchase', '游戏购买'),
-      node('Recharge', '游戏充值')
+      node('Recharge', '游戏充值'),
+      node('Other', '其他')
     ]),
     node('Video', '影视', [
       node('Movie', '电影'),
-      node('VideoMembership', '视频会员')
+      node('VideoMembership', '视频会员'),
+      node('Other', '其他')
     ]),
     node('Music', '音乐', [
       node('Purchase', '音乐购买'),
-      node('Membership', '音乐会员')
+      node('Membership', '音乐会员'),
+      node('Other', '其他')
     ]),
     node('Performance', '演出'),
     node('Leisure', '休闲玩乐', [
       node('InternetCafe', '网吧'),
       node('BoardGames', '棋牌'),
       node('EventTicket', '赛事门票'),
-      node('KTV', 'KTV')
+      node('KTV', 'KTV'),
+      node('Other', '其他')
     ]),
     node('Hobbies', '兴趣爱好', [
       node('Cycling', '公路车'),
       node('Basketball', '篮球'),
-      node('Hiking', '徒步')
+      node('Hiking', '徒步'),
+      node('Other', '其他')
     ]),
     node('Other', '其他')
   ]),
@@ -198,11 +207,13 @@ export function flattenExpenseTaxonomy(): ExpenseAccountDefinition[] {
 }
 
 export const EXPENSE_ACCOUNT_RENAMES: Readonly<Record<string, string>> = {
-  'Expenses:Food': 'Expenses:Life:Food',
+  'Expenses:Food': 'Expenses:Life:Food:Other',
+  'Expenses:Life:Food': 'Expenses:Life:Food:Other',
   'Expenses:Smoke': 'Expenses:Life:TobaccoAlcohol:Tobacco',
   'Expenses:Ai': 'Expenses:Digital:AI',
   'Expenses:Billing': 'Expenses:Digital:Software',
-  'Expenses:Recreation': 'Expenses:Entertainment:Leisure',
+  'Expenses:Recreation': 'Expenses:Entertainment:Leisure:Other',
+  'Expenses:Entertainment:Leisure': 'Expenses:Entertainment:Leisure:Other',
   'Expenses:NetworkFee': 'Expenses:Communication:Other',
   'Expenses:Shopping': 'Expenses:Shopping:Other',
   'Expenses:Uncategorized': 'Expenses:Other'
@@ -272,7 +283,7 @@ const RULES: readonly ExpenseRule[] = [
   },
   {
     reason: 'food',
-    account: 'Expenses:Life:Food',
+    account: 'Expenses:Life:Food:Other',
     confidence: 'high',
     patterns: [
       /麦当劳|金拱门|肯德基|kfc|汉堡|披萨|餐厅|餐饮|饭店|食府|美食|快餐|简餐|外卖/,
@@ -399,7 +410,7 @@ const RULES: readonly ExpenseRule[] = [
   },
   {
     reason: 'leisure',
-    account: 'Expenses:Entertainment:Leisure',
+    account: 'Expenses:Entertainment:Leisure:Other',
     confidence: 'medium',
     patterns: [/棋牌|赛事门票|休闲娱乐|休闲玩乐|台球|密室|剧本杀/]
   },
