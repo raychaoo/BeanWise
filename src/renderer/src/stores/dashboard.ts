@@ -50,7 +50,7 @@ interface DashboardState {
   incomeExpense: IncomeExpensePoint[]
   /** 账户余额树（顶层节点，供资产分布卡） */
   balances: AccountBalance[]
-  /** 近 12 个月现金流量序列（运营货币，供现金流卡） */
+  /** 最近 12 个月现金流量序列（运营货币，按期间升序，供现金流卡） */
   cashFlow: CashFlowPoint[]
   /** 支出类别汇总（顶层段聚合，按金额降序，供去向卡） */
   expenseBreakdown: BreakdownItem[]
@@ -126,6 +126,12 @@ export function extractMonthPoints(
   return hit ? { income: hit.income, expense: hit.expense } : null
 }
 
+/** 现金流量图窗口：取最近 limit 个月并按期间升序，确保折线从左到右沿时间推进 */
+export function latestCashFlowWindow(points: CashFlowPoint[], limit = 12): CashFlowPoint[] {
+  if (limit <= 0) return []
+  return [...points].sort((a, b) => a.period.localeCompare(b.period)).slice(-limit)
+}
+
 /** 期号窗口切片（'YYYY-MM'/'YYYY' 字典序即时间序，纯字符串比较的显示层过滤） */
 function filterSeriesWindow(points: NetWorthPoint[], startKey: string | null, endKey: string | null): NetWorthPoint[] {
   if (!startKey && !endKey) return points
@@ -173,7 +179,7 @@ export const useDashboardStore = create<DashboardState>((set) => {
           window.beanwise.getIncomeExpenseReport(ieParams),
           window.beanwise.getNetWorthReport(curParams),
           window.beanwise.getNetWorthReport(prevParams),
-          // 现金流：近 12 个月（运营货币，月粒度）
+          // 现金流：拉全量后取最近 12 个月（运营货币，月粒度）
           window.beanwise.getCashFlowReport({ granularity: 'month' }),
           // 收支类别汇总（运营货币，全量）
           window.beanwise.getBreakdownReport({ flow: 'expense' }),
@@ -197,7 +203,7 @@ export const useDashboardStore = create<DashboardState>((set) => {
           otherCurrencies: sumOtherCurrencyAssets(bal.accounts, currency),
           incomeExpense: ie.series,
           balances: bal.accounts,
-          cashFlow: cf.series,
+          cashFlow: latestCashFlowWindow(cf.series),
           expenseBreakdown: expBreak.items,
           incomeBreakdown: incBreak.items,
           hasData: bal.accounts.length > 0 || cur.series.length > 0 || ie.series.length > 0,

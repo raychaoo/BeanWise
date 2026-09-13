@@ -1,7 +1,7 @@
 /**
  * 总览页（批次 D Task 3，方案模块 2）：
  * 第一行 4 × 指标卡（总资产/总负债/净资产/本月收支，运营货币）；
- * 第二行 收支对比趋势卡（收入/支出分组柱状图）+ 现金流量卡（净流入折线）；
+ * 第二行 收支对比趋势卡（收入/支出分组柱状图）+ 近 12 个月现金流量卡（净流入折线，按时间正序）；
  * 第三行 去向（支出类别 donut）+ 来源（收入类别 donut）；
  * 净资产趋势卡（本期实线 + 去年同期虚线，图顶统一筛选条）。
  * 指标聚合走 useDashboardStore（decimal 精确累加），Number() 仅图表 y 值显示层；
@@ -243,7 +243,7 @@ export default function DashboardPage() {
           </Card>
         </Col>
         <Col xs={24} lg={10}>
-          <Card title="现金流量">
+          <Card title="近 12 个月现金流量">
             {loading && cashFlow.length === 0 ? (
               <Skeleton active title={false} paragraph={{ rows: 5 }} className="dashboard-trend-skeleton" />
             ) : (

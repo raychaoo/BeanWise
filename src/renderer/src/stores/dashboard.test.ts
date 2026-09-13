@@ -6,7 +6,7 @@
  */
 import dayjs from 'dayjs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AccountBalance } from '../../../shared/ipc'
+import type { AccountBalance, CashFlowPoint } from '../../../shared/ipc'
 
 const { message } = vi.hoisted(() => ({
   message: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() }
@@ -15,6 +15,7 @@ vi.mock('antd', () => ({ message }))
 
 import {
   extractMonthPoints,
+  latestCashFlowWindow,
   sumBalancesByRoot,
   sumOtherCurrencyAssets,
   useDashboardStore
@@ -92,6 +93,31 @@ describe('extractMonthPoints（当月收支点）', () => {
   it('未命中当月 → null', () => {
     expect(extractMonthPoints(series, '2026-12')).toBeNull()
     expect(extractMonthPoints([], '2026-08')).toBeNull()
+  })
+})
+
+describe('latestCashFlowWindow（现金流量图窗口）', () => {
+  const points: CashFlowPoint[] = Array.from({ length: 15 }, (_, i) => {
+    const period = dayjs('2025-01-01').add(i, 'month').format('YYYY-MM')
+    return { period, inflow: '0', outflow: '0', net: String(i) }
+  })
+  // 模拟 IPC 返回：最新月份在前
+  const descending = [...points].reverse()
+
+  it('仅取最近 12 个月，并按期间升序返回', () => {
+    const result = latestCashFlowWindow(descending)
+    expect(result).toHaveLength(12)
+    expect(result[0].period).toBe('2025-04')
+    expect(result[11].period).toBe('2026-03')
+    expect(result.map((p) => p.period)).toEqual([
+      '2025-04', '2025-05', '2025-06', '2025-07', '2025-08', '2025-09',
+      '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03'
+    ])
+  })
+
+  it('不足 12 个月时保留全部；limit <= 0 → 空数组', () => {
+    expect(latestCashFlowWindow(descending.slice(0, 3))).toHaveLength(3)
+    expect(latestCashFlowWindow(descending, 0)).toEqual([])
   })
 })
 
