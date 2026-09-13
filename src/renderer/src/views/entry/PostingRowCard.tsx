@@ -7,8 +7,8 @@
  * posting 级 metadata，供往来账报表聚合；非往来类账户不显示，避免无谓字段干扰录入。
  * label「账户/金额/货币」为 e2e getByLabel 依赖，不得改名。
  */
-import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons'
-import { AutoComplete, Form, InputNumber, Select } from 'antd'
+import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined } from '@ant-design/icons'
+import { AutoComplete, Button, Form, InputNumber, Select } from 'antd'
 import type { Rule } from 'antd/es/form'
 import type { ReactNode } from 'react'
 import type { AccountOption } from '../../stores/ledger'
@@ -21,13 +21,17 @@ interface CurrencyOption {
 }
 
 interface Props {
-  index: 0 | 1
+  index: number
   /** 该行记账符号（由账户类型推导，两行互为相反数） */
   sign: PostingSign
   /** 该行记账语义（如「收入增加」），随所选账户动态变化 */
   effectLabel: string
   /** 金额只读（第二行自动平衡，不可手动编辑） */
   amountReadOnly?: boolean
+  /** 编辑/多行场景：金额已是最终符号，输入框原样呈现；仅用 sign 控制视觉方向。 */
+  preserveSign?: boolean
+  removable?: boolean
+  onRemove?: () => void
   currencyOptions: CurrencyOption[]
   accountOptions: AccountOption[]
   accountRules: Rule[]
@@ -58,6 +62,9 @@ export default function PostingRowCard({
   sign,
   effectLabel,
   amountReadOnly,
+  preserveSign,
+  removable,
+  onRemove,
   currencyOptions,
   accountOptions,
   accountRules,
@@ -72,6 +79,17 @@ export default function PostingRowCard({
         {meta.icon}
         <span className="posting-row__head-tag">{meta.tag}</span>
         <span className="posting-row__head-text">{effectLabel}</span>
+        {removable && (
+          <Button
+            type="text"
+            danger
+            size="small"
+            className="posting-row__remove"
+            aria-label={`删除第 ${index + 1} 行`}
+            icon={<DeleteOutlined />}
+            onClick={onRemove}
+          />
+        )}
       </div>
       <div className="posting-row__fields">
         <Form.Item className="posting-row__account" name={[index, 'account']} label="账户" rules={accountRules}>
@@ -89,7 +107,7 @@ export default function PostingRowCard({
               placeholder="0.00"
               controls={false}
               readOnly={amountReadOnly}
-              formatter={(value) => displaySignedNumber(value, sign)}
+              formatter={(value) => (preserveSign ? String(value ?? '') : displaySignedNumber(value, sign))}
             />
           </Form.Item>
           <Form.Item

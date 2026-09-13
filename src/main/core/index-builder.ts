@@ -77,6 +77,23 @@ export interface ListEntriesResult {
   total: number
 }
 
+/** 单笔交易详情：按稳定 ID 读取，供编辑表单完整回填（含全部 posting 与 link）。 */
+export interface LedgerEntryDetail {
+  id: string
+  date: string
+  time: string
+  flag?: '*' | '!'
+  payee?: string
+  narration?: string
+  links: string[]
+  postings: Array<{
+    account: string
+    number: string
+    currency: string
+    counterparty?: string
+  }>
+}
+
 // M5：编辑器保存链路复用（ledger:read-file 打开基线 / ledger:save-file 冲突比对）
 export function sha256File(filename: string): string {
   return createHash('sha256').update(readFileSync(filename)).digest('hex')
@@ -242,6 +259,43 @@ export function getLedgerStatus(db: DrizzleDb): LedgerStatus | null {
     status: meta.status,
     lastError: meta.lastError,
     updatedAt: meta.updatedAt
+  }
+}
+
+/** 按交易级稳定 ID 读取完整交易。只返回 Transaction；ID 不存在/不是交易 → null。 */
+export function getEntryById(db: DrizzleDb, externalId: string): LedgerEntryDetail | null {
+  const row = db.select().from(entries).where(eq(entries.externalId, externalId)).get()
+  if (!row || row.type !== 'Transaction' || !row.externalId) return null
+
+  const detailPostings = db
+    .select()
+    .from(postings)
+    .where(eq(postings.entryId, row.id))
+    .orderBy(asc(postings.id))
+    .all()
+  const links = db
+    .select()
+    .from(entryLinks)
+    .where(eq(entryLinks.entryId, row.id))
+    .orderBy(asc(entryLinks.id))
+    .all()
+    .map((item) => item.link)
+
+  return {
+    id: row.externalId,
+    date: row.date,
+    // 历史交易没有 time metadata 时按午夜回填，编辑保存后补成合法秒级 metadata。
+    time: row.time ?? `${row.date} 00:00:00`,
+    ...(row.flag === '*' || row.flag === '!' ? { flag: row.flag } : {}),
+    ...(row.payee !== null ? { payee: row.payee } : {}),
+    ...(row.narration !== null ? { narration: row.narration } : {}),
+    links,
+    postings: detailPostings.map((p) => ({
+      account: p.account,
+      number: p.unitsNumber,
+      currency: p.unitsCurrency,
+      ...(p.counterparty !== null ? { counterparty: p.counterparty } : {})
+    }))
   }
 }
 

@@ -5,7 +5,7 @@ import Database from 'better-sqlite3'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { SCHEMA_VERSION, createDrizzle, openDatabase } from '../db/index'
 import { entries, entryLinks, postings } from '../db/schema'
-import { getLedgerStatus, listEntries, refreshIndex } from './index-builder'
+import { getEntryById, getLedgerStatus, listEntries, refreshIndex } from './index-builder'
 import { PythonSvc } from './python-svc'
 
 const PYTHON =
@@ -273,5 +273,58 @@ describe('索引 schema 版本闸门', () => {
     expect(db.pragma('user_version', { simple: true })).toBe(SCHEMA_VERSION)
     db.close()
     rmSync(file, { force: true })
+  })
+})
+
+describe('getEntryById', () => {
+  it('按稳定 ID 返回完整交易、全部分录与 link；不存在返回 null', () => {
+    const db = createDrizzle(openDatabase(':memory:'))
+    const inserted = db
+      .insert(entries)
+      .values({
+        type: 'Transaction',
+        date: '2026-09-12',
+        externalId: 'bw-detail-001',
+        time: '2026-09-12 18:20:30',
+        flag: '*',
+        payee: '商户',
+        narration: '二次编辑'
+      })
+      .returning()
+      .get()
+    db.insert(postings)
+      .values([
+        {
+          entryId: inserted.id,
+          account: 'Assets:Receivables:Lend',
+          unitsNumber: '30.00',
+          unitsCurrency: 'CNY',
+          counterparty: '李志全'
+        },
+        { entryId: inserted.id, account: 'Assets:Cash', unitsNumber: '-30.00', unitsCurrency: 'CNY' }
+      ])
+      .run()
+    db.insert(entryLinks).values({ entryId: inserted.id, link: 'lend-001' }).run()
+
+    expect(getEntryById(db, 'bw-detail-001')).toEqual({
+      id: 'bw-detail-001',
+      date: '2026-09-12',
+      time: '2026-09-12 18:20:30',
+      flag: '*',
+      payee: '商户',
+      narration: '二次编辑',
+      links: ['lend-001'],
+      postings: [
+        {
+          account: 'Assets:Receivables:Lend',
+          number: '30.00',
+          currency: 'CNY',
+          counterparty: '李志全'
+        },
+        { account: 'Assets:Cash', number: '-30.00', currency: 'CNY' }
+      ]
+    })
+    expect(getEntryById(db, 'bw-missing')).toBeNull()
+    db.$client.close()
   })
 })

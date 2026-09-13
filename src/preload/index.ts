@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { APP_NAME } from '../shared/app'
 import type { BeanWiseApi } from '../shared/api'
 import { UPDATE_STATUS_CHANNEL } from '../shared/ipc'
-import type { AddEntryParams, AiParseParams, ConfigureSyncParams, ExcelImportParams, ExcelImportTemplate, ExcelParseParams, ExcelPreviewParams, ListEntriesParams, ReportBalancesParams, ReportBreakdownParams, ReportCashFlowParams, ReportCounterpartyLedgerResult, ReportIncomeExpenseParams, ReportNetWorthParams, ReportTrialBalanceParams, ReportYearsResult, ResolveConflictParams, SaveAccountsParams, SaveAiConfigParams, SaveFileParams, UpdateEntryParams, UpdateState } from '../shared/ipc'
+import type { AddEntryParams, AiParseParams, ConfigureSyncParams, ExcelImportParams, ExcelImportTemplate, ExcelParseParams, ExcelPreviewParams, GetEntryParams, ListEntriesParams, ReportBalancesParams, ReportBreakdownParams, ReportCashFlowParams, ReportCounterpartyLedgerResult, ReportIncomeExpenseParams, ReportNetWorthParams, ReportTrialBalanceParams, ReportYearsResult, ResolveConflictParams, SaveAccountsParams, SaveAiConfigParams, SaveFileParams, UpdateEntryParams, UpdateState } from '../shared/ipc'
 
 const api: BeanWiseApi = {
   appName: APP_NAME,
@@ -18,6 +18,7 @@ const api: BeanWiseApi = {
   listLedgerEntries: (params: ListEntriesParams) => ipcRenderer.invoke('ledger:list-entries', params),
   addLedgerEntry: (params: AddEntryParams) => ipcRenderer.invoke('ledger:add-entry', params),
   updateLedgerEntry: (params: UpdateEntryParams) => ipcRenderer.invoke('ledger:update-entry', params),
+  getLedgerEntry: (params: GetEntryParams) => ipcRenderer.invoke('ledger:get-entry', params),
   listLedgerAccounts: () => ipcRenderer.invoke('ledger:list-accounts'),
   listLedgerCounterparties: () => ipcRenderer.invoke('ledger:list-counterparties'),
   getAccountConfig: () => ipcRenderer.invoke('accounts:get'),

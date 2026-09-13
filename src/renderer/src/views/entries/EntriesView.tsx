@@ -8,7 +8,7 @@
  */
 import { ProTable } from '@ant-design/pro-components'
 import type { ProColumns } from '@ant-design/pro-components'
-import { QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
+import { EditOutlined, QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Alert, Button, Card, DatePicker, Input, Segmented, Tooltip, Typography } from 'antd'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
@@ -17,6 +17,7 @@ import type { LedgerEntryRow, ListEntriesFilters } from '../../../../shared/ipc'
 import { useLedgerStore } from '../../stores/ledger'
 import { formatAmount } from '../../utils/format'
 import '../../styles/views/entries.less'
+import EntryEditDrawer from './EntryEditDrawer'
 
 const PAGE_SIZE = 20
 
@@ -64,6 +65,7 @@ export default function EntriesView() {
   const [dateOrder, setDateOrder] = useState<'ascend' | 'descend'>('descend')
   // ProTable 管理的页码（筛选/排序变化时重置为 1）
   const [page, setPage] = useState(1)
+  const [editEntryId, setEditEntryId] = useState<string | null>(null)
 
   /** 当前筛选状态 → 服务端过滤参数（quick 与自定义范围互斥：custom 优先） */
   const filtersOf = (q: QuickKey, c: [Dayjs, Dayjs] | null, keyword: string): ListEntriesFilters => {
@@ -178,6 +180,26 @@ export default function EntriesView() {
             {row.currency ? ` ${row.currency}` : ''}
           </span>
         )
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 90,
+      fixed: 'right',
+      render: (_dom: unknown, row: LedgerEntryRow) =>
+        row.externalId ? (
+          <Button
+            type="link"
+            size="small"
+            icon={<EditOutlined />}
+            aria-label={`编辑 ${row.externalId}`}
+            onClick={() => setEditEntryId(row.externalId)}
+          >
+            编辑
+          </Button>
+        ) : (
+          '—'
+        )
     }
   ]
 
@@ -247,6 +269,15 @@ export default function EntriesView() {
           options={false}
         />
       </Card>
+      <EntryEditDrawer
+        open={editEntryId !== null}
+        entryId={editEntryId}
+        onClose={() => setEditEntryId(null)}
+        onSaved={() => {
+          setPage(1)
+          runQuery(1, dateOrder, filtersOf(quick, custom, appliedKeyword))
+        }}
+      />
     </div>
   )
 }

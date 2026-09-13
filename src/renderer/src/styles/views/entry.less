@@ -70,6 +70,25 @@
   margin-bottom: 8px;
 }
 
+.entry-form-meta {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 16px;
+}
+
+.entry-form-text {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.entry-postings-tip {
+  margin: -2px 0 10px;
+  color: var(--bw-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 // 日期 + 标志 同行紧凑（短字段不横向拉开）
 .posting-row {
   margin-bottom: 8px;
@@ -122,6 +141,10 @@
     font-size: 12px;
     font-weight: 400;
     color: var(--bw-text-secondary);
+  }
+
+  &__remove {
+    margin-left: auto;
   }
 
   // 往来对象（ADR 23）：仅往来类账户行出现，与上方账户/金额区用虚线分隔
@@ -291,4 +314,27 @@
 
 .entry-recent-empty {
   padding: 16px 0;
+}
+
+.entry-edit-loading {
+  display: flex;
+  justify-content: center;
+  padding: 48px 0;
+}
+
+.entry-edit-id {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--bw-text-secondary);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .entry-form-meta,
+  .entry-form-text {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
 }

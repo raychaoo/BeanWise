@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { nextBalancingNumber } from './EntryFormView'
+import { formValuesToEntryParams, draftToFormValues } from './entryFormValues'
 
 describe('nextBalancingNumber（录入视图自动平衡决策）', () => {
   it('末行留空 → 前 n-1 行之和取反（结果规范化去尾随零）', () => {
@@ -43,5 +44,35 @@ describe('nextBalancingNumber（录入视图自动平衡决策）', () => {
   it('非法金额不抛错（交给表单校验提示）', () => {
     expect(nextBalancingNumber([{ number: 'abc' }, {}])).toBeUndefined()
     expect(() => nextBalancingNumber([{ number: '1..2' }, {}])).not.toThrow()
+  })
+})
+
+describe('entryFormValues 时间与元数据', () => {
+  it('编辑回填 date 使用 time 的秒级值，提交时原样输出 YYYY-MM-DD HH:mm:ss', () => {
+    const values = draftToFormValues({
+      id: 'bw-keep-id',
+      date: '2026-09-12',
+      time: '2026-09-12 18:20:30',
+      flag: '*',
+      postings: [
+        { account: 'Expenses:Food', number: '10', currency: 'CNY' },
+        { account: 'Assets:Cash', number: '-10', currency: 'CNY' }
+      ]
+    })
+    const params = formValuesToEntryParams(values, { id: 'bw-keep-id' })
+    expect(params.id).toBe('bw-keep-id')
+    expect(params.date).toBe('2026-09-12')
+    expect(params.time).toBe('2026-09-12 18:20:30')
+  })
+
+  it('没有 time 的历史数据回填 00:00:00', () => {
+    const values = draftToFormValues({
+      date: '2026-01-02',
+      postings: [
+        { account: 'Expenses:Food', number: '1', currency: 'CNY' },
+        { account: 'Assets:Cash', number: '-1', currency: 'CNY' }
+      ]
+    })
+    expect(formValuesToEntryParams(values).time).toBe('2026-01-02 00:00:00')
   })
 })

@@ -154,6 +154,18 @@ describe('buildEntryPostings（表单两行 → 落账 postings）', () => {
     ).toEqual(['10', '-10', '0'])
   })
 
+  it('preserveSigns：编辑回填时正负号原样保留，不再按账户类型翻转', () => {
+    expect(
+      buildEntryPostings(
+        [
+          { account: 'Expenses:餐饮', number: '-10.00', currency: 'CNY' },
+          { account: 'Assets:银行', number: '10.00', currency: 'CNY' }
+        ],
+        { preserveSigns: true }
+      ).map((p) => p.number)
+    ).toEqual(['-10.00', '10.00'])
+  })
+
   it('counterparty 透传并 trim；空白视为未填、不落该字段（ADR 23）', () => {
     expect(
       buildEntryPostings([

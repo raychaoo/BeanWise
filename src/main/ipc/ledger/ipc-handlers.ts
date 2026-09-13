@@ -2,11 +2,11 @@ import { createHash } from 'node:crypto'
 import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, truncateSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { computeBalancingNumber } from '../../../shared/decimal'
-import type { AddEntryParams, AddEntryResult, ClearLedgerResult, ListAccountsResult, ListCounterpartiesResult, ListEntriesParams, ReadFileResult, RefreshResult, SaveFileParams, SaveFileResult, UpdateEntryParams } from '../../../shared/ipc'
+import type { AddEntryParams, AddEntryResult, ClearLedgerResult, GetEntryResult, ListAccountsResult, ListCounterpartiesResult, ListEntriesParams, ReadFileResult, RefreshResult, SaveFileParams, SaveFileResult, UpdateEntryParams } from '../../../shared/ipc'
 import type { DrizzleDb } from '../../db/index'
 import { postings } from '../../db/schema'
 import { ensureEntryMetadata, findUnopenedAccounts, replaceEntryById, serializeEntry, serializeFirstEntryBlock, serializeOpenLines, validateEntryParams } from '../../core/entry-serializer'
-import { getLedgerStatus, listEntries, refreshIndex } from '../../core/index-builder'
+import { getEntryById, getLedgerStatus, listEntries, refreshIndex } from '../../core/index-builder'
 import { writeLedgerChecked } from '../../utils/ledger-writer'
 import { computeLoanLedger, isNewLoanPosting, loadLoanRows, newLoanId, pickOpenLoanId } from '../../core/loan-links'
 import type { PythonSvc } from '../../core/python-svc'
@@ -122,6 +122,14 @@ function validateUpdateParams(raw: unknown): UpdateEntryParams {
   return { ...params, id: params.id }
 }
 
+function validateEntryId(raw: unknown): string {
+  const p = (raw ?? {}) as { id?: unknown }
+  if (typeof p.id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(p.id)) {
+    throw new Error('id 必须为 1~64 位字母数字下划线连字符')
+  }
+  return p.id
+}
+
 /**
  * 双写互斥说明（M5 终审，实现抽取至 write-lock.ts）：
  * add-entry 与 save-file 写通道串行化（任一时刻至多一个写者，sync 域复用同一把锁）。
@@ -194,6 +202,12 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
   ipc.handle('ledger:list-entries', async (_event: unknown, params: unknown) => {
     const { limit, offset, order, dateFrom, dateTo, keyword, account } = validateListParams(params)
     return listEntries(deps.db, limit, offset, order, { dateFrom, dateTo, keyword, account })
+  })
+
+  ipc.handle('ledger:get-entry', (_event: unknown, raw: unknown): GetEntryResult => {
+    const id = validateEntryId(raw)
+    const entry = getEntryById(deps.db, id)
+    return entry ? { ok: true, entry } : { ok: false, message: `未找到交易 ID: ${id}` }
   })
 
   // M4：录入一笔交易。数据流铁律（先落文件 → 校验 → 重建索引）：

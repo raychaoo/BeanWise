@@ -17,6 +17,8 @@ import type {
   ExcelTemplateDeleteResult,
   ExcelTemplateListResult,
   ExcelTemplateSaveResult,
+  GetEntryParams,
+  GetEntryResult,
   AccountsResult,
   SaveAccountsParams,
   LedgerStatus,
@@ -82,6 +84,8 @@ export interface BeanWiseApi {
   addLedgerEntry(params: AddEntryParams): Promise<AddEntryResult>
   /** 按稳定 ID 更新单笔交易：文本级替换 → 校验落盘 → 索引重建 */
   updateLedgerEntry(params: UpdateEntryParams): Promise<AddEntryResult>
+  /** 按稳定 ID 读取完整交易（编辑抽屉回填，含全部分录与 link） */
+  getLedgerEntry(params: GetEntryParams): Promise<GetEntryResult>
   /** 账户列表（录入表单 AutoComplete 数据源，postings 表 DISTINCT） */
   listLedgerAccounts(): Promise<ListAccountsResult>
   /** 往来对象候选（录入页「往来对象」历史补全；postings.counterparty 非空 DISTINCT，ADR 23） */

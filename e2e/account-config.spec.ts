@@ -133,7 +133,7 @@ test('期初余额：账户页录入 → 走 add-entry 落账本（Equity 配对
     await win.getByRole('button', { name: /确\s*定/ }).click()
     await expect
       .poll(() => readFileSync(ledgerPath, 'utf8'), { timeout: 30000 })
-      .toMatch(/\n20\d{2}-\d{2}-\d{2} \* "" "期初余额"\n  Assets:Bank:CNB  100 CNY\n  Equity:Opening-Balances  -100 CNY\n/)
+      .toMatch(/\n20\d{2}-\d{2}-\d{2} \* "" "期初余额"\n  id: "bw-[0-9a-f-]{36}"\n  time: "20\d{2}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}"\n  Assets:Bank:CNB  100 CNY\n  Equity:Opening-Balances  -100 CNY\n/)
 
     // 行 2：未 open 的 Assets:Cash → add-entry 自动补 open（Task 4 Step 3 实测结论的端到端回归）
     await win.getByLabel('期初余额 现金').click()

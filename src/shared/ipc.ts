@@ -6,6 +6,7 @@
  * （AddEntryParams 等）直接定义于此，保证「类型唯一来源」（preload / renderer / main 共用）。
  */
 import type {
+  LedgerEntryDetail,
   LedgerEntryRow,
   LedgerIndexStatus,
   LedgerStatus,
@@ -16,6 +17,7 @@ import type {
 } from '../main/core/index-builder'
 
 export type {
+  LedgerEntryDetail,
   LedgerEntryRow,
   LedgerIndexStatus,
   LedgerStatus,
@@ -26,7 +28,7 @@ export type {
 }
 
 export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list-entries'
-  | 'ledger:add-entry' | 'ledger:update-entry' | 'ledger:list-accounts' | 'ledger:read-file' | 'ledger:save-file' | 'ledger:clear' | 'ledger:list-counterparties'
+  | 'ledger:add-entry' | 'ledger:update-entry' | 'ledger:get-entry' | 'ledger:list-accounts' | 'ledger:read-file' | 'ledger:save-file' | 'ledger:clear' | 'ledger:list-counterparties'
   | 'accounts:get' | 'accounts:save'
   | 'excel:choose' | 'excel:parse' | 'excel:preview' | 'excel:import' | 'excel:get-templates' | 'excel:save-template' | 'excel:delete-template'
   | 'workspace:get-status' | 'workspace:choose' | 'workspace:open' | 'workspace:recents'
@@ -121,6 +123,18 @@ export interface AddEntryResult {
 /** ledger:update-entry 入参：id 必填，其余字段与新增交易相同。 */
 export interface UpdateEntryParams extends AddEntryParams {
   id: string
+}
+
+/** ledger:get-entry 入参：稳定交易 ID。 */
+export interface GetEntryParams {
+  id: string
+}
+
+/** ledger:get-entry 结果：完整交易详情（含全部分录与 link）。 */
+export interface GetEntryResult {
+  ok: boolean
+  entry?: LedgerEntryDetail
+  message?: string
 }
 
 /** ledger:list-accounts 结果（postings 表 DISTINCT） */

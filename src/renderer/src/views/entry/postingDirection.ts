@@ -67,8 +67,13 @@ export interface EntryPosting {
   counterparty?: string
 }
 
-/** 表单两行 → 落账 postings：按账户类型定向金额符号，其余字段原样（非两行时不做定向） */
-export function buildEntryPostings(rows: EntryRow[]): EntryPosting[] {
+export interface BuildEntryPostingsOptions {
+  /** 编辑回填场景：金额已经是账本里的最终符号，原样保留，禁止再做两行定向。 */
+  preserveSigns?: boolean
+}
+
+/** 表单分录 → 落账 postings：新增两行时按账户类型定向；编辑/多行场景保留原符号。 */
+export function buildEntryPostings(rows: EntryRow[], options: BuildEntryPostingsOptions = {}): EntryPosting[] {
   const plain = (row: EntryRow): EntryPosting => {
     const counterparty = row.counterparty?.trim()
     return {
@@ -78,7 +83,7 @@ export function buildEntryPostings(rows: EntryRow[]): EntryPosting[] {
       ...(counterparty ? { counterparty } : {})
     }
   }
-  if (rows.length !== 2) return rows.map(plain)
+  if (options.preserveSigns || rows.length !== 2) return rows.map(plain)
   const [sign0, sign1] = resolvePostingSigns(rows[0]?.account, rows[1]?.account)
   return rows.map((row, index) => ({
     ...plain(row),

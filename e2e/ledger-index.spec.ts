@@ -9,7 +9,7 @@ const launchArgs = process.env['CI'] ? ['.', '--no-sandbox'] : ['.']
 
 // antd InputNumber stringMode 会规范化尾随零（'25.50' → '25.5'，beancount 语义等价）
 const ENTRY_BLOCK_RE =
-  /\n20\d{2}-\d{2}-\d{2} \* "测试午饭" "M4 E2E"\n  Expenses:Food  25\.5 CNY\n  Assets:Bank:CNB  -25\.5 CNY\n$/
+  /\n20\d{2}-\d{2}-\d{2} \* "测试午饭" "M4 E2E"\n  id: "bw-[0-9a-f-]{36}"\n  time: "20\d{2}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}"\n  Expenses:Food  25\.5 CNY\n  Assets:Bank:CNB  -25\.5 CNY\n$/
 
 /** E2E 不复用全局工作目录；显式激活临时目录后重载，让渲染端拿到新运行时。 */
 async function activateWorkspace(win: Page, ledgerPath: string): Promise<void> {
@@ -157,7 +157,7 @@ test('M4 首文件：路径不存在 → 录入自动创建账本（open 行 + �
 // （2026-08-23 回归修复：首笔录入必须带运营货币 option，否则报表图表恒空）
     const content = readFileSync(ledgerPath, 'utf8')
     expect(content).toMatch(
-      /^option "title" "BeanWise"\noption "operating_currency" "CNY"\n\n20\d{2}-\d{2}-\d{2} open Expenses:Food\n20\d{2}-\d{2}-\d{2} open Assets:Bank:CNB\n20\d{2}-\d{2}-\d{2} \* "首笔"\n  Expenses:Food  10 CNY\n  Assets:Bank:CNB  -10 CNY\n$/
+      /^option "title" "BeanWise"\noption "operating_currency" "CNY"\n\n20\d{2}-\d{2}-\d{2} open Expenses:Food\n20\d{2}-\d{2}-\d{2} open Assets:Bank:CNB\n20\d{2}-\d{2}-\d{2} \* "首笔"\n  id: "bw-[0-9a-f-]{36}"\n  time: "20\d{2}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}"\n  Expenses:Food  10 CNY\n  Assets:Bank:CNB  -10 CNY\n$/
     )
 
     await app.close()
@@ -216,5 +216,56 @@ test('M4+ 明细：服务端倒序/正序、时间筛选与关键词搜索（超
     await app.close()
   } finally {
     cleanupFixture(ledgerPath)
+  }
+})
+
+test('M4+ 编辑：明细抽屉按 ID 回填多分录，保存后 ID 不变', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'beanwise-e2e-edit-'))
+  const ledgerPath = join(dir, 'main.beancount')
+  writeFileSync(
+    ledgerPath,
+    'option "title" "Edit Test"\noption "operating_currency" "CNY"\n\n' +
+      '2026-08-01 open Expenses:Food\n' +
+      '2026-08-01 open Expenses:Daily\n' +
+      '2026-08-01 open Assets:Bank:CNB\n\n' +
+      '2026-08-22 * "旧交易" "编辑前"\n' +
+      '  id: "bw-edit-multi"\n' +
+      '  time: "2026-08-22 17:32:10"\n' +
+      '  Expenses:Food  10.00 CNY\n' +
+      '  Expenses:Daily  20.00 CNY\n' +
+      '  Assets:Bank:CNB  -30.00 CNY\n',
+    'utf8'
+  )
+  try {
+    const app = await electron.launch({ args: launchArgs })
+    const win = await app.firstWindow()
+    await activateWorkspace(win, ledgerPath)
+    await win.getByRole('menuitem', { name: '明细' }).click()
+    await win.getByRole('button', { name: '重建索引' }).click()
+    await expect(win.locator('.ant-table-tbody')).toContainText('旧交易')
+
+    await win.getByRole('button', { name: '编辑 bw-edit-multi' }).click()
+    const drawer = win.getByRole('dialog')
+    await expect(drawer).toBeVisible()
+    await expect(drawer.getByLabel('日期')).toHaveValue('2026-08-22 17:32:10')
+    await expect(drawer.getByLabel('金额')).toHaveCount(3)
+    await expect(drawer.getByText('bw-edit-multi')).toBeVisible()
+
+    await drawer.getByLabel('交易对象').fill('新交易')
+    await drawer.getByLabel('说明').fill('编辑后')
+    await drawer.getByRole('button', { name: '保存修改' }).click()
+    await expect(win.locator('.ant-message')).toContainText('已更新并校验通过')
+    await expect(drawer).not.toBeVisible()
+    await expect(win.locator('.ant-table-tbody')).toContainText('新交易')
+
+    const content = readFileSync(ledgerPath, 'utf8')
+    expect(content).toContain('id: "bw-edit-multi"')
+    expect(content.match(/id: "bw-edit-multi"/g)).toHaveLength(1)
+    expect(content).toContain('time: "2026-08-22 17:32:10"')
+    expect(content).toContain('Expenses:Daily  20.00 CNY')
+    expect(content).toContain('Assets:Bank:CNB  -30.00 CNY')
+    await app.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
   }
 })

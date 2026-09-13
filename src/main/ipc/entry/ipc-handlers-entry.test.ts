@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, mkdtempSync, readFileSync, statSync, writeF
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AddEntryParams, AddEntryResult, ClearLedgerResult, ListAccountsResult } from '../../../shared/ipc'
+import type { AddEntryParams, AddEntryResult, ClearLedgerResult, GetEntryResult, ListAccountsResult, UpdateEntryParams } from '../../../shared/ipc'
 import { createDrizzle, openDatabase } from '../../db/index'
 import { entries, postings } from '../../db/schema'
 import { registerLedgerHandlers, type IpcRegistrar } from '../ledger/ipc-handlers'
@@ -10,11 +10,13 @@ import { registerLedgerHandlers, type IpcRegistrar } from '../ledger/ipc-handler
 // 录入口径测试用 mock refreshIndex（不 spawn 真实 Python 引擎）：
 // 断言「写入后调用校验重建」与「error → truncate 回滚」的接线
 const mocks = vi.hoisted(() => ({
+  getEntryById: vi.fn(),
   refreshIndex: vi.fn(),
   writeLedgerChecked: vi.fn()
 }))
 
 vi.mock('../../core/index-builder', () => ({
+  getEntryById: mocks.getEntryById,
   refreshIndex: mocks.refreshIndex,
   getLedgerStatus: vi.fn(),
   listEntries: vi.fn()
@@ -60,6 +62,7 @@ describe('IPC handlers ledger:add-entry / list-accounts（M4）', () => {
     dir = mkdtempSync(join(tmpdir(), 'beanwise-m4-'))
     mocks.refreshIndex.mockReset()
     mocks.refreshIndex.mockResolvedValue({ changed: true, status: 'ok', entryCount: 6, errorCount: 0 })
+    mocks.getEntryById.mockReset()
     mocks.writeLedgerChecked.mockReset()
   })
 
@@ -303,5 +306,33 @@ describe('IPC handlers ledger:add-entry / list-accounts（M4）', () => {
     })).rejects.toThrow(/未找到/)
     expect(mocks.writeLedgerChecked).not.toHaveBeenCalled()
     expect(readFileSync(ledgerPath, 'utf8')).toBe(before)
+  })
+
+  it('ledger:get-entry：按 ID 返回完整交易；不存在返回 ok:false', async () => {
+    const detail: UpdateEntryParams = {
+      id: 'bw-detail-001',
+      date: '2026-09-12',
+      time: '2026-09-12 18:20:30',
+      flag: '*',
+      payee: '商户',
+      narration: '二次编辑',
+      links: ['lend-001'],
+      postings: [
+        { account: 'Assets:Receivables:Lend', number: '30.00', currency: 'CNY', counterparty: '李志全' },
+        { account: 'Assets:Cash', number: '-30.00', currency: 'CNY' }
+      ]
+    }
+    mocks.getEntryById.mockReturnValueOnce(detail).mockReturnValueOnce(null)
+    const handlers = makeHandlers(join(dir, 'ledger.beancount'))
+
+    expect(await handlers['ledger:get-entry']({}, { id: 'bw-detail-001' })).toEqual({
+      ok: true,
+      entry: detail
+    })
+    expect(await handlers['ledger:get-entry']({}, { id: 'bw-missing' })).toEqual({
+      ok: false,
+      message: '未找到交易 ID: bw-missing'
+    })
+    expect(() => handlers['ledger:get-entry']({}, { id: '' })).toThrow(/id/)
   })
 })
