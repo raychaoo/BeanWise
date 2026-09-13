@@ -82,7 +82,7 @@ test('M4 绿灯：录入一笔 → 落文件 → 校验 → 索引更新（端�
   }
 })
 
-test('M4 失败：借贷不平衡 → 错误提示 + 文件不变', async () => {
+test('M4 方向：账户行序不影响记账方向（资产在前也记为 支出+ / 资产-）', async () => {
   const ledgerPath = createFixtureCopy()
   try {
     const app = await electron.launch({
@@ -91,18 +91,24 @@ test('M4 失败：借贷不平衡 → 错误提示 + 文件不变', async () => 
     const win = await app.firstWindow()
     await activateWorkspace(win, ledgerPath)
 
-    await win.getByLabel('交易对象').fill('不平衡测试')
-    await pickAccount(win, 0, 'Expenses:Food')
+    // 与常见填法（支出在前）相反：资产填第一行、支出填第二行，落账方向仍须正确。
+    // （金额只填第一行，第二行自动取反且只读；方向由账户类型判定——见 postingDirection.ts）
+    await win.getByLabel('交易对象').fill('方向测试')
+    await pickAccount(win, 0, 'Assets:Bank:CNB')
     await win.getByLabel('金额').nth(0).fill('100.00')
     await win.getByLabel('货币').nth(0).fill('CNY')
-    await pickAccount(win, 1, 'Assets:Bank:CNB') // fixture 仅含 Bank:CNB/Opening-Balances/Food，原 Assets:Cash 无选项可点
-    await win.getByLabel('金额').nth(1).fill('-99.00')
+    await pickAccount(win, 1, 'Expenses:Food') // fixture 仅含 Bank:CNB/Opening-Balances/Food
     await win.getByLabel('货币').nth(1).fill('CNY')
 
-    const before = readFileSync(ledgerPath, 'utf8')
+    // 金额框按本行记账符号呈现（符号只体现在显示上）：资产行记为负、支出行记为正
+    await expect(win.getByLabel('金额').nth(0)).toHaveValue(/-100/)
+    await expect(win.getByLabel('金额').nth(1)).toHaveValue(/^100/)
+
     await win.getByRole('button', { name: '写入账本' }).click()
-    await expect(win.locator('.ant-message')).toContainText('借贷不平衡')
-    expect(readFileSync(ledgerPath, 'utf8')).toBe(before)
+    await expect(win.locator('.ant-message')).toContainText('已写入并校验通过')
+
+    const content = readFileSync(ledgerPath, 'utf8')
+    expect(content).toMatch(/  Assets:Bank:CNB  -100(\.0+)? CNY\n  Expenses:Food  100(\.0+)? CNY\n/)
 
     await app.close()
   } finally {

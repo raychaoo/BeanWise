@@ -61,7 +61,9 @@ test('启停用：账户页停用并保存 → enabled 落盘 → 录入下拉�
     const { app, win } = await launchWithWorkspace(ledgerPath)
 
     // 配置 3 行全可见；种子 enabled:false 的「旧账户」开关为未勾选态
-    await expect(win.locator('.ant-table-tbody tr')).toHaveCount(3, { timeout: 20000 })
+    // （按 .ant-table-row 计数：ProTable 配了横向滚动，tbody 内另有 1 行隐藏 measure <tr>，
+    //   直接数 tr 会多 1；同 ledger-index.spec.ts 的 dataRows 写法）
+    await expect(win.locator('.ant-table-tbody .ant-table-row')).toHaveCount(3, { timeout: 20000 })
     await expect(win.getByLabel('启停用 旧账户')).not.toBeChecked()
     await expect(win.getByLabel('启停用 银行卡')).toBeChecked()
 
@@ -89,18 +91,22 @@ test('启停用：账户页停用并保存 → enabled 落盘 → 录入下拉�
       trigger = win.getByRole('combobox', { name: /账户/ }).first()
       await expect(trigger).toBeVisible({ timeout: 20000 })
     }
+    // 选中结果作用域限定到分录行账户框：`.ant-select-selection-item` 全局定位会命中
+    // App 四视图常驻挂载的隐藏 Select，以及分录行内默认带值（CNY）的货币 AutoComplete
+    // ——录入页重设计后这些恒存在，全局计数不再是「0 = 未选中」。
+    const selectedAccounts = win.locator('.posting-row__account .ant-select-selection-item')
     await trigger.click()
     await trigger.fill('Assets:Bank:CNB')
     await win.keyboard.press('Enter')
-    await expect(win.locator('.ant-select-selection-item')).toHaveCount(0, { timeout: 10000 })
+    await expect(selectedAccounts).toHaveCount(0, { timeout: 10000 })
     await trigger.click()
     await trigger.fill('Assets:Old')
     await win.keyboard.press('Enter')
-    await expect(win.locator('.ant-select-selection-item')).toHaveCount(0, { timeout: 10000 })
+    await expect(selectedAccounts).toHaveCount(0, { timeout: 10000 })
     await trigger.click()
     await trigger.fill('吃饭')
     await win.keyboard.press('Enter')
-    await expect(win.locator('.ant-select-selection-item').filter({ hasText: '吃饭' })).toBeVisible({ timeout: 10000 })
+    await expect(selectedAccounts.filter({ hasText: '吃饭' })).toBeVisible({ timeout: 10000 })
     await app.close()
   } finally {
     cleanupFixture(ledgerPath)

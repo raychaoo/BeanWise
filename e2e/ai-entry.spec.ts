@@ -42,9 +42,14 @@ async function resetAi(win: Page): Promise<void> {
   await win.reload()
 }
 
-/** 批次 B：AI 面板移入 Drawer——先点页头「AI 录入」开抽屉，再展开面板自身折叠头 */
+/**
+ * 录入页重设计后：AI 录入入口收进页头「更多」Dropdown（原 EntryActionsBar 的独立「AI 录入」
+ * 按钮已移除）——先开菜单点「AI 辅助录入」开抽屉，再展开面板自身折叠头。
+ * 「更多」两字中文按钮经 antd autoInsertSpaceInButton 渲染为「更 多」，故用 /更\s*多/ 匹配。
+ */
 async function openAiPanel(win: Page): Promise<void> {
-  await win.getByRole('button', { name: /AI 录入/ }).click()
+  await win.getByRole('button', { name: /更\s*多/ }).click()
+  await win.getByRole('menuitem', { name: /AI 辅助录入/ }).click()
   await win.getByRole('button', { name: /AI 辅助录入/ }).click()
 }
 

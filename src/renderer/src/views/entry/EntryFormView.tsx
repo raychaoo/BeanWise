@@ -1,8 +1,9 @@
 /**
  * 录入视图（重设计）：分区化凭证头（日期/标志 + 交易对象/说明纵向）+ 加重的记账行（账户为主输入，
- * 金额/货币副输入 + 贷/付、借/收语义标签）+ 加权的余额指示条 + 强化的提交区 + 可读的最近流水列表
- * （等宽数字 + 正负色 + 单行信息层级）。次要操作（Excel/AI/账户设置）收进 header「更多」菜单，
- * 凭证首屏回归表单。金额一律十进制字符串；自动平衡决策抽为纯函数 nextBalancingNumber（单测覆盖）。
+ * 金额/货币副输入 + 借方/贷方标签 + 账户类型决定的余额变动方向）+ 加权的余额指示条 + 强化的提交区
+ * + 可读的最近流水列表（等宽数字 + 正负色 + 单行信息层级）。次要操作（Excel/AI/账户设置）收进
+ * header「更多」菜单，凭证首屏回归表单。金额一律十进制字符串；记账方向与自动平衡决策抽为纯函数
+ * postingDirection（单测覆盖）——方向由账户类型决定，账户填在哪一行都记对。
  */
 import { ProForm, ProFormDatePicker, ProFormRadio, ProFormText } from '@ant-design/pro-components'
 import { Button, Card, Col, Dropdown, Empty, Form, message, Row, Typography } from 'antd'
@@ -21,6 +22,8 @@ import { formatAmount } from '../../utils/format'
 import '../../styles/views/entry.less'
 import BalanceHint from './BalanceHint'
 import PostingRowCard from './PostingRowCard'
+import { buildEntryPostings, postingEffectLabel, resolvePostingSigns } from './postingDirection'
+import type { PostingSign } from './postingDirection'
 import AiEntryDrawer from './AiEntryDrawer'
 import ExcelImportDrawer from './ExcelImportDrawer'
 
@@ -90,6 +93,12 @@ export default function EntryFormView() {
   const accountOptionsFor = (rowIndex: number) =>
     filterAccountOptions(accountOptions, postings?.[1 - rowIndex]?.account)
 
+  // 记账方向：由账户类型推导（收入记负、支出记正），与 Excel 导入同一套约定——
+  // 账户填在哪一行都记对，不再依赖行序。
+  const postingSigns = resolvePostingSigns(postings?.[0]?.account, postings?.[1]?.account)
+  const signForRow = (rowIndex: number): PostingSign =>
+    postingSigns[rowIndex] ?? (rowIndex % 2 === 0 ? 1 : -1)
+
   const numberRule = (fieldName: number): Rule => ({
     validator: (_rule, value: string | undefined | null) => {
       const lastIdx = (postings?.length ?? 0) - 1
@@ -117,9 +126,9 @@ export default function EntryFormView() {
       ...(values.flag ? { flag: values.flag } : {}),
       ...(values.payee?.trim() ? { payee: values.payee.trim() } : {}),
       ...(values.narration?.trim() ? { narration: values.narration.trim() } : {}),
-      postings: (values.postings ?? [])
-        .filter((p) => p.account || p.number || p.currency)
-        .map((p) => ({ account: p.account ?? '', number: p.number ?? '', currency: p.currency ?? '' }))
+      postings: buildEntryPostings(
+        (values.postings ?? []).filter((p) => p.account || p.number || p.currency)
+      )
     }
     setSubmitting(true)
     try {
@@ -226,7 +235,8 @@ export default function EntryFormView() {
           <div className="entry-section">
             <span className="entry-section__title">记账行</span>
             <Typography.Paragraph type="secondary" className="entry-postings-tip">
-              两行分别记录资金涉及的两个账户；第二行金额自动跟随第一行取反，两行合计恒为 0。
+              两行分别记录资金涉及的两个账户；金额只需填在第一行（填正数即可），记账方向由账户类型自动判定
+              （支出记正、收入记负），第二行金额自动取反，两行合计恒为 0。
             </Typography.Paragraph>
 
             <Form.List
@@ -249,6 +259,8 @@ export default function EntryFormView() {
                     <PostingRowCard
                       key={field.key}
                       index={field.name as 0 | 1}
+                      sign={signForRow(field.name)}
+                      effectLabel={postingEffectLabel(postings?.[field.name]?.account, signForRow(field.name))}
                       amountReadOnly={field.name === 1}
                       currencyOptions={currencyOptions}
                       accountOptions={accountOptionsFor(field.name)}

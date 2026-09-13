@@ -218,7 +218,9 @@ return (
 **现状问题**：见总览表 #6、#7、#8。
 
 **优化建议（录入，`/entry`）**
-- 桌面双栏 `flex: 3 / 2`（≥1280 有效）：**左栏**凭证表单卡片化 —— ① 凭证头（日期/标志/交易对象/说明，2 列栅格）② 分录区：两行改**借贷双栏卡**（上行蓝边「付方/资产减少」，下行橙边「收方/资产增加」，行内 账户(55%) 金额(30%) 货币(15%)）③ 平衡指示条 ④ 提交区（写入账本 + Ctrl+Enter 快捷键 + 重置）。
+- 桌面双栏 `flex: 3 / 2`（≥1280 有效）：**左栏**凭证表单卡片化 —— ① 凭证头（日期/标志/交易对象/说明，2 列栅格）② 分录区：两行改**借贷双栏卡**（借方橙边、贷方蓝边，行内 账户(55%) 金额(30%) 货币(15%)；**行色随记账符号走，不随行序**）③ 平衡指示条 ④ 提交区（写入账本 + Ctrl+Enter 快捷键 + 重置）。
+  > **2026-09-10 修正**：原方案把两行写死为「上行付方/资产减少、下行收方/资产增加」，但实现里第一行恒记正、第二行恒取反 ⇒ 记收入时方向整体颠倒（Income 记正 = 收入减少）。
+  > 现改为**按账户类型定向**：支出记正、收入记负，纯资产/负债/权益互转按行序（第一行转入 +、第二行转出 −），两行符号恒互为相反数，账户填在哪一行都记对。见 `src/renderer/src/views/entry/postingDirection.ts`。
 - **Excel 导入与 AI 面板移出首屏**：页头放两个次要按钮「Excel 导入」「AI 录入」，各自开 Drawer（组件不改，仅容器从 Card 换 Drawer，逻辑零改动）。
 - 平衡提示：`Form.useWatch` 已有，新增 `<BalanceHint>` 实时显示差额（复用 `computeBalancingNumber`），绿色「已平衡 ✓」/ 红色「差额 X」。
 - 科目下拉按五大类分组：`options` 由 `accountOptions` 按 `value` 首段分组（`Assets` → label「资产」…）。
@@ -233,16 +235,17 @@ return (
 **关键代码**：分录行借贷语义 + 平衡提示（≤30 行）：
 
 ```tsx
-// views/entry/PostingRowCard.tsx
-const ROW_META = [
-  { tone: 'debit',  icon: <ArrowUpOutlined />,  placeholder: '资金减少 / 支出方' },
-  { tone: 'credit', icon: <ArrowDownOutlined />, placeholder: '资金增加 / 收入方' },
-] as const
+// views/entry/PostingRowCard.tsx（示意；实际实现的行头标签/行色由 postingDirection.ts 的记账符号推导）
+const DIRECTION_META = {
+  1:  { tone: 'debit',  icon: <ArrowUpOutlined />,   tag: '借方', placeholder: '选择支出 / 转入账户' },
+  [-1]: { tone: 'credit', icon: <ArrowDownOutlined />, tag: '贷方', placeholder: '选择收入 / 转出账户' },
+} as const
 
-export function PostingRowCard({ index, currencyOptions, accountOptions }: Props) {
+export function PostingRowCard({ index, sign, effectLabel, currencyOptions, accountOptions }: Props) {
+  const meta = DIRECTION_META[sign]
   return (
-    <div className={`posting-row posting-row--${ROW_META[index].tone}`}>
-      <div className="posting-row__head">{ROW_META[index].icon}{ROW_META[index].placeholder}</div>
+    <div className={`posting-row posting-row--${meta.tone}`}>
+      <div className="posting-row__head">{meta.icon}<Tag>{meta.tag}</Tag>{effectLabel}</div>
       <Form.Item name={[index, 'account']} rules={[{ required: true }]} style={{ flex: 5.5 }}>
         <Select showSearch optionFilterProp="label" options={groupedAccountOptions(accountOptions)} />
       </Form.Item>
@@ -261,8 +264,8 @@ export function PostingRowCard({ index, currencyOptions, accountOptions }: Props
 // styles/views/entry.less
 .posting-row { display: flex; gap: 8px; padding: 8px 12px; border-radius: 6px;
   border-left: 3px solid transparent; background: @bw-bg-secondary;
-  &--debit  { border-left-color: @bw-blue; }
-  &--credit { border-left-color: @bw-orange; }
+  &--debit  { border-left-color: @bw-outflow; }  // 借方（记账为正）= 橙
+  &--credit { border-left-color: @bw-primary; }  // 贷方（记账为负）= 蓝
   &__head   { width: 100%; font-size: 12px; color: @bw-text-secondary; }
 }
 ```

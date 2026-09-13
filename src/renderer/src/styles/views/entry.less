@@ -1,5 +1,6 @@
 // 录入页样式（重设计）：分区化凭证 + 加重的记账行 + 可读的最近流水列表。
-// 借贷色沿用 tokens.less：贷方蓝=@bw-primary、借方橙=@bw-outflow。
+// 借贷色沿用 tokens.less：借方（记账为正）橙=@bw-outflow、贷方（记账为负）蓝=@bw-primary。
+// 行色随记账符号走（不随行序）——方向由账户类型判定，见 views/entry/postingDirection.ts。
 // var(--bw-posting-bg) / @bw-section-line / var(--bw-text-secondary) 统一在 tokens.less 以 CSS var 双档提供。
 @import (reference) '../tokens.less';
 
@@ -77,12 +78,14 @@
   border-left: 3px solid transparent;
   background: var(--bw-posting-bg);
 
+  // 借方（此行为正）：橙，与支出/流出同色
   &--debit {
-    border-left-color: var(--bw-primary);
+    border-left-color: var(--bw-outflow);
   }
 
+  // 贷方（此行为负）：蓝，品牌主色
   &--credit {
-    border-left-color: var(--bw-outflow);
+    border-left-color: var(--bw-primary);
   }
 
   &__head {
@@ -105,13 +108,13 @@
     letter-spacing: 0.02em;
 
     .posting-row--debit & {
-      color: var(--bw-primary);
-      background: var(--bw-primary-soft);
+      color: var(--bw-outflow);
+      background: var(--bw-outflow-soft);
     }
 
     .posting-row--credit & {
-      color: var(--bw-outflow);
-      background: var(--bw-outflow-soft);
+      color: var(--bw-primary);
+      background: var(--bw-primary-soft);
     }
   }
 
