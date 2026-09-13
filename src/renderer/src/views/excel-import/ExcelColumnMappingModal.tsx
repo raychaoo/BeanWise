@@ -136,7 +136,7 @@ export default function ExcelColumnMappingModal({
         incomeByType: {},
         sourceByMethod: {},
         cashAccountByMethod: {},
-        fallbackExpenseAccount: 'Expenses:Uncategorized',
+        fallbackExpenseAccount: 'Expenses:Other',
         fallbackSourceAccount: 'Assets:WeChat',
         fallbackIncomeAccount: 'Income:Other',
         fallbackCashAccount: 'Assets:WeChat'

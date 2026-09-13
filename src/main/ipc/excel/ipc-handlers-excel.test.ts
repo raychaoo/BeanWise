@@ -66,7 +66,7 @@ describe('excel 域 IPC（通用导入）', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'beanwise-excel-ipc-'))
     ledgerPath = join(dir, 'main.beancount')
-    appendFileSync(ledgerPath, '2026-01-01 open Assets:WeChat\n2026-01-01 open Expenses:Shopping\n', 'utf8')
+    appendFileSync(ledgerPath, '2026-01-01 open Assets:WeChat\n2026-01-01 open Expenses:Shopping:Other\n', 'utf8')
 
     const wb = new ExcelJS.Workbook()
     const ws = wb.addWorksheet('流水')
@@ -127,7 +127,7 @@ describe('excel 域 IPC（通用导入）', () => {
     expect(result.newAccounts?.[0]).toMatchObject({ id: '招商银行储蓄卡(8888)@零钱提现', key: '招商银行储蓄卡(8888)', type: '零钱提现', count: 1, amount: '1000' })
     expect(result.newAccounts?.[1]).toMatchObject({ id: '招商银行储蓄卡(8888)@商户消费', key: '招商银行储蓄卡(8888)', type: '商户消费', count: 1, amount: '17.4' })
     expect(result.totals).toMatchObject({ total: 3, expense: 1, income: 1, neutral: 1 })
-    expect(result.rows?.[0]).toMatchObject({ rowId: 'A1', kind: 'expense', expenseAccount: 'Expenses:Shopping', sourceAccount: 'Assets:WeChat' })
+    expect(result.rows?.[0]).toMatchObject({ rowId: 'A1', kind: 'expense', expenseAccount: 'Expenses:Shopping:Other', sourceAccount: 'Assets:WeChat' })
   })
 
 
@@ -139,7 +139,7 @@ describe('excel 域 IPC（通用导入）', () => {
     const result = (await handlers['excel:preview']({}, { path: xlsxPath, template: tpl })) as ExcelPreviewResult
     expect(result.ok).toBe(true)
     const types = result.newTypes ?? []
-    expect(types).toContainEqual(expect.objectContaining({ id: 'expense:商户消费@招商银行储蓄卡(8888)', key: '商户消费', method: '招商银行储蓄卡(8888)', kind: 'expense', count: 1, amount: '17.4', suggestedAccount: 'Expenses:Shopping', resolution: 'fallback' }))
+    expect(types).toContainEqual(expect.objectContaining({ id: 'expense:商户消费@招商银行储蓄卡(8888)', key: '商户消费', method: '招商银行储蓄卡(8888)', kind: 'expense', count: 1, amount: '17.4', suggestedAccount: 'Expenses:Shopping:Other', resolution: 'fallback' }))
     expect(types).toContainEqual(expect.objectContaining({ id: 'income:转账@零钱', key: '转账', method: '零钱', kind: 'income', count: 1, amount: '500' }))
     expect(types.some((t) => t.key === '零钱提现')).toBe(false) // 中性行不参与
   })
@@ -180,7 +180,7 @@ describe('excel 域 IPC（通用导入）', () => {
     const saveMock = accountSave as unknown as { mock: { calls: Array<[Array<{ value: string }>]> } }
     expect(saveMock.mock.calls.length).toBeGreaterThan(0)
     const saved = saveMock.mock.calls[0][0]
-    expect(saved.some((a) => a.value === 'Expenses:Shopping')).toBe(true)
+    expect(saved.some((a) => a.value === 'Expenses:Shopping:Other')).toBe(true)
   })
 
   it('重复导入同一行被去重（existingIds 命中）', async () => {

@@ -32,12 +32,12 @@ describe('excelAccountLabel（中文显示名）', () => {
   const template = makeTemplate()
 
   it('支出/收入/来源账户从模板映射反查中文名', () => {
-    expect(excelAccountLabel('Expenses:Transfer', template)).toBe('转账')
+    expect(excelAccountLabel('Expenses:Shopping:Other', template)).toBe('商户消费')
     expect(excelAccountLabel('Income:Refund', template)).toBe('美团平台商户-退款')
     expect(excelAccountLabel('Assets:Bank:ZSYH', template)).toBe('招商银行储蓄卡(6156)')
     expect(excelAccountLabel('Assets:WeChat:Pay', template)).toBe('微信余额') // 零钱 → 微信余额-资产
     expect(excelAccountLabel('Assets:WeChat', template)).toBe('未分类资产') // 兜底
-    expect(excelAccountLabel('Expenses:Uncategorized', template)).toBe('其他支出')
+    expect(excelAccountLabel('Expenses:Other', template)).toBe('扫二维码付款')
   })
 
   it('未知账户用中文路径兜底，不回退纯英文路径', () => {
@@ -50,7 +50,7 @@ describe('excelAccountDescription（用途描述）', () => {
   const template = makeTemplate()
 
   it('按账户角色生成描述并带模板名', () => {
-    expect(excelAccountDescription('Expenses:Transfer', template)).toBe('支出科目 · 招商银行信用卡')
+    expect(excelAccountDescription('Expenses:Shopping:Other', template)).toBe('支出科目 · 招商银行信用卡')
     expect(excelAccountDescription('Income:Refund', template)).toBe('收入科目 · 招商银行信用卡')
     expect(excelAccountDescription('Assets:Bank:ZSYH', template)).toBe('支付渠道来源账户 · 招商银行信用卡')
     expect(excelAccountDescription('Assets:WeChat:Pay', template)).toBe('支付渠道来源账户 · 招商银行信用卡')

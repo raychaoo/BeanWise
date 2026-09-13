@@ -34,7 +34,7 @@ export default function ExcelAccountMappingModal({ open, accountMapping, account
   const [incomeRows, setIncomeRows] = useState<MappingRow[]>([])
   const [sourceRows, setSourceRows] = useState<MappingRow[]>([])
   const [cashRows, setCashRows] = useState<MappingRow[]>([])
-  const [fallbackExpense, setFallbackExpense] = useState('Expenses:Uncategorized')
+  const [fallbackExpense, setFallbackExpense] = useState('Expenses:Other')
   const [fallbackSource, setFallbackSource] = useState('Assets:WeChat')
   const [fallbackIncome, setFallbackIncome] = useState('Income:Other')
   const [fallbackCash, setFallbackCash] = useState('Assets:WeChat')

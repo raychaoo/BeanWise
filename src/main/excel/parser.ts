@@ -26,6 +26,7 @@ import type {
 } from '../../shared/ipc'
 import { addDecimalStrings } from '../../shared/decimal'
 import { computeDedupFingerprint } from '../core/dedup'
+import { classifyExpense } from '../expenses/expense-taxonomy'
 import { methodMapKey, typeMapKey } from '../../shared/import-keys'
 
 export const BEANWISE_IMPORT_MARKER = 'beanwise-import'
@@ -360,6 +361,7 @@ function resolveRowAccounts(
   paymentMethod: string,
   config: AccountMappingConfig,
   accountLibrary: AccountEntry[] = [],
+  counterparty = '',
   product = ''
 ): { kind: 'expense' | 'income' | 'neutral'; expenseAccount: string; sourceAccount: string } {
   // 支付方式未映射时按账户库智能匹配（招商银行→Assets:Bank:ZSYH 等），再不行才兜底
@@ -368,9 +370,12 @@ function resolveRowAccounts(
   const typeKey = typeMapKey(transactionType, paymentMethod)
   const methodKey = methodMapKey(paymentMethod, transactionType)
   if (io === '支出') {
+    const configuredExpense =
+      config.expenseByType[typeKey]?.trim() || config.expenseByType[transactionType]?.trim()
+    const classified = classifyExpense(counterparty, product || transactionType)
     return {
       kind: 'expense',
-      expenseAccount: config.expenseByType[typeKey]?.trim() || config.expenseByType[transactionType]?.trim() || config.fallbackExpenseAccount,
+      expenseAccount: configuredExpense || classified.account,
       sourceAccount: config.sourceByMethod[methodKey]?.trim() || config.sourceByMethod[paymentMethod]?.trim() || methodAccount || config.fallbackSourceAccount
     }
   }
@@ -382,7 +387,7 @@ function resolveRowAccounts(
     const salaryHint = /工资|代发|奖金|转存|分红/.test(product)
     // 退款不是收入：钱退回到账户，应冲减对应支出科目（Expenses 记负数），而非新增 Income
     const refundExpense = refund
-      ? config.expenseByType[typeKey]?.trim() || config.expenseByType[transactionType]?.trim() || 'Expenses:Uncategorized'
+      ? config.expenseByType[typeKey]?.trim() || config.expenseByType[transactionType]?.trim() || 'Expenses:Other'
       : ''
     return {
       kind: 'income',
@@ -479,7 +484,15 @@ export function applyTemplate(
     const paymentMethod = methodIdx >= 0 ? get(methodIdx) : ''
     const status = statusIdx >= 0 ? get(statusIdx) : ''
     const kind = resolveKind(template.directionRule, ioText, negative, typeText, product, rowNumber)
-    const accounts = resolveRowAccounts(kindLabel(kind), typeText, paymentMethod, template.accountMapping, accountLibrary, product)
+    const accounts = resolveRowAccounts(
+      kindLabel(kind),
+      typeText,
+      paymentMethod,
+      template.accountMapping,
+      accountLibrary,
+      counterparty,
+      product
+    )
     const idCell = rowIdIdx >= 0 ? sanitizeRowId(get(rowIdIdx)) : ''
     // 内容哈希 / 单号在同一文件内可能重复（同一天同商户同金额），追加序号保证 rowId 唯一
     const baseRowId = idCell || computeRowId(dt.date, counterparty, amount, typeText, paymentMethod)
@@ -655,14 +668,14 @@ const TYPE_ACCOUNT_HINTS: Array<[RegExp, 'expense' | 'income', string]> = [
   [/利息/, 'income', 'Income:Interest'],
   [/报销/, 'income', 'Income:Reimbursement'],
   [/收款|入账|红包|礼金/, 'income', 'Income:Other'],
-  [/手续费|管理费|年费/, 'expense', 'Expenses:Fee'],
-  [/消费|购物|餐饮|美食|商户|网购|扫码/, 'expense', 'Expenses:Shopping'],
-  [/转账|汇款|还款|还贷/, 'expense', 'Expenses:Transfer'],
-  [/缴费|水电|燃气|话费|宽带|物业/, 'expense', 'Expenses:Utilities'],
-  [/加油|交通|出行|打车|停车/, 'expense', 'Expenses:Transport'],
-  [/医疗|药店|医院/, 'expense', 'Expenses:Medical'],
-  [/教育|学费|培训/, 'expense', 'Expenses:Education'],
-  [/红包/, 'expense', 'Expenses:RedPacket']
+  [/手续费|管理费|年费/, 'expense', 'Expenses:Financial:Fee'],
+  [/消费|购物|餐饮|美食|商户|网购|扫码/, 'expense', 'Expenses:Shopping:Other'],
+  [/转账|汇款|还款|还贷/, 'expense', 'Expenses:Other'],
+  [/缴费|水电|燃气|话费|宽带|物业/, 'expense', 'Expenses:Housing:Other'],
+  [/加油|交通|出行|打车|停车/, 'expense', 'Expenses:Transport:Other'],
+  [/医疗|药店|医院/, 'expense', 'Expenses:Health:Other'],
+  [/教育|学费|培训/, 'expense', 'Expenses:Education:Other'],
+  [/红包/, 'expense', 'Expenses:Social:RedPacket']
 ]
 
 export function suggestTypeAccount(key: string, kind: 'expense' | 'income'): string {

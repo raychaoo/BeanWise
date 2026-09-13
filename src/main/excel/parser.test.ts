@@ -97,7 +97,7 @@ describe('applyTemplate（列映射 + 方向 + 账户映射）', () => {
       paymentMethod: '招商银行储蓄卡(8888)',
       rowId: 'A1',
       alreadyImported: false,
-      expenseAccount: 'Expenses:Shopping',
+      expenseAccount: 'Expenses:Shopping:Other',
       sourceAccount: 'Assets:WeChat' // 新支付方式未映射 → 兜底
     })
     expect(rows[1].kind).toBe('income')
@@ -176,7 +176,21 @@ describe('applyTemplate（列映射 + 方向 + 账户映射）', () => {
     ]
     const library = [{ id: 1, name: '交通银行储蓄卡(3778)', value: 'Assets:Bank:JTYH' }]
     const rows = applyTemplate(grid, template(), new Set(), new Map(), library)
-    expect(rows[0].expenseAccount).toBe('Expenses:Uncategorized')
+    expect(rows[0].expenseAccount).toBe('Expenses:Other')
+  })
+
+  it('未配置支出类型映射时按交易对方和摘要自动归类', () => {
+    const config: AccountMappingConfig = {
+      ...defaultAccountMapping(),
+      expenseByType: {}
+    }
+    const grid = [
+      ['交易时间', '交易类型', '交易对方', '商品', '金额', '收/支', '支付方式', '交易单号'],
+      ['2026-08-01 08:00:00', '商户消费', '麦当劳', '早餐', '17.4', '支出', '零钱', 'C1']
+    ]
+    const library = [{ id: 1, name: '微信余额-资产', value: 'Assets:WeChat:Pay' }]
+    const rows = applyTemplate(grid, { ...template(), accountMapping: config }, new Set(), new Map(), library)
+    expect(rows[0].expenseAccount).toBe('Expenses:Life:Food:Breakfast')
   })
 
   it('amountSign 模式：负数为支出、正数为收入', () => {
@@ -423,8 +437,8 @@ describe('suggestTypeAccountWithMethod（新交易类型建议跟随支付方式
   })
 
   it('支付方式无信号时回退交易类型关键词；空支付方式回退关键词', () => {
-    expect(suggestTypeAccountWithMethod('手续费', 'expense', '未知渠道', config, library)).toBe('Expenses:Fee')
-    expect(suggestTypeAccountWithMethod('手续费', 'expense', '', config, library)).toBe('Expenses:Fee')
+    expect(suggestTypeAccountWithMethod('手续费', 'expense', '未知渠道', config, library)).toBe('Expenses:Financial:Fee')
+    expect(suggestTypeAccountWithMethod('手续费', 'expense', '', config, library)).toBe('Expenses:Financial:Fee')
   })
 })
 
@@ -440,7 +454,7 @@ describe('detectNewTypes / suggestTypeAccount（新交易类型键，按实际�
     const rows = applyTemplate(grid, template(), new Set())
     const types = detectNewTypes(rows, accountMapping)
     expect(types).toHaveLength(3)
-    expect(types).toContainEqual(expect.objectContaining({ id: 'expense:手续费@招商银行储蓄卡(8888)', key: '手续费', method: '招商银行储蓄卡(8888)', kind: 'expense', count: 1, amount: '30', suggestedAccount: 'Expenses:Fee', resolution: 'fallback' }))
+    expect(types).toContainEqual(expect.objectContaining({ id: 'expense:手续费@招商银行储蓄卡(8888)', key: '手续费', method: '招商银行储蓄卡(8888)', kind: 'expense', count: 1, amount: '30', suggestedAccount: 'Expenses:Financial:Fee', resolution: 'fallback' }))
     expect(types).toContainEqual(expect.objectContaining({ id: 'income:退款@招商银行储蓄卡(8888)', key: '退款', method: '招商银行储蓄卡(8888)', kind: 'income', count: 1, amount: '20', suggestedAccount: 'Income:Refund' }))
     expect(types).toContainEqual(expect.objectContaining({ id: 'income:理财收益@招商银行储蓄卡(8888)', key: '理财收益', method: '招商银行储蓄卡(8888)', kind: 'income', count: 1, amount: '12.5', suggestedAccount: '' }))
   })
@@ -465,7 +479,7 @@ describe('detectNewTypes / suggestTypeAccount（新交易类型键，按实际�
   })
 
   it('suggestTypeAccount 关键词启发式：命中/未命中/空键', () => {
-    expect(suggestTypeAccount('还款', 'expense')).toBe('Expenses:Transfer')
+    expect(suggestTypeAccount('还款', 'expense')).toBe('Expenses:Other')
     expect(suggestTypeAccount('利息', 'income')).toBe('Income:Interest')
     expect(suggestTypeAccount('转账', 'income')).toBe('')
     expect(suggestTypeAccount('', 'expense')).toBe('')

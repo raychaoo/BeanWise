@@ -8,13 +8,13 @@ import type { AccountMappingConfig } from '../../shared/ipc'
 export function defaultAccountMapping(): AccountMappingConfig {
   return {
     expenseByType: {
-      商户消费: 'Expenses:Shopping',
-      扫二维码付款: 'Expenses:Shopping',
-      群收款: 'Expenses:Group',
-      转账: 'Expenses:Transfer',
-      '微信红包（单发）': 'Expenses:RedPacket',
-      零钱提现: 'Expenses:CashWithdrawal',
-      其他: 'Expenses:Uncategorized'
+      商户消费: 'Expenses:Shopping:Other',
+      扫二维码付款: 'Expenses:Other',
+      群收款: 'Expenses:Social:Other',
+      转账: 'Expenses:Other',
+      '微信红包（单发）': 'Expenses:Social:RedPacket',
+      零钱提现: 'Expenses:Other',
+      其他: 'Expenses:Other'
     },
     incomeByType: {
       转账: 'Income:Transfer',
@@ -42,7 +42,7 @@ export function defaultAccountMapping(): AccountMappingConfig {
       余额: 'Assets:Alipay:Balance',
       '招商银行储蓄卡(6156)': 'Assets:Bank:ZSYH'
     },
-    fallbackExpenseAccount: 'Expenses:Uncategorized',
+    fallbackExpenseAccount: 'Expenses:Other',
     fallbackSourceAccount: 'Assets:WeChat',
     fallbackIncomeAccount: 'Income:Other',
     fallbackCashAccount: 'Assets:WeChat'
