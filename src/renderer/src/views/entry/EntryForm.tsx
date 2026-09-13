@@ -10,12 +10,13 @@ import type { Rule } from 'antd/es/form'
 import { useEffect, useState } from 'react'
 import type { AddEntryParams } from '../../../../shared/ipc'
 import { accountType, isAllPnlAccounts, isEntryAccountPairValid } from '../../../../shared/account'
+import { computeBalancingNumber } from '../../../../shared/decimal'
 import { useEntryFormStore } from '../../stores/entry-form'
 import { useLedgerStore } from '../../stores/ledger'
 import BalanceHint from './BalanceHint'
 import PostingRowCard from './PostingRowCard'
 import { filterEntryAccountOptions } from './accountOptions'
-import { formValuesToEntryParams, nextBalancingNumber } from './entryFormValues'
+import { formValuesToEntryParams } from './entryFormValues'
 import type { EntryFormMeta, EntryFormValues, PostingRow } from './entryFormValues'
 import { postingEffectLabel, resolvePostingSigns } from './postingDirection'
 import type { PostingSign } from './postingDirection'
@@ -44,14 +45,28 @@ export default function EntryForm({ form, mode, initialValues, meta, onSubmit }:
     form.setFieldsValue(initialValues)
   }, [form, initialValues])
 
-  // 新增模式的两行录入保持原有自动平衡；编辑模式与多行拆分让用户显式调整金额。
-  useEffect(() => {
-    if (mode !== 'create' || !Array.isArray(postings) || postings.length !== 2) return
-    const expected = nextBalancingNumber(postings)
-    if (expected !== undefined && postings[1]?.number !== expected) {
-      form.setFieldValue(['postings', 1, 'number'], expected)
+  // 新增模式两行录入：第二行金额只读，恒由第一行取反派生。
+  // 只在「用户改第一行」时派生——AI 草稿/回填走 setFieldsValue，不触发 onValuesChange，
+  // 其显式给出的两行金额（多币种等）不被覆盖。
+  const followFirstRowAmount = (changed: Partial<EntryFormValues>, all: EntryFormValues) => {
+    if (mode !== 'create') return
+    // 判据是「第一行被改过」而非「number 键存在」：清空时 rc-field-form 删除该键，
+    // changed 只剩一个空对象（配 `'number' in` 会漏掉清空）；而改第二行时 postings[0] 是空洞。
+    const changedRow = changed.postings?.[0]
+    if (!changedRow) return
+    const rows = all.postings ?? []
+    if (rows.length !== 2) return
+    const first = rows[0]?.number?.trim() ?? ''
+    let expected = ''
+    if (first) {
+      try {
+        expected = computeBalancingNumber([first])
+      } catch {
+        return // 中间态（如 "38."）非法：保留上一次派生值，输入完整后自然跟上
+      }
     }
-  }, [form, mode, postings])
+    if ((rows[1]?.number ?? '') !== expected) form.setFieldValue(['postings', 1, 'number'], expected)
+  }
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -113,8 +128,9 @@ export default function EntryForm({ form, mode, initialValues, meta, onSubmit }:
       form={form}
       initialValues={initialValues}
       onFinish={handleFinish}
-      onValuesChange={() => {
+      onValuesChange={(changed, all) => {
         if (mode === 'create') useEntryFormStore.getState().setDirty(true)
+        followFirstRowAmount(changed, all)
       }}
       submitter={false}
     >

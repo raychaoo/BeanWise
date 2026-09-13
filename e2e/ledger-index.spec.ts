@@ -116,6 +116,34 @@ test('M4 方向：账户行序不影响记账方向（资产在前也记为 支�
   }
 })
 
+test('录入自动平衡：逐字输入金额，只读第二行须全程跟随取反', async () => {
+  const ledgerPath = createFixtureCopy()
+  try {
+    const app = await electron.launch({ args: launchArgs })
+    const win = await app.firstWindow()
+    await activateWorkspace(win, ledgerPath)
+
+    const first = win.getByLabel('金额').nth(0)
+    const second = win.getByLabel('金额').nth(1)
+
+    // 必须逐字输入：fill() 只触发一次 change，会掩盖「只在首个按键同步」的缺陷
+    await first.click()
+    await first.pressSequentially('38.92')
+    await expect(first).toHaveValue('38.92')
+    await expect(second).toHaveValue('-38.92')
+
+    // 改金额 → 第二行跟随；清空第一行 → 第二行同步清空，不留残值
+    await first.fill('7.5')
+    await expect(second).toHaveValue('-7.5')
+    await first.fill('')
+    await expect(second).toHaveValue('')
+
+    await app.close()
+  } finally {
+    cleanupFixture(ledgerPath)
+  }
+})
+
 test('M4 首文件：路径不存在 → 录入自动创建账本（open 行 + 交易块）', async () => {
   const tmpDir = mkdtempSync(join(tmpdir(), 'beanwise-e2e-first-'))
   const ledgerPath = join(tmpDir, 'main.beancount') // 打开目录时创建为空文件

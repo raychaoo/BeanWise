@@ -67,7 +67,11 @@ export function formValuesToEntryParams(values: EntryFormValues, meta: EntryForm
   }
 }
 
-/** 自动平衡决策（录入模式双行）：末行留空时返回前 n-1 行合计的相反数。 */
+/**
+ * 「末行留空」场景的补差预告：末行已有值 → 不预告（undefined）。
+ * 语义是预览（末行尚未落值时才成立），多行录入与 BalanceHint 的差额提示同源；
+ * 双行录入的只读第二行不走这里——它恒由第一行取反派生（见 EntryForm 的 followFirstRowAmount）。
+ */
 export function nextBalancingNumber(
   rows: Array<{ number?: string | null } | undefined> | undefined
 ): string | undefined {
