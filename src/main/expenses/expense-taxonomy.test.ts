@@ -72,6 +72,7 @@ describe('classifyExpense', () => {
     ['名扬造型', '商品', 'Expenses:Life:PersonalCare:Haircut'],
     ['滴滴出行', '滴滴出行服务', 'Expenses:Transport:Taxi'],
     ['深圳市地铁相关运营主体', '深圳地铁', 'Expenses:Transport:PublicTransit:Metro'],
+    ['韶关市金迪金融网络有限公司', '公交-001993-14:31', 'Expenses:Transport:PublicTransit:Bus'],
     ['中国铁路网络有限公司', '火车票', 'Expenses:Transport:PublicTransit:Train'],
     ['中国联通', '30元手机话费', 'Expenses:Communication:Mobile'],
     ['带宽网费', '带宽网费', 'Expenses:Communication:Broadband'],
@@ -103,6 +104,16 @@ describe('classifyExpense', () => {
       account: 'Expenses:Entertainment:Games:Recharge',
       reason: 'game-recharge-tencent'
     })
+  })
+
+  // 同一个截断套路：流水把「云上艾珀（贵州）技术有限公司」截成「…有限公」再接
+  // 「交易流水号」，归一化拼出「公交易」，裸 /公交/ 曾把全库 46 笔判成公交。
+  it('does not read the truncated-narration 公交易 collision as a bus ride', () => {
+    const narration =
+      '网上支付 其他商家消费 订单编号20201224110100010299611272864535 云上艾珀（贵州）技术有限公 交易流水号2020122432661382780261120201600'
+    expect(classifyExpense('支付宝（中国）网络技术有限公司', narration).account).toBe(
+      'Expenses:Digital:Cloud'
+    )
   })
 
   it('reports confidence and a stable reason', () => {

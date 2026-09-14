@@ -312,7 +312,9 @@ const RULES: readonly ExpenseRule[] = [
     reason: 'transport-bus',
     account: 'Expenses:Transport:PublicTransit:Bus',
     confidence: 'high',
-    patterns: [/公交|公共汽车|巴士/]
+    // 「公交(?!易)」：流水 narration 常把「…有限公司」截断成「…有限公」再接「交易流水号」，
+    // 去空格归一化后拼出「公交易」，裸 /公交/ 会把它误判成公交（金拱门、货拉拉、iCloud 等）。
+    patterns: [/公交(?!易)|公共汽车|巴士/]
   },
   {
     reason: 'transport-train',
