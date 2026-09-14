@@ -295,6 +295,14 @@ const RULES: readonly ExpenseRule[] = [
     ]
   },
   {
+    // 必须排在 transport-* 之前：部分流水 narration 被截断成「…有限公」再接「交易流水号」，
+    // 去空格后拼出「公交易」，会被 transport-bus 的 /公交/ 误命中（如 2024-05-06 那笔）。
+    reason: 'game-recharge-tencent',
+    account: 'Expenses:Entertainment:Games:Recharge',
+    confidence: 'high',
+    patterns: [/深圳市腾讯计算机系统有限公司|腾讯计算机/]
+  },
+  {
     reason: 'transport-metro',
     account: 'Expenses:Transport:PublicTransit:Metro',
     confidence: 'high',
@@ -628,7 +636,7 @@ const RULES: readonly ExpenseRule[] = [
     reason: 'digital-software',
     account: 'Expenses:Digital:Software',
     confidence: 'medium',
-    patterns: [/app\s*store|应用商店|软件订阅|订阅|会员服务|迅雷|腾讯计算机|度友科技|云上贵州/]
+    patterns: [/app\s*store|应用商店|软件订阅|订阅|会员服务|迅雷|度友科技|云上贵州/]
   },
   {
     reason: 'financial-other',

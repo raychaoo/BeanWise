@@ -80,6 +80,9 @@ describe('classifyExpense', () => {
     ['App Store _ Apple Music', 'Apple Music 订阅', 'Expenses:Entertainment:Music:Membership'],
     ['宜章县外星人电竞馆', '移动支付', 'Expenses:Entertainment:Leisure:InternetCafe'],
     ['胡麻了休闲娱乐中心', '移动支付', 'Expenses:Entertainment:Leisure:Other'],
+    ['深圳市腾讯计算机系统有限公司', '支付订单', 'Expenses:Entertainment:Games:Recharge'],
+    ['深圳市腾讯计算机系统有限公司', '英雄联盟点券(为1**741购买)', 'Expenses:Entertainment:Games:Recharge'],
+    ['***系统', '财付通-深圳市腾讯计算机系统有限公司', 'Expenses:Entertainment:Games:Recharge'],
     ['京东商城平台商户', '京东订单', 'Expenses:Shopping:Other'],
     ['携程旅行网', '酒店预订', 'Expenses:Travel:Accommodation'],
     ['韶关市第一人民医院', '第一人民医院微信支付', 'Expenses:Health:Registration'],
@@ -89,6 +92,17 @@ describe('classifyExpense', () => {
     ['完全未知的商户', '完全未知的说明', 'Expenses:Other']
   ])('classifies %s / %s', (payee, narration, expected) => {
     expect(classifyExpense(payee, narration).account).toBe(expected)
+  })
+
+  // 银行流水把「深圳市腾讯计算机系统有限公」截断后接「交易流水号」，去空格后拼出「公交易」，
+  // 会被 transport-bus 的 /公交/ 命中；腾讯规则必须排在 transport-* 之前才不会漏判。
+  it('keeps the Tencent payment entity ahead of the transport rules', () => {
+    const narration =
+      '网上支付 虚拟商品购买 订单编号222405062193551834133 深圳市腾讯计算机系统有限公 交易流水号2024050621935518341332210100808'
+    expect(classifyExpense('深圳市腾讯计算机系统有限公司', narration)).toMatchObject({
+      account: 'Expenses:Entertainment:Games:Recharge',
+      reason: 'game-recharge-tencent'
+    })
   })
 
   it('reports confidence and a stable reason', () => {
