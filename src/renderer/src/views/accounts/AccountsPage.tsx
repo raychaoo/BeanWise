@@ -8,6 +8,10 @@
  * 显式落盘）；② 操作列「期初余额」（仅 Assets/Liabilities 行）→ Modal 输入金额/货币/日期
  * → buildOpeningBalanceEntry 组合 → 确认预览 → 既有 add-entry 通道写入（Equity:Opening-Balances
  * 配对，账本文件唯一事实源）→ refresh。
+ * 性能：科目多时切 tab 卡顿——六个 pane 各挂一张全量表，且 items/columns/dataSource 均为
+ * 渲染体内联新建，导致每次切换都重渲染**所有已挂载 pane** 的全量行（行内 Input/Switch/Tooltip）。
+ * 现按 tab 各自持有数据（useTabData，未变化的 tab 沿用旧数组引用）+ AccountsTable memo 化
+ * + handlers useCallback 稳定引用，未变化的 pane 整棵跳过，切换只付首次挂载成本。
  */
 import { ProTable } from '@ant-design/pro-components'
 import type { ProColumns } from '@ant-design/pro-components'
@@ -30,38 +34,195 @@ import {
   Typography
 } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
-import { useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ACCOUNT_TYPES, type AccountType } from '../../../../shared/account'
 import type { AccountEntry, AddEntryParams } from '../../../../shared/ipc'
 import { useLedgerStore } from '../../stores/ledger'
+import {
+  groupAccountsByTab,
+  reuseUnchangedTabs,
+  type AccountTabData,
+  type AccountTabKey
+} from '../../utils/accountTabs'
 import { formatAmount } from '../../utils/format'
 import { buildOpeningBalanceEntry } from '../../utils/opening-balance'
 import '../../styles/views/accounts.less'
 
 const ACCOUNT_RE = /^[A-Z]\S*:\S*$/
-const ACCOUNT_TYPES = ['Assets', 'Liabilities', 'Equity', 'Income', 'Expenses'] as const
-const ACCOUNT_TYPE_LABELS = {
+const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
   Assets: '资产',
   Liabilities: '负债',
   Equity: '权益',
   Income: '收入',
   Expenses: '支出'
-} as const
+}
 const ROOT_RE = /^(Assets|Liabilities|Equity|Income|Expenses):/
 
-type AccountType = typeof ACCOUNT_TYPES[number]
-type TabKey = 'all' | AccountType
+type TabKey = AccountTabKey
 
 const TAB_ITEMS: Array<{ key: TabKey; label: string }> = [
   { key: 'all', label: '全部' },
   ...ACCOUNT_TYPES.map((t) => ({ key: t as TabKey, label: ACCOUNT_TYPE_LABELS[t] }))
 ]
 
+const EMPTY_STRINGS: string[] = []
+const EMPTY_TAB_DATA: AccountTabData = groupAccountsByTab([])
+const TABLE_LOCALE = { emptyText: '暂无配置账户' }
+
+/**
+ * 每个 tab 一份数据，且未变化的 tab 沿用旧数组引用（见 utils/accountTabs）——
+ * 引用稳定是下面 memo 表格能跳过渲染的前提。
+ */
+function useTabData(configured: AccountEntry[]): AccountTabData {
+  const cacheRef = useRef<AccountTabData>(EMPTY_TAB_DATA)
+  return useMemo(() => {
+    const next = reuseUnchangedTabs(cacheRef.current, groupAccountsByTab(configured))
+    cacheRef.current = next
+    return next
+  }, [configured])
+}
+
+interface AccountsTableProps {
+  data: AccountEntry[]
+  usedValues: Set<string>
+  onNameChange: (id: number, name: string) => void
+  onDescriptionChange: (id: number, description: string) => void
+  onEnabledChange: (id: number, checked: boolean) => void
+  onCounterpartyChange: (id: number, checked: boolean) => void
+  onDelete: (record: AccountEntry) => void
+  onOpeningBalance: (record: AccountEntry) => void
+}
+
+/**
+ * 单个 tab 的科目表（列定义原样搬移）。
+ * memo 是性能关键：Tabs 每次切换都会重建 items 里的 children 元素，六个 pane 各挂一张全量表；
+ * props 不稳定时每次切换都会重渲染所有**已挂载**的 pane（行内是 Input/Switch/Tooltip/Button，
+ * 几百行即明显卡顿）。data/usedValues/handlers 稳定后未变化的 pane 直接跳过渲染，
+ * 切换只付「首次挂载该 tab」的成本。
+ */
+const AccountsTable = memo(function AccountsTable({
+  data,
+  usedValues,
+  onNameChange,
+  onDescriptionChange,
+  onEnabledChange,
+  onCounterpartyChange,
+  onDelete,
+  onOpeningBalance
+}: AccountsTableProps) {
+  // 列只随 handlers / usedValues 重建；否则 ProTable 每次渲染都要把列定义重新处理一遍
+  const columns = useMemo<ProColumns<AccountEntry>[]>(
+    () => [
+      { title: 'ID', dataIndex: 'id', width: 48, render: (_dom: unknown, record: AccountEntry) => record.id > 0 ? record.id : '新增' },
+      {
+        title: '名称',
+        dataIndex: 'name',
+        render: (_dom: unknown, record: AccountEntry) =>
+          <Input size="small" value={record.name} onChange={(e) => onNameChange(record.id, e.target.value)} maxLength={100} />
+      },
+      {
+        title: '用途',
+        dataIndex: 'description',
+        render: (_dom: unknown, record: AccountEntry) =>
+          <Input size="small" value={record.description ?? ''} onChange={(e) => onDescriptionChange(record.id, e.target.value)} maxLength={200} />
+      },
+      {
+        title: '状态',
+        dataIndex: 'enabled',
+        width: 72,
+        render: (_dom: unknown, record: AccountEntry) => (
+          <Tooltip title={record.enabled !== false ? '已启用（录入下拉可选）' : '已停用（录入下拉不可选，不影响历史明细）'}>
+            <Switch size="small" checked={record.enabled !== false} onChange={(checked) => onEnabledChange(record.id, checked)} aria-label={`启停用 ${record.name}`} />
+          </Tooltip>
+        )
+      },
+      {
+        title: '往来',
+        dataIndex: 'counterparty',
+        width: 72,
+        render: (_dom: unknown, record: AccountEntry) => {
+          const type = record.value.split(':')[0]
+          if (type !== 'Assets' && type !== 'Liabilities') {
+            return <Typography.Text type="secondary">—</Typography.Text>
+          }
+          return (
+            <Tooltip title={record.counterparty === true ? '往来类账户：录入时填「往来对象」，参与往来账报表' : '非往来类账户（不参与往来账报表）'}>
+              <Switch size="small" checked={record.counterparty === true} onChange={(checked) => onCounterpartyChange(record.id, checked)} aria-label={`往来类 ${record.name}`} />
+            </Tooltip>
+          )
+        }
+      },
+      {
+        title: '路径',
+        dataIndex: 'value',
+        render: (_dom: unknown, record: AccountEntry) => (
+          <Typography.Text className="account-path" code>{record.value}</Typography.Text>
+        )
+      },
+      {
+        title: '操作',
+        width: 130,
+        render: (_dom: unknown, record: AccountEntry) => {
+          const used = usedValues.has(record.value)
+          const type = record.value.split(':')[0]
+          const obEligible = type === 'Assets' || type === 'Liabilities'
+          return (
+            <Space size={0}>
+              {obEligible && (
+                <Tooltip title="录入期初余额">
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={() => onOpeningBalance(record)}
+                    aria-label={`期初余额 ${record.name}`}
+                  >
+                    期初余额
+                  </Button>
+                </Tooltip>
+              )}
+              <Tooltip title={used ? '已有记账记录，不可删除' : '删除账户'}>
+                <span>
+                  <Button
+                    type="text"
+                    danger
+                    size="small"
+                    icon={<DeleteOutlined />}
+                    disabled={used}
+                    onClick={() => onDelete(record)}
+                    aria-label={`删除 ${record.name}`}
+                  />
+                </span>
+              </Tooltip>
+            </Space>
+          )
+        }
+      }
+    ],
+    [usedValues, onNameChange, onDescriptionChange, onEnabledChange, onCounterpartyChange, onDelete, onOpeningBalance]
+  )
+
+  return (
+    <ProTable<AccountEntry>
+      size="small"
+      dataSource={data}
+      rowKey="id"
+      pagination={false}
+      scroll={{ x: 'max-content' }}
+      locale={TABLE_LOCALE}
+      search={false}
+      options={false}
+      columns={columns}
+    />
+  )
+})
+
 export default function AccountsPage() {
   const saveAccountConfig = useLedgerStore((s) => s.saveAccountConfig)
   // 选择器只取稳定引用的 status（?? [] 兜底放渲染体——选择器内新建数组会因
   // getSnapshot 不稳定触发 React #185 无限重渲染，慢机器上 status 未就绪时必崩）
   const ledgerStatus = useLedgerStore((s) => s.status)
-  const operatingCurrencies = ledgerStatus?.operatingCurrency ?? []
+  // 引用稳定：下面 useCallback / memo 表格都依赖它，每次新建 [] 会让 memo 全部失效
+  const operatingCurrencies = useMemo(() => ledgerStatus?.operatingCurrency ?? EMPTY_STRINGS, [ledgerStatus])
   const [configured, setConfigured] = useState<AccountEntry[]>([])
   const [newName, setNewName] = useState('')
   const [newDescription, setNewDescription] = useState('')
@@ -129,33 +290,35 @@ export default function AccountsPage() {
     setDrawerOpen(false)
   }
 
-  const handleNameChange = (id: number, name: string) => {
+  // 下面几个 handler 直接作为 memo 表格的 props → 一律 useCallback 稳定引用，
+  // 否则表格每次页面重渲染都判定 props 变化，等于 memo 失效
+  const handleNameChange = useCallback((id: number, name: string) => {
     setConfigured((prev) => prev.map((e) => (e.id === id ? { ...e, name } : e)))
-  }
+  }, [])
 
-  const handleDescriptionChange = (id: number, description: string) => {
+  const handleDescriptionChange = useCallback((id: number, description: string) => {
     setConfigured((prev) => prev.map((e) => (e.id === id ? { ...e, description } : e)))
-  }
+  }, [])
 
   // 启停用仅改本地条目，随「保存」按钮显式落盘（保持显式保存模型，避免误触即写盘）；
   // 重新启用写 undefined——序列化时省略，配置文件不存无谓的 enabled: true
-  const handleEnabledChange = (id: number, checked: boolean) => {
+  const handleEnabledChange = useCallback((id: number, checked: boolean) => {
     setConfigured((prev) => prev.map((e) => (e.id === id ? { ...e, enabled: checked ? undefined : false } : e)))
-  }
+  }, [])
 
   // 往来类标记（ADR 23）：同 enabled 走显式保存模型。仅资产/负债侧有意义——往来账报表只聚合
   // 这两侧，误标在收支账户上会得到永远空的行，故列渲染也据此禁用。
-  const handleCounterpartyChange = (id: number, checked: boolean) => {
+  const handleCounterpartyChange = useCallback((id: number, checked: boolean) => {
     setConfigured((prev) => prev.map((e) => (e.id === id ? { ...e, counterparty: checked ? true : undefined } : e)))
-  }
+  }, [])
 
   // ---- 批次 I：期初余额 ----
-  const openObModal = (record: AccountEntry) => {
+  const openObModal = useCallback((record: AccountEntry) => {
     setObRecord(record)
     setObAmount('')
     setObCurrency(operatingCurrencies[0] ?? '')
     setObDate(dayjs())
-  }
+  }, [operatingCurrencies])
 
   const handleObOk = async (): Promise<void> => {
     if (!obRecord) return
@@ -207,16 +370,16 @@ export default function AccountsPage() {
     })
   }
 
-  const handleDelete = async (id: number) => {
-    const record = configured.find((e) => e.id === id)
-    if (!record) return
+  // 直接收 record（不再按 id 回查 configured）：既免掉对 configured 的依赖从而稳定引用，
+  // 也避免新增行 id=0 重复时 filter(id) 一次删掉多行
+  const handleDelete = useCallback(async (record: AccountEntry) => {
     const ledger = await window.beanwise.listLedgerAccounts()
     if (ledger.accounts.includes(record.value)) {
       message.error('该账户已有记账记录，不可删除')
       return
     }
-    setConfigured((prev) => prev.filter((e) => e.id !== id))
-  }
+    setConfigured((prev) => prev.filter((e) => e !== record))
+  }, [])
 
   const handleSave = async () => {
     const empty = configured.find((e) => !e.name.trim())
@@ -227,7 +390,8 @@ export default function AccountsPage() {
     if (ok) message.success('账户配置已保存')
   }
 
-  const filtered = activeTab === 'all' ? configured : configured.filter((e) => e.value.split(':')[0] === activeTab)
+  // 各 tab 一份数据（引用稳定），不再让六个 pane 共用同一份全量 filtered
+  const byTab = useTabData(configured)
 
   return (
     <div className="accounts-view">
@@ -248,103 +412,15 @@ export default function AccountsPage() {
             key: t.key,
             label: t.label,
             children: (
-              <ProTable<AccountEntry>
-                size="small"
-                dataSource={filtered}
-                rowKey="id"
-                pagination={false}
-                scroll={{ x: 'max-content' }}
-                locale={{ emptyText: '暂无配置账户' }}
-                search={false}
-                options={false}
-                columns={[
-                  { title: 'ID', dataIndex: 'id', width: 48, render: (_dom: unknown, record: AccountEntry) => record.id > 0 ? record.id : '新增' },
-                  {
-                    title: '名称',
-                    dataIndex: 'name',
-                    // width: 180,
-                    render: (_dom: unknown, record: AccountEntry) =>
-                      <Input size="small" value={record.name} onChange={(e) => handleNameChange(record.id, e.target.value)} maxLength={100} />
-                  },
-                  {
-                    title: '用途',
-                    dataIndex: 'description',
-                    // width: 260,
-                    render: (_dom: unknown, record: AccountEntry) =>
-                      <Input size="small" value={record.description ?? ''} onChange={(e) => handleDescriptionChange(record.id, e.target.value)} maxLength={200} />
-                  },
-                  {
-                    title: '状态',
-                    dataIndex: 'enabled',
-                    width: 72,
-                    render: (_dom: unknown, record: AccountEntry) => (
-                      <Tooltip title={record.enabled !== false ? '已启用（录入下拉可选）' : '已停用（录入下拉不可选，不影响历史明细）'}>
-                        <Switch size="small" checked={record.enabled !== false} onChange={(checked) => handleEnabledChange(record.id, checked)} aria-label={`启停用 ${record.name}`} />
-                      </Tooltip>
-                    )
-                  },
-                  {
-                    title: '往来',
-                    dataIndex: 'counterparty',
-                    width: 72,
-                    render: (_dom: unknown, record: AccountEntry) => {
-                      const type = record.value.split(':')[0]
-                      if (type !== 'Assets' && type !== 'Liabilities') {
-                        return <Typography.Text type="secondary">—</Typography.Text>
-                      }
-                      return (
-                        <Tooltip title={record.counterparty === true ? '往来类账户：录入时填「往来对象」，参与往来账报表' : '非往来类账户（不参与往来账报表）'}>
-                          <Switch size="small" checked={record.counterparty === true} onChange={(checked) => handleCounterpartyChange(record.id, checked)} aria-label={`往来类 ${record.name}`} />
-                        </Tooltip>
-                      )
-                    }
-                  },
-                  {
-                    title: '路径',
-                    dataIndex: 'value',
-                    render: (_dom: unknown, record: AccountEntry) => (
-                      <Typography.Text className="account-path" code>{record.value}</Typography.Text>
-                    )
-                  },
-                  {
-                    title: '操作',
-                    width: 130,
-                    render: (_dom: unknown, record: AccountEntry) => {
-                      const used = usedValues.has(record.value)
-                      const type = record.value.split(':')[0]
-                      const obEligible = type === 'Assets' || type === 'Liabilities'
-                      return (
-                        <Space size={0}>
-                          {obEligible && (
-                            <Tooltip title="录入期初余额">
-                              <Button
-                                type="link"
-                                size="small"
-                                onClick={() => openObModal(record)}
-                                aria-label={`期初余额 ${record.name}`}
-                              >
-                                期初余额
-                              </Button>
-                            </Tooltip>
-                          )}
-                          <Tooltip title={used ? '已有记账记录，不可删除' : '删除账户'}>
-                            <span>
-                              <Button
-                                type="text"
-                                danger
-                                size="small"
-                                icon={<DeleteOutlined />}
-                                disabled={used}
-                                onClick={() => void handleDelete(record.id)}
-                                aria-label={`删除 ${record.name}`}
-                              />
-                            </span>
-                          </Tooltip>
-                        </Space>
-                      )
-                    }
-                  }
-                ]}
+              <AccountsTable
+                data={byTab[t.key]}
+                usedValues={usedValues}
+                onNameChange={handleNameChange}
+                onDescriptionChange={handleDescriptionChange}
+                onEnabledChange={handleEnabledChange}
+                onCounterpartyChange={handleCounterpartyChange}
+                onDelete={handleDelete}
+                onOpeningBalance={openObModal}
               />
             )
           }))}
