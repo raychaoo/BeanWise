@@ -240,6 +240,24 @@ test('M4+ 明细：服务端倒序/正序、时间筛选与关键词搜索（超
     await search.fill('')
     await expect(dataRows).toHaveCount(5)
 
+    // 金额搜索（ADR 25：独立 number 框，绝对值精确匹配，不做子串）
+    const amountSearch = win.getByPlaceholder('金额')
+    await amountSearch.fill('15')
+    await amountSearch.press('Enter')
+    await expect(dataRows).toHaveCount(1)
+    await expect(dataRows.first()).toContainText('Breakfast')
+    // 忽略小数尾零：15.00 与 15 等价
+    await amountSearch.fill('15.00')
+    await amountSearch.press('Enter')
+    await expect(dataRows).toHaveCount(1)
+    // 精确而非子串：'1' 不该命中 15.00 / 25.00
+    await amountSearch.fill('1')
+    await amountSearch.press('Enter')
+    await expect(win.locator('.ant-table-tbody .ant-table-placeholder')).toBeVisible({ timeout: 10_000 })
+    // 清空恢复全量（InputNumber 无 allowClear：删空即 onChange(null) → 重查）
+    await amountSearch.fill('')
+    await expect(dataRows).toHaveCount(5, { timeout: 10_000 })
+
     // 录入页最近流水卡显示交易金额（超 UI 层 #1，资产流视角：支出负）
     await win.getByRole('menuitem', { name: '录入' }).click()
     await expect(win.locator('.entry-recent-list')).toContainText('-15 CNY')

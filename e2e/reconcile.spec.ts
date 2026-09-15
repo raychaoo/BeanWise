@@ -123,14 +123,21 @@ test('对账明细账：ID/完整时间展示，金额、交易对象、说明�
     await expect(rows.first()).toContainText('2026-08-23 12:34:56')
     await expect(rows.first()).toContainText('-25')
 
-    const search = pane.getByPlaceholder('搜索金额 / 交易对象 / 说明')
-    await search.fill('17.4')
-    await search.press('Enter')
+    const search = pane.getByPlaceholder('搜索交易对象 / 说明')
+    // 金额搜索独立成框（ADR 25）：绝对值精确匹配，忽略小数尾零（17.4 → 17.40）
+    const amountSearch = pane.getByPlaceholder('金额')
+    await amountSearch.fill('17.4')
+    await amountSearch.press('Enter')
     await expect(rows).toHaveCount(1)
     await expect(rows.first()).toContainText('bw-reconcile-1')
 
+    // 与文本搜索 AND 叠加（两个入参同层过滤，不是「或」）：金额 17.4 下搜「瑞幸」应为空
     await search.fill('瑞幸')
     await search.press('Enter')
+    await expect(rows).toHaveCount(0)
+    // 删空金额框即取消金额筛选（InputNumber 无 allowClear → onChange(null) 重查），
+    // 此时文本搜索单独生效
+    await amountSearch.fill('')
     await expect(rows).toHaveCount(1)
     await expect(rows.first()).toContainText('bw-reconcile-2')
 
@@ -140,6 +147,13 @@ test('对账明细账：ID/完整时间展示，金额、交易对象、说明�
     await expect(rows.first()).toContainText('bw-reconcile-1')
 
     await search.fill('')
+    await expect(rows).toHaveCount(2)
+    // 反向：金额单独生效、独立复原
+    await amountSearch.fill('25')
+    await amountSearch.press('Enter')
+    await expect(rows).toHaveCount(1)
+    await expect(rows.first()).toContainText('bw-reconcile-2')
+    await amountSearch.fill('')
     await expect(rows).toHaveCount(2)
     await pane.getByRole('button', { name: '编辑 bw-reconcile-2' }).click()
     const drawer = win.getByRole('dialog')
@@ -153,6 +167,9 @@ test('对账明细账：ID/完整时间展示，金额、交易对象、说明�
 
     await app.close()
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    // Windows 下 Electron 退出与 SQLite 连接关闭存在短暂竞态（同 fixtures/setup.cleanupFixture），
+    // 给句柄释放留重试窗口。重试按**线性**退避（第 n 次等 n×retryDelay），故上限取小值：
+    // 20 次 ≈ 21s 封顶——若测试中途断言失败（app.close() 未执行、句柄仍在），要快速报错而非久等。
+    rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
   }
 })

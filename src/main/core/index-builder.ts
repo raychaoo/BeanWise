@@ -5,7 +5,7 @@ import type { SQL } from 'drizzle-orm'
 import type { DrizzleDb } from '../db/index'
 import { entries, entryLinks, ledgerMeta, postings } from '../db/schema'
 import { accountType, isPnlAccountType } from '../../shared/account'
-import { addDecimalStrings, negateDecimal } from '../../shared/decimal'
+import { addDecimalStrings, negateDecimal, normalizeAmountMagnitude } from '../../shared/decimal'
 import type { PythonSvc } from './python-svc'
 
 export type LedgerIndexStatus = 'ok' | 'error' | 'missing'
@@ -65,8 +65,11 @@ export interface ListEntriesParams {
   /** 起止日期（含端点，YYYY-MM-DD）；超 UI 层 #2：服务端时间过滤 */
   dateFrom?: string
   dateTo?: string
-  /** 搜索词：payee/narration/交易 ID/账户/金额（postings.unitsNumber 绝对值）任一命中即整笔交易命中 */
+  /** 搜索词：payee/narration/交易 ID/账户（postings.account）任一命中即整笔交易命中；不含金额 */
   keyword?: string
+  /** 金额搜索（独立入参，不与 keyword 混用）：十进制字符串，按**绝对值**精确匹配任一 posting 的
+   * units_number——不看正负、忽略小数尾零（'14' / '14.0' / '14.00' 等价，'14' 不命中 145.00） */
+  amount?: string
   /** 账户精确过滤（超 UI 层 #2 收尾）：精确匹配 postings.account，不做前缀展开（层级聚合是余额表职责）；
    * 明细账视角 = 该账户自身分录流，命中交易的其他 posting 行不自动带出；与 keyword/date* 叠加为 AND 语义 */
   account?: string
@@ -76,6 +79,7 @@ export interface ListEntriesFilters {
   dateFrom?: string
   dateTo?: string
   keyword?: string
+  amount?: string
   account?: string
 }
 
@@ -398,10 +402,18 @@ export function listEntries(
   if (filters?.keyword) {
     const escaped = filters.keyword.replace(/[\\%_]/g, '\\$&')
     const kw = `%${escaped}%`
-    // 金额搜索按绝对值：用户输入 15 / -15 / 15.0 都能命中 15.00 的任一 posting。
-    const amountKw = `%${escaped.replace(/^[+-]/, '')}%`
     conds.push(
-      sql`(${entries.payee} LIKE ${kw} ESCAPE '\\' OR ${entries.narration} LIKE ${kw} ESCAPE '\\' OR ${entries.externalId} LIKE ${kw} ESCAPE '\\' OR ${entries.account} LIKE ${kw} ESCAPE '\\' OR EXISTS (SELECT 1 FROM postings WHERE postings.entry_id = ${entries.id} AND (postings.account LIKE ${kw} ESCAPE '\\' OR REPLACE(postings.units_number, '-', '') LIKE ${amountKw} ESCAPE '\\')))`
+      sql`(${entries.payee} LIKE ${kw} ESCAPE '\\' OR ${entries.narration} LIKE ${kw} ESCAPE '\\' OR ${entries.externalId} LIKE ${kw} ESCAPE '\\' OR ${entries.account} LIKE ${kw} ESCAPE '\\' OR EXISTS (SELECT 1 FROM postings WHERE postings.entry_id = ${entries.id} AND postings.account LIKE ${kw} ESCAPE '\\'))`
+    )
+  }
+  if (filters?.amount !== undefined) {
+    // 金额搜索（独立入参）：与 keyword 的文本 LIKE 分开，避免「搜 15」被说明里的数字/账户名污染。
+    // 两侧同为「去符号 + 去小数尾零」的规范串再比相等——金额精度写法不定（0/1/2 位小数并存），
+    // 逐字 LIKE 会让 14 漏掉 14.00 又误命中 145.00；不取子串、不引浮点。
+    const magnitude = normalizeAmountMagnitude(filters.amount)
+    if (magnitude === null) throw new Error('amount 必须是十进制数值字符串（如 15、15.4）')
+    conds.push(
+      sql`EXISTS (SELECT 1 FROM postings WHERE postings.entry_id = ${entries.id} AND (CASE WHEN instr(postings.units_number, '.') > 0 THEN rtrim(rtrim(replace(postings.units_number, '-', ''), '0'), '.') ELSE replace(postings.units_number, '-', '') END) = ${magnitude})`
     )
   }
   const where = conds.length > 0 ? and(...conds) : undefined

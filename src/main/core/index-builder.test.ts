@@ -232,18 +232,15 @@ describe('索引重建管线（M3）', () => {
     expect(() => listEntries(drizzle, 100, 0, 'asc', { account: 'x'.repeat(201) })).toThrow()
   }, 30_000)
 
-  it('listEntries keyword 交易级命中（payee/narration/账户/金额，LIKE 转义）', async () => {
+  it('listEntries keyword 交易级命中（payee/narration/账户，LIKE 转义）；金额已拆出为独立入参', async () => {
     copyFileSync(MAIN_FIXTURE, workFile)
     await refreshIndex(drizzle, engine, workFile)
     const byNarration = listEntries(drizzle, 100, 0, 'asc', { keyword: 'Breakfast' })
     expect(byNarration.total).toBe(1)
-    // 金额命中不看正负号：15 可命中 Breakfast 的 -15/+15 分录
-    const byAmount = listEntries(drizzle, 100, 0, 'asc', { keyword: '15' })
-    expect(byAmount.total).toBe(1)
-    expect(byAmount.entries[0]!.narration).toBe('Breakfast')
-    const byDecimalAmount = listEntries(drizzle, 100, 0, 'asc', { keyword: '25.0' })
-    expect(byDecimalAmount.total).toBe(1)
-    expect(byDecimalAmount.entries[0]!.narration).toBe('Coffee')
+    // 金额不再参与 keyword（ADR 25 拆出 amount）：'15' 在文本字段无命中
+    const byAmountText = listEntries(drizzle, 100, 0, 'asc', { keyword: '15' })
+    expect(byAmountText.total).toBe(0)
+    expect(listEntries(drizzle, 100, 0, 'asc', { keyword: '25.0' }).total).toBe(0)
     // posting 账户 Assets:Bank:CNB 命中 2 笔交易；Open 行 account 列同样命中 → 共 3
     const byAccount = listEntries(drizzle, 100, 0, 'asc', { keyword: 'Bank' })
     expect(byAccount.total).toBe(3)
@@ -253,6 +250,33 @@ describe('索引重建管线（M3）', () => {
     // LIKE 通配符按字面匹配：'%' 不应放大命中
     const literal = listEntries(drizzle, 100, 0, 'asc', { keyword: '%' })
     expect(literal.total).toBe(0)
+  }, 30_000)
+
+  it('listEntries amount 独立金额搜索：绝对值精确匹配、忽略小数尾零，且不取子串', async () => {
+    copyFileSync(MAIN_FIXTURE, workFile)
+    await refreshIndex(drizzle, engine, workFile)
+    // Breakfast：-15.00 / +15.00；Coffee：-25.00 / +25.00
+    const byAmount = listEntries(drizzle, 100, 0, 'asc', { amount: '15' })
+    expect(byAmount.total).toBe(1)
+    expect(byAmount.entries[0]!.narration).toBe('Breakfast')
+    // 精度写法无关：15 / 15.0 / 15.00 等价
+    expect(listEntries(drizzle, 100, 0, 'asc', { amount: '15.0' }).total).toBe(1)
+    expect(listEntries(drizzle, 100, 0, 'asc', { amount: '15.00' }).total).toBe(1)
+    // 正负写法无关（按绝对值）：-15 与 +15 同义
+    expect(listEntries(drizzle, 100, 0, 'asc', { amount: '-15' }).total).toBe(1)
+    expect(listEntries(drizzle, 100, 0, 'asc', { amount: '25' }).total).toBe(1)
+    // 精确而非子串：'1' / '5' 都不该命中 15.00 / 25.00
+    expect(listEntries(drizzle, 100, 0, 'asc', { amount: '1' }).total).toBe(0)
+    expect(listEntries(drizzle, 100, 0, 'asc', { amount: '5' }).total).toBe(0)
+    // 与账户过滤叠加（AND 语义）
+    const overlaid = listEntries(drizzle, 100, 0, 'asc', { account: 'Expenses:Food', amount: '15' })
+    expect(overlaid.total).toBe(1)
+    expect(listEntries(drizzle, 100, 0, 'asc', { account: 'Expenses:Food', amount: '99' }).total).toBe(0)
+    // 入参校验：非十进制字面量一律拒绝
+    expect(() => listEntries(drizzle, 100, 0, 'asc', { amount: '' })).toThrow()
+    expect(() => listEntries(drizzle, 100, 0, 'asc', { amount: 'abc' })).toThrow()
+    expect(() => listEntries(drizzle, 100, 0, 'asc', { amount: '1e3' })).toThrow()
+    expect(() => listEntries(drizzle, 100, 0, 'asc', { amount: '1.2.3' })).toThrow()
   }, 30_000)
 
   it('postings.counterparty：posting 级优先 / transaction 级回退 / 缺席 null（ADR 23）', async () => {

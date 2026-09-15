@@ -132,6 +132,24 @@ export function computeBalancingNumber(amounts: string[]): string {
   return negateDecimal(sum)
 }
 
+/**
+ * 金额搜索用的「绝对值规范串」：去符号、去前导零、去小数尾零。
+ * `'15.00'` / `'+15'` / `'015'` → `'15'`；`'-17.40'` → `'17.4'`；非法字面量 → `null`。
+ *
+ * 为什么需要：同一数额在账本里有多种精度写法（实测本机 21454 条 posting 中
+ * 0 / 1 / 2 位小数并存），逐字 LIKE 会让「搜 14」漏掉 `14.00`、又误命中 `145.00`。
+ * 故搜索走「两侧同口径规范串相等」而非子串匹配。
+ * SQL 侧镜像（见 listEntries 的 amount 分支）只做「去符号 + 去小数尾零」——
+ * 账本数值由 Beancount 规范化输出（无前导零），前导零只在用户输入侧需要容忍。
+ */
+export function normalizeAmountMagnitude(raw: string): string | null {
+  const m = /^[+-]?(\d+)(?:\.(\d+))?$/.exec(raw.trim())
+  if (!m) return null
+  const int = m[1]!.replace(/^0+(?=\d)/, '')
+  const frac = (m[2] ?? '').replace(/0+$/, '')
+  return frac === '' ? int : `${int}.${frac}`
+}
+
 /** 十进制字符串比较（含负号）：> 0 / < 0 / === 0。用于排序/分类聚合，纯字符串比较，禁浮点。 */
 export function compareDecimalStrings(a: string, b: string): number {
   const aNeg = a.startsWith('-')

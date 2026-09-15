@@ -67,6 +67,7 @@ function validateListParams(params: unknown): {
   dateFrom?: string
   dateTo?: string
   keyword?: string
+  amount?: string
   account?: string
 } {
   const raw = (params ?? {}) as Partial<ListEntriesParams>
@@ -89,6 +90,10 @@ function validateListParams(params: unknown): {
     throw new Error('keyword 必须是不超过 200 字的字符串')
   }
   const keyword = raw.keyword?.trim() || undefined
+  // amount 只挡类型与长度（十进制字面量格式在查询函数内单点把关，与 account 同款）
+  if (raw.amount !== undefined && (typeof raw.amount !== 'string' || raw.amount.length > 32)) {
+    throw new Error('amount 必须是不超过 32 字的字符串')
+  }
   return {
     limit: raw.limit ?? DEFAULT_LIMIT,
     offset: raw.offset ?? 0,
@@ -96,6 +101,7 @@ function validateListParams(params: unknown): {
     dateFrom: raw.dateFrom,
     dateTo: raw.dateTo,
     keyword,
+    amount: raw.amount?.trim() || undefined,
     // 透传给 listEntries 校验（非空字符串、长度上限 200 在查询函数内单点把关）
     account: raw.account
   }
@@ -200,8 +206,8 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
   // async 而非同步返回：校验抛错转为 rejected promise，测试与 ipcMain.handle 语义一致
   // （ipcMain.handle 对同步 throw 同样转为 invoke 拒绝，两者对调用方无差别）
   ipc.handle('ledger:list-entries', async (_event: unknown, params: unknown) => {
-    const { limit, offset, order, dateFrom, dateTo, keyword, account } = validateListParams(params)
-    return listEntries(deps.db, limit, offset, order, { dateFrom, dateTo, keyword, account })
+    const { limit, offset, order, dateFrom, dateTo, keyword, amount, account } = validateListParams(params)
+    return listEntries(deps.db, limit, offset, order, { dateFrom, dateTo, keyword, amount, account })
   })
 
   ipc.handle('ledger:get-entry', (_event: unknown, raw: unknown): GetEntryResult => {

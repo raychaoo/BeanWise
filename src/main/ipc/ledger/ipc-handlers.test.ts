@@ -82,6 +82,25 @@ describe('IPC handlers（M3）', () => {
     await expect(handlers['ledger:list-entries']({}, { account: 123 })).rejects.toThrow()
     await expect(handlers['ledger:list-entries']({}, { account: 'x'.repeat(201) })).rejects.toThrow()
   }, 30_000)
+
+  it('ledger:list-entries amount 参数透传与非法值拒绝（ADR 25 独立金额搜索）', async () => {
+    const listed = (await handlers['ledger:list-entries']({}, { amount: '15' })) as {
+      entries: Array<{ narration: string | null }>
+      total: number
+    }
+    expect(listed.total).toBe(1)
+    expect(listed.entries[0]!.narration).toBe('Breakfast')
+    // 账户 + 金额叠加（AND）
+    const overlaid = (await handlers['ledger:list-entries']({}, { account: 'Expenses:Food', amount: '-15.00' })) as {
+      total: number
+    }
+    expect(overlaid.total).toBe(1)
+
+    await expect(handlers['ledger:list-entries']({}, { amount: 15 })).rejects.toThrow()
+    await expect(handlers['ledger:list-entries']({}, { amount: 'x'.repeat(33) })).rejects.toThrow()
+    // 类型/长度过关但非十进制字面量：查询函数单点把关
+    await expect(handlers['ledger:list-entries']({}, { amount: 'abc' })).rejects.toThrow()
+  }, 30_000)
 })
 
 describe('listCounterparties（ADR 23 往来对象候选）', () => {

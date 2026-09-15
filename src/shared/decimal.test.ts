@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { addDecimalStrings, computeBalancingNumber, isZeroDecimal, negateDecimal } from './decimal'
+import {
+  addDecimalStrings,
+  computeBalancingNumber,
+  isZeroDecimal,
+  negateDecimal,
+  normalizeAmountMagnitude
+} from './decimal'
 
 describe('addDecimalStrings（十进制字符串加法）', () => {
   it('浮点等价性：0.1 + 0.2 === 0.3', () => {
@@ -53,6 +59,30 @@ describe('negateDecimal / isZeroDecimal', () => {
     expect(isZeroDecimal('0.00')).toBe(true)
     expect(isZeroDecimal('-0')).toBe(true)
     expect(isZeroDecimal('0.001')).toBe(false)
+  })
+})
+
+describe('normalizeAmountMagnitude（金额搜索的绝对值规范串）', () => {
+  it('去符号、去前导零、去小数尾零', () => {
+    expect(normalizeAmountMagnitude('15')).toBe('15')
+    expect(normalizeAmountMagnitude('-15')).toBe('15')
+    expect(normalizeAmountMagnitude('+15')).toBe('15')
+    expect(normalizeAmountMagnitude('15.00')).toBe('15')
+    expect(normalizeAmountMagnitude('-17.40')).toBe('17.4')
+    expect(normalizeAmountMagnitude('015')).toBe('15')
+    expect(normalizeAmountMagnitude(' 2.10 ')).toBe('2.1')
+  })
+
+  it('零的各写法归一到 0', () => {
+    expect(normalizeAmountMagnitude('0')).toBe('0')
+    expect(normalizeAmountMagnitude('0.00')).toBe('0')
+    expect(normalizeAmountMagnitude('-0.0')).toBe('0')
+  })
+
+  it('非十进制字面量 → null（指数/千分位/多个小数点/空串）', () => {
+    for (const bad of ['', '  ', 'abc', '1e3', '1.2.3', '1,000', '15元', '.5']) {
+      expect(normalizeAmountMagnitude(bad)).toBeNull()
+    }
   })
 })
 

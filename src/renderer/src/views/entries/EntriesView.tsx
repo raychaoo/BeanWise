@@ -1,15 +1,15 @@
 /**
  * 明细视图（M4；批次 B 瘦身；批次 D 迁出索引状态卡与「清空账本」至设置页）：
- * 页头 = 时间快捷筛选（Segmented）+ 自定义范围（RangePicker）+ 关键词搜索 +「重建索引」
- * （e2e/ledger-index.spec.ts 依赖页头按钮）。
+ * 页头 = 时间快捷筛选（Segmented）+ 自定义范围（RangePicker）+ 关键词搜索 + 金额搜索（独立
+ * InputNumber，不与文本搜索混用）+「重建索引」（e2e/ledger-index.spec.ts 依赖页头按钮）。
  * 数据策略（超 UI 层 #2 落地）：筛选/搜索/排序全部为服务端查询参数——后端对全库 WHERE +
  * ORDER BY date,id 后 LIMIT/OFFSET 分页返回，total 同条件计数；排序方向（正/倒序）由日期列头
  * 切换，翻页/筛选/搜索/排序变化均重新查询，天然作用于总体数据。
  */
 import { ProTable } from '@ant-design/pro-components'
 import type { ProColumns } from '@ant-design/pro-components'
-import { EditOutlined, QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, DatePicker, Input, Segmented, Tooltip, Typography } from 'antd'
+import { EditOutlined, QuestionCircleOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons'
+import { Alert, Button, Card, DatePicker, Input, InputNumber, Segmented, Tooltip, Typography } from 'antd'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
@@ -61,6 +61,9 @@ export default function EntriesView() {
   const [custom, setCustom] = useState<[Dayjs, Dayjs] | null>(null)
   // 已应用的搜索词（Input.Search 回车/按钮触发，避免逐键查询）
   const [appliedKeyword, setAppliedKeyword] = useState('')
+  // 金额搜索：输入值（受控）与已应用值分开，同 keyword——回车/点搜索才查询
+  const [amountInput, setAmountInput] = useState('')
+  const [appliedAmount, setAppliedAmount] = useState('')
   // 日期列服务端排序方向（受控）：切换 = 改查询参数重查后端，而非本地排当前页
   const [dateOrder, setDateOrder] = useState<'ascend' | 'descend'>('descend')
   // ProTable 管理的页码（筛选/排序变化时重置为 1）
@@ -68,13 +71,20 @@ export default function EntriesView() {
   const [editEntryId, setEditEntryId] = useState<string | null>(null)
 
   /** 当前筛选状态 → 服务端过滤参数（quick 与自定义范围互斥：custom 优先） */
-  const filtersOf = (q: QuickKey, c: [Dayjs, Dayjs] | null, keyword: string): ListEntriesFilters => {
+  const filtersOf = (
+    q: QuickKey,
+    c: [Dayjs, Dayjs] | null,
+    keyword: string,
+    amount: string
+  ): ListEntriesFilters => {
     const range: [string, string] | null = c
       ? [c[0].format('YYYY-MM-DD'), c[1].format('YYYY-MM-DD')]
       : quickRange(q)
+    const amt = amount.trim()
     return {
       ...(range ? { dateFrom: range[0], dateTo: range[1] } : {}),
-      ...(keyword.trim() ? { keyword: keyword.trim() } : {})
+      ...(keyword.trim() ? { keyword: keyword.trim() } : {}),
+      ...(amt ? { amount: amt } : {})
     }
   }
 
@@ -99,7 +109,7 @@ export default function EntriesView() {
     setQuick(q)
     setCustom(null)
     setPage(1)
-    runQuery(1, dateOrder, filtersOf(q, null, appliedKeyword))
+    runQuery(1, dateOrder, filtersOf(q, null, appliedKeyword, appliedAmount))
   }
 
   const handleCustom = (dates: [Dayjs | null, Dayjs | null] | null) => {
@@ -107,18 +117,37 @@ export default function EntriesView() {
     setCustom(valid)
     if (valid) setQuick('all')
     setPage(1)
-    runQuery(1, dateOrder, filtersOf(valid ? 'all' : quick, valid, appliedKeyword))
+    runQuery(1, dateOrder, filtersOf(valid ? 'all' : quick, valid, appliedKeyword, appliedAmount))
   }
 
   const handleSearch = (raw: string) => {
     setAppliedKeyword(raw.trim())
     setPage(1)
-    runQuery(1, dateOrder, filtersOf(quick, custom, raw))
+    runQuery(1, dateOrder, filtersOf(quick, custom, raw, appliedAmount))
   }
 
   /** allowClear 点 × 清空不触发 onSearch：这里补一次清空重查 */
   const handleSearchChange = (raw: string) => {
     if (raw === '' && appliedKeyword !== '') handleSearch('')
+  }
+
+  /** 金额框回车 / 点搜索图标：落为查询参数（服务端按绝对值精确匹配，与文本搜索互不干扰） */
+  const handleAmount = (raw: string) => {
+    const amt = raw.trim()
+    setAppliedAmount(amt)
+    setPage(1)
+    runQuery(1, dateOrder, filtersOf(quick, custom, appliedKeyword, amt))
+  }
+
+  /** InputNumber 无 allowClear，删空即 onChange(null)：等同取消金额筛选的一次重查 */
+  const handleAmountChange = (raw: string | null) => {
+    const next = raw ?? ''
+    setAmountInput(next)
+    if (next.trim() === '' && appliedAmount !== '') {
+      setAppliedAmount('')
+      setPage(1)
+      runQuery(1, dateOrder, filtersOf(quick, custom, appliedKeyword, ''))
+    }
   }
 
   const accountNameMap = new Map(accountOptions.map((o) => [o.value, o.label]))
@@ -224,7 +253,7 @@ export default function EntriesView() {
     }
     setPage(1)
     await refresh()
-    runQuery(1, dateOrder, filtersOf(quick, custom, appliedKeyword))
+    runQuery(1, dateOrder, filtersOf(quick, custom, appliedKeyword, appliedAmount))
   }
 
   return (
@@ -243,7 +272,20 @@ export default function EntriesView() {
             onSearch={handleSearch}
             onChange={(e) => handleSearchChange(e.target.value)}
           />
-          <Tooltip title="筛选、搜索与排序均为全库查询（服务端执行，翻页取数）">
+          {/* 金额搜索独立成框（不与文本搜索混在一起）：服务端按绝对值精确匹配，回车或点图标生效 */}
+          <InputNumber
+            stringMode
+            controls={false}
+            className="entries-amount-search"
+            placeholder="金额"
+            value={amountInput}
+            onChange={handleAmountChange}
+            onPressEnter={() => handleAmount(amountInput)}
+          />
+          <Tooltip title="按金额搜索（回车同效）">
+            <Button icon={<SearchOutlined />} aria-label="按金额搜索" onClick={() => handleAmount(amountInput)} />
+          </Tooltip>
+          <Tooltip title="筛选、搜索与排序均为全库查询（服务端执行，翻页取数）；金额搜索按绝对值精确匹配，忽略正负与小数尾零">
             <QuestionCircleOutlined className="entries-filter-hint" />
           </Tooltip>
         </div>
@@ -263,7 +305,7 @@ export default function EntriesView() {
             if (s?.field === 'date' && (s.order === 'ascend' || s.order === 'descend') && s.order !== dateOrder) {
               setDateOrder(s.order)
               setPage(1)
-              runQuery(1, s.order, filtersOf(quick, custom, appliedKeyword))
+              runQuery(1, s.order, filtersOf(quick, custom, appliedKeyword, appliedAmount))
             }
           }}
           pagination={{
@@ -274,7 +316,7 @@ export default function EntriesView() {
             showTotal: (t) => `共 ${t} 条`,
             onChange: (p) => {
               setPage(p)
-              runQuery(p, dateOrder, filtersOf(quick, custom, appliedKeyword))
+              runQuery(p, dateOrder, filtersOf(quick, custom, appliedKeyword, appliedAmount))
             }
           }}
           search={false}
@@ -287,7 +329,7 @@ export default function EntriesView() {
         onClose={() => setEditEntryId(null)}
         onSaved={() => {
           setPage(1)
-          runQuery(1, dateOrder, filtersOf(quick, custom, appliedKeyword))
+          runQuery(1, dateOrder, filtersOf(quick, custom, appliedKeyword, appliedAmount))
         }}
       />
     </div>

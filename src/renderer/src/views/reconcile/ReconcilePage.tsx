@@ -2,14 +2,15 @@
  * 对账页：Tab① 三栏式科目余额表（批次 G #5：report:trial-balance，期初/发生/期末，
  * 每账户每币种一行；顶部日期 RangePicker → dateFrom/dateTo；币种 CheckableTag 筛选）
  * + Tab② 明细账（批次 F）：账户 TreeSelect（五大类分组）→ listEntries 服务端 account
- * 精确过滤 + 金额/交易对象/说明关键词 + order desc 分页查询；显示稳定 ID 与秒级交易时间，
- * 复用 EntryEditDrawer 按 ID 编辑。本地查询状态（不经共享 store entries 槽，防跨页串扰）。
+ * 精确过滤 + 交易对象/说明关键词 + 独立金额框（InputNumber，不与文本搜索混用，见 ADR 25）
+ * + order desc 分页查询；显示稳定 ID 与秒级交易时间，复用 EntryEditDrawer 按 ID 编辑。
+ * 本地查询状态（不经共享 store entries 槽，防跨页串扰）。
  * 金额 formatAmount 千分位 + .num 右对齐，负数 .num-negative（红色语义唯一化）。
  */
 import { ProTable } from '@ant-design/pro-components'
 import type { ProColumns } from '@ant-design/pro-components'
-import { EditOutlined } from '@ant-design/icons'
-import { Alert, Button, DatePicker, Empty, Input, Space, Spin, Tabs, Tag, Tooltip, TreeSelect, Typography } from 'antd'
+import { EditOutlined, SearchOutlined } from '@ant-design/icons'
+import { Alert, Button, DatePicker, Empty, Input, InputNumber, Space, Spin, Tabs, Tag, Tooltip, TreeSelect, Typography } from 'antd'
 import type { Dayjs } from 'dayjs'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { LedgerEntryRow, ListEntriesFilters, ReportTrialBalanceParams, TrialBalanceCell, TrialBalanceRow } from '../../../../shared/ipc'
@@ -75,32 +76,39 @@ function DetailLedgerTab() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [keywordInput, setKeywordInput] = useState('')
   const [appliedKeyword, setAppliedKeyword] = useState('')
+  const [amountInput, setAmountInput] = useState('')
+  const [appliedAmount, setAppliedAmount] = useState('')
   const [editEntryId, setEditEntryId] = useState<string | null>(null)
 
-  const loadEntries = useCallback(async (acc: string, p: number, r: [Dayjs, Dayjs] | null, keyword: string) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const filters: ListEntriesFilters = {
-        ...(r ? { dateFrom: r[0].format('YYYY-MM-DD'), dateTo: r[1].format('YYYY-MM-DD') } : {}),
-        ...(keyword ? { keyword } : {})
+  const loadEntries = useCallback(
+    async (acc: string, p: number, r: [Dayjs, Dayjs] | null, keyword: string, amount: string) => {
+      setLoading(true)
+      setError(null)
+      try {
+        const filters: ListEntriesFilters = {
+          ...(r ? { dateFrom: r[0].format('YYYY-MM-DD'), dateTo: r[1].format('YYYY-MM-DD') } : {}),
+          ...(keyword ? { keyword } : {}),
+          ...(amount ? { amount } : {})
+        }
+        const r2 = await window.beanwise.listLedgerEntries({
+          account: acc,
+          order: 'desc',
+          limit: DETAIL_PAGE_SIZE,
+          offset: (p - 1) * DETAIL_PAGE_SIZE,
+          ...filters
+        })
+        setRows(r2.entries)
+        setTotal(r2.total)
+      } catch (err) {
+        setError(String(err))
+      } finally {
+        setLoading(false)
       }
-      const r2 = await window.beanwise.listLedgerEntries({
-        account: acc,
-        order: 'desc',
-        limit: DETAIL_PAGE_SIZE,
-        offset: (p - 1) * DETAIL_PAGE_SIZE,
-        ...filters
-      })
-      setRows(r2.entries)
-      setTotal(r2.total)
-    } catch (err) {
-      setError(String(err))
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    },
+    []
+  )
 
   /** 选择/清空账户：清空回到引导空态（不做全库查询——本 Tab 语义为单账户明细流） */
   const handleSelect = (value: string | undefined) => {
@@ -108,30 +116,60 @@ function DetailLedgerTab() {
     setPage(1)
     setRows([])
     setTotal(0)
-    if (value) void loadEntries(value, 1, range, appliedKeyword)
+    if (value) void loadEntries(value, 1, range, appliedKeyword, appliedAmount)
   }
 
   const handleRange = (dates: [Dayjs | null, Dayjs | null] | null) => {
     const valid = dates && dates[0] && dates[1] ? ([dates[0], dates[1]] as [Dayjs, Dayjs]) : null
     setRange(valid)
     setPage(1)
-    if (account) void loadEntries(account, 1, valid, appliedKeyword)
+    if (account) void loadEntries(account, 1, valid, appliedKeyword, appliedAmount)
   }
 
   const handleSearch = (raw: string) => {
     const keyword = raw.trim()
     setAppliedKeyword(keyword)
     setPage(1)
-    if (account) void loadEntries(account, 1, range, keyword)
+    if (account) void loadEntries(account, 1, range, keyword, appliedAmount)
   }
 
   const handleSearchChange = (raw: string) => {
+    setKeywordInput(raw)
     if (raw === '' && appliedKeyword !== '') handleSearch('')
+  }
+
+  /** 金额框回车：服务端按绝对值精确匹配（不看正负、忽略小数尾零） */
+  const handleAmount = (raw: string) => {
+    const amt = raw.trim()
+    setAppliedAmount(amt)
+    setPage(1)
+    if (account) void loadEntries(account, 1, range, appliedKeyword, amt)
+  }
+
+  /** InputNumber 无 allowClear，删空即 onChange(null) → 取消金额筛选重查 */
+  const handleAmountChange = (raw: string | null) => {
+    const next = raw ?? ''
+    setAmountInput(next)
+    if (next.trim() === '' && appliedAmount !== '') {
+      setAppliedAmount('')
+      setPage(1)
+      if (account) void loadEntries(account, 1, range, appliedKeyword, '')
+    }
+  }
+
+  /** 「查询」按钮：把文本与金额两个输入框的当前内容一并落到查询参数 */
+  const handleQueryAll = () => {
+    const keyword = keywordInput.trim()
+    const amt = amountInput.trim()
+    setAppliedKeyword(keyword)
+    setAppliedAmount(amt)
+    setPage(1)
+    if (account) void loadEntries(account, 1, range, keyword, amt)
   }
 
   const handlePageChange = (p: number) => {
     setPage(p)
-    if (account) void loadEntries(account, p, range, appliedKeyword)
+    if (account) void loadEntries(account, p, range, appliedKeyword, appliedAmount)
   }
 
   const accountLabel = account ? (accountNameMap.get(account) ?? account) : null
@@ -226,11 +264,22 @@ function DetailLedgerTab() {
         <Input.Search
           allowClear
           className="reconcile-detail-search"
-          placeholder="搜索金额 / 交易对象 / 说明"
+          placeholder="搜索交易对象 / 说明"
+          value={keywordInput}
           onSearch={handleSearch}
           onChange={(e) => handleSearchChange(e.target.value)}
         />
-        <Button type="primary" disabled={!account} onClick={() => handleSearch(appliedKeyword)}>
+        {/* 金额搜索独立成框（不与文本搜索混在一起）：绝对值精确匹配，回车或点「查询」生效 */}
+        <InputNumber
+          stringMode
+          controls={false}
+          className="reconcile-detail-amount"
+          placeholder="金额"
+          value={amountInput}
+          onChange={handleAmountChange}
+          onPressEnter={() => handleAmount(amountInput)}
+        />
+        <Button type="primary" disabled={!account} icon={<SearchOutlined />} onClick={handleQueryAll}>
           查询
         </Button>
       </div>
@@ -260,7 +309,7 @@ function DetailLedgerTab() {
         entryId={editEntryId}
         onClose={() => setEditEntryId(null)}
         onSaved={() => {
-          if (account) return loadEntries(account, page, range, appliedKeyword)
+          if (account) return loadEntries(account, page, range, appliedKeyword, appliedAmount)
         }}
       />
     </>
