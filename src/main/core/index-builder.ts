@@ -48,6 +48,13 @@ export interface LedgerEntryRow {
   /** PL 侧账户路径（Income/Expenses 中主币种下的首个 posting 账户），用于流水列表显示支出/收入账户中文名；
    * 无 PL posting（转账/Open 等）→ null */
   pnlAccount: string | null
+  /** 账内搬移（无 PL posting 的交易：转账 / 信用卡还款 / 往来借出还款 / 权益调整）的资金流出账户
+   * （负腿，posting 原序去重）；有损益腿或无分录 → [] */
+  flowFrom: string[]
+  /** 同上，资金流入账户（正腿） */
+  flowTo: string[]
+  /** 账内搬移的发生额（正腿之和，正数、同 currency 口径）；有损益腿或无分录 → null */
+  flowAmount: string | null
 }
 
 export interface ListEntriesParams {
@@ -299,23 +306,70 @@ export function getEntryById(db: DrizzleDb, externalId: string): LedgerEntryDeta
   }
 }
 
-/** 交易金额计算（超 UI 层 #1）：主币种（运营货币优先，缺省取首笔 posting 币种）下 PL 侧
- * 金额和取反——资产流视角（支出 → 负、收入 → 正）；无 PL posting（转账/Open）→ null。
- * 求和走 shared/decimal 十进制字符串运算（禁浮点），异常兜底 null 不阻塞列表。
- * 同时返回首个 PL 侧账户路径（pnlAccount），用于流水列表显示支出/收入账户中文名。 */
-function entryAmount(
-  ps: Array<{ account: string; unitsNumber: string; unitsCurrency: string }>,
-  primaryCurrency: string | null
-): { amount: string | null; currency: string | null; pnlAccount: string | null } {
-  if (ps.length === 0) return { amount: null, currency: null, pnlAccount: null }
+/** 明细行的金额/账户增强（超 UI 层 #1 + 账内搬移补全）
+ *
+ * ① 有损益腿（Income/Expenses）的交易：`amount` = 主币种（运营货币优先，缺省取首笔 posting 币种）
+ *    下损益腿之和取反——资产流视角（支出 → 负、收入 → 正）；`pnlAccount` = 首个损益账户路径，
+ *    供流水列表显示支出/收入类目。
+ * ② 无损益腿的交易（转账 / 信用卡还款 / 往来借出还款 / 权益调整等**账内搬移**）：搬移不产生损益，
+ *    故 `amount` 恒为 null，改由 `flowFrom`/`flowTo`（资金流出 / 流入账户，按符号分组、posting
+ *    原序去重）与 `flowAmount`（发生额）描述——否则这类行在明细页「账户」「金额」两列都是「—」。
+ * ③ 无分录条目（Open/Balance 等）或运算异常：全空。
+ *
+ * 「有无损益腿」按**全币种**判定：运营货币下恰好没有损益腿的外币收支交易仍属损益类，不可退化成
+ * 账内搬移（否则会被显示成「A → B」账户串）。求和一律走 shared/decimal 十进制字符串运算。
+ */
+interface EntryAmount {
+  amount: string | null
+  currency: string | null
+  pnlAccount: string | null
+  flowFrom: string[]
+  flowTo: string[]
+  flowAmount: string | null
+}
+
+type PostingLike = { account: string; unitsNumber: string; unitsCurrency: string }
+
+function emptyAmount(currency: string | null = null): EntryAmount {
+  return { amount: null, currency, pnlAccount: null, flowFrom: [], flowTo: [], flowAmount: null }
+}
+
+/** 账内搬移的账户串 + 发生额：负腿 = 资金流出方、正腿 = 流入方（各自去重保序）；
+ *  发生额取正腿之和（复式记账下与负腿之和互为相反数，取任一侧即搬移规模）。 */
+function entryFlow(ps: PostingLike[]): Pick<EntryAmount, 'flowFrom' | 'flowTo' | 'flowAmount'> {
+  const flowFrom: string[] = []
+  const flowTo: string[] = []
+  let inflow = '0'
+  let outflow = '0'
+  for (const p of ps) {
+    if (p.unitsNumber.startsWith('-')) {
+      if (!flowFrom.includes(p.account)) flowFrom.push(p.account)
+      outflow = addDecimalStrings(outflow, p.unitsNumber)
+    } else {
+      if (!flowTo.includes(p.account)) flowTo.push(p.account)
+      inflow = addDecimalStrings(inflow, p.unitsNumber)
+    }
+  }
+  return { flowFrom, flowTo, flowAmount: inflow !== '0' ? inflow : negateDecimal(outflow) }
+}
+
+function entryAmount(ps: PostingLike[], primaryCurrency: string | null): EntryAmount {
+  if (ps.length === 0) return emptyAmount()
   const currency = primaryCurrency ?? ps[0]!.unitsCurrency
+  if (!ps.some((p) => isPnlAccountType(accountType(p.account)))) {
+    try {
+      return { ...emptyAmount(currency), ...entryFlow(ps) }
+    } catch {
+      return emptyAmount(currency)
+    }
+  }
   const pl = ps.filter((p) => p.unitsCurrency === currency && isPnlAccountType(accountType(p.account)))
-  if (pl.length === 0) return { amount: null, currency, pnlAccount: null }
+  if (pl.length === 0) return emptyAmount(currency)
   try {
     const sum = pl.reduce((acc, p) => addDecimalStrings(acc, p.unitsNumber), '0')
-    return { amount: negateDecimal(sum), currency, pnlAccount: pl[0]!.account }
+    return { ...emptyAmount(currency), amount: negateDecimal(sum), pnlAccount: pl[0]!.account }
   } catch {
-    return { amount: null, currency, pnlAccount: null }
+    return emptyAmount(currency)
   }
 }
 
@@ -380,10 +434,7 @@ export function listEntries(
     db.select().from(ledgerMeta).where(eq(ledgerMeta.id, 1)).get()?.operatingCurrency ?? null
   )[0] ?? null
 
-  const out = rows.map((r) => {
-    const { amount, currency, pnlAccount } = entryAmount(byEntry.get(r.id) ?? [], primaryCurrency)
-    return { ...r, amount, currency, pnlAccount }
-  })
+  const out = rows.map((r) => ({ ...r, ...entryAmount(byEntry.get(r.id) ?? [], primaryCurrency) }))
   return { entries: out as LedgerEntryRow[], total }
 }
 

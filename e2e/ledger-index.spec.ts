@@ -230,6 +230,9 @@ test('M4+ 明细：服务端倒序/正序、时间筛选与关键词搜索（超
     await expect(dataRows).toHaveCount(1)
     await expect(win.locator('.ant-table-tbody')).toContainText('Breakfast')
     await expect(dataRows.first()).toContainText('-15 CNY')
+    // 账户列取损益类目 pnlAccount（曾误取 entries.account——该列只对 Open 条目有值，
+    // 导致所有交易行账户列恒为「—」；本 spec 未预置账户库 → label 即原始路径）
+    await expect(dataRows.first()).toContainText('Expenses:Food')
     await search.fill('Bank')
     await search.press('Enter')
     await expect(dataRows).toHaveCount(3)

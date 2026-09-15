@@ -15,9 +15,9 @@ import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import type { LedgerEntryRow, ListEntriesFilters } from '../../../../shared/ipc'
 import { useLedgerStore } from '../../stores/ledger'
-import { formatAmount } from '../../utils/format'
 import '../../styles/views/entries.less'
 import EntryEditDrawer from './EntryEditDrawer'
+import { accountDisplay, amountDisplay } from './entryRowDisplay'
 
 const PAGE_SIZE = 20
 
@@ -122,6 +122,8 @@ export default function EntriesView() {
   }
 
   const accountNameMap = new Map(accountOptions.map((o) => [o.value, o.label]))
+  /** 账户路径 → 账户库中文名（无映射回落路径本身） */
+  const nameOf = (value: string): string => accountNameMap.get(value) ?? value
 
   const columns: ProColumns<LedgerEntryRow>[] = [
     {
@@ -154,32 +156,42 @@ export default function EntriesView() {
     },
     { title: '标志', dataIndex: 'flag', width: 60, render: (_dom: unknown, row: LedgerEntryRow) => row.flag ?? '—' },
     { title: '类型', dataIndex: 'type', width: 90 },
-    { title: '交易对象', dataIndex: 'payee', render: (_dom: unknown, row: LedgerEntryRow) => row.payee ?? '—' },
-    { title: '说明', dataIndex: 'narration', render: (_dom: unknown, row: LedgerEntryRow) => row.narration ?? '—' },
+    {
+      title: '交易对象',
+      dataIndex: 'payee',
+      render: (_dom: unknown, row: LedgerEntryRow) => <span className="entries-cell">{row.payee ?? '—'}</span>
+    },
+    {
+      title: '说明',
+      dataIndex: 'narration',
+      render: (_dom: unknown, row: LedgerEntryRow) => <span className="entries-cell">{row.narration ?? '—'}</span>
+    },
     {
       title: '账户',
       dataIndex: 'account',
       render: (_dom: unknown, row: LedgerEntryRow) => {
-        const v = row.account
-        if (!v) return '—'
-        const label = accountNameMap.get(v) ?? v
-        return label === v ? v : <Tooltip title={v}>{label}</Tooltip>
+        // 取数口径见 entryRowDisplay.accountDisplay：损益类目 / 账内搬移流向串 / Open 条目账户
+        const cell = accountDisplay(row, nameOf)
+        if (!cell) return '—'
+        // 搬移账户串可较长（多腿）：限宽换行保列宽，hover 另给完整路径
+        return (
+          <Tooltip title={cell.raw}>
+            <span className="entries-account">{cell.label}</span>
+          </Tooltip>
+        )
       }
     },
     {
       title: '金额',
       dataIndex: 'amount',
       width: 120,
-      // 交易金额（超 UI 层 #1）：资产流视角（收入 +、支出 -），千分位 + 负数红；转账/Open 行无金额
-      render: (_dom: unknown, row: LedgerEntryRow) =>
-        row.amount === null ? (
-          '—'
-        ) : (
-          <span className={`num${row.amount.startsWith('-') ? ' num-negative' : ''}`}>
-            {formatAmount(row.amount)}
-            {row.currency ? ` ${row.currency}` : ''}
-          </span>
-        )
+      // 交易金额（超 UI 层 #1）：资产流视角（收入 +、支出 -），千分位 + 负数红；
+      // 账内搬移（转账/还款/往来/权益调整）无损益，改显发生额且不着色；Open 行无金额
+      render: (_dom: unknown, row: LedgerEntryRow) => {
+        const cell = amountDisplay(row)
+        if (!cell) return '—'
+        return <span className={`num${cell.negative ? ' num-negative' : ''}`}>{cell.text}</span>
+      }
     },
     {
       title: '操作',

@@ -34,3 +34,19 @@
   cursor: help;
   font-size: 14px;
 }
+
+// 明细页「账户」列：损益类目 / 账内搬移流向串（多腿时较长）——限宽换行，不截断（截断会
+// 丢掉流入方账户名），也不走 antd 列级 ellipsis（那会把整表切成 fixed 布局）。
+// min-width 是列的下限：否则表宽紧张时被 auto 布局压成竖排单字
+.entries-account {
+  display: inline-block;
+  min-width: 140px;
+  max-width: 180px;
+  vertical-align: bottom;
+}
+
+// 「交易对象」「说明」两列的同款下限（够 4 个中文字即可，避免竖排单字）
+.entries-cell {
+  display: inline-block;
+  min-width: 64px;
+}

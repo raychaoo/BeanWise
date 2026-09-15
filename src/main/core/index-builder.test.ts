@@ -142,8 +142,39 @@ describe('索引重建管线（M3）', () => {
     // Expenses 15.00（隐式推平）→ PL 侧和取反 = -15（资产流出）
     expect(breakfast.amount).toBe('-15')
     expect(breakfast.currency).toBe('CNY')
+    // 损益类目透出（明细页「账户」列取此字段；entries.account 只对 Open 有值，不可用）
+    expect(breakfast.pnlAccount).toBe('Expenses:Food')
+    // 有损益腿 → 不带账内搬移字段
+    expect(breakfast.flowFrom).toEqual([])
+    expect(breakfast.flowTo).toEqual([])
+    expect(breakfast.flowAmount).toBeNull()
     const opens = listed.entries.filter((e) => e.type === 'Open')
     expect(opens.every((e) => e.amount === null && e.currency === null)).toBe(true)
+  }, 30_000)
+
+  it('listEntries 账内搬移增强：无损益腿交易带 flowFrom/flowTo/flowAmount（明细页账户串 + 发生额）', async () => {
+    copyFileSync(LOANS_FIXTURE, workFile)
+    await refreshIndex(drizzle, engine, workFile)
+    const listed = listEntries(drizzle, 100, 0)
+
+    // 借出 5000：Assets:Receivables:Lend +5000 / Assets:Bank:ZSYH -5000
+    const lend = listed.entries.find((e) => e.narration === '借出5000')!
+    expect(lend.amount).toBeNull() // 搬移不产生损益，金额口径仍为空
+    expect(lend.pnlAccount).toBeNull()
+    expect(lend.flowFrom).toEqual(['Assets:Bank:ZSYH'])
+    expect(lend.flowTo).toEqual(['Assets:Receivables:Lend'])
+    expect(lend.flowAmount).toBe('5000') // 正腿之和（缺失的损益腿不再吞掉金额）
+    expect(lend.currency).toBe('CNY')
+
+    // 还款 4000：方向相反（借出减少 → 银行增加），发生额 4000
+    const repay = listed.entries.find((e) => e.narration === '还4000')!
+    expect(repay.flowFrom).toEqual(['Assets:Receivables:Lend'])
+    expect(repay.flowTo).toEqual(['Assets:Bank:ZSYH'])
+    expect(repay.flowAmount).toBe('4000')
+
+    // 两腿同账户时去重、不发生额异常；Open 条目无分录 → 全空
+    const opens = listed.entries.filter((e) => e.type === 'Open')
+    expect(opens.every((e) => e.flowAmount === null && e.flowFrom.length === 0)).toBe(true)
   }, 30_000)
 
   it('ledger id/time metadata → entries.externalId/time 落库并透出到列表', async () => {
