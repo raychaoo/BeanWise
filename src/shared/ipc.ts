@@ -36,7 +36,7 @@ export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list
   | 'sync:get-status' | 'sync:configure' | 'sync:push' | 'sync:pull'
   | 'sync:resolve-conflict' | 'sync:clear'
   | 'ai:get-status' | 'ai:save-config' | 'ai:clear-config' | 'ai:parse'
-  | 'report:net-worth' | 'report:balances' | 'report:income-expense' | 'report:years' | 'report:trial-balance' | 'report:cash-flow' | 'report:breakdown' | 'report:export-pdf' | 'report:counterparty-ledger'
+  | 'report:net-worth' | 'report:balances' | 'report:income-expense' | 'report:years' | 'report:trial-balance' | 'report:cash-flow' | 'report:breakdown' | 'report:export-pdf' | 'report:counterparty-ledger' | 'report:counterparty-transactions'
   | 'update:check' | 'update:status' | 'update:install'
 
 /** ledger:read-file 结果（ENOENT → ok:false + message，编辑器 Empty 态） */
@@ -682,6 +682,41 @@ export interface ReportCounterpartyLedgerResult {
   /** 参与聚合的往来类账户路径（来自账户库 counterparty 标志；空数组 = 尚未标记任何往来类账户） */
   accounts: string[]
   message?: string
+}
+
+/** 往来账流水行（ADR 23 展开下钻）：一笔交易一行——该对象该币种下的逐笔往来 */
+export interface CounterpartyFlowRow {
+  entryId: number
+  date: string
+  /** 交易对象（entries.payee，流水原文） */
+  payee: string | null
+  /** 说明（entries.narration） */
+  narration: string | null
+  /** 命中的往来类账户路径（借出 / 还款）；同一交易多腿时取首条 */
+  account: string
+  /** 该笔在往来类账户上的净额（Beancount 符号：资产侧 +借出 / −还款） */
+  number: string
+  /** 截至该笔（含）的累计净额，与主表该行 net 同口径——最新一笔 === 主表净额 */
+  balance: string
+}
+
+/** report:counterparty-transactions 入参（展开某往来对象看到的逐笔流水，服务端分页） */
+export interface ReportCounterpartyTransactionsParams {
+  /** 往来对象；null = 未标注对象的历史分录（与 CounterpartyBalance.counterparty 同口径） */
+  counterparty: string | null
+  /** 币种（主表每对象每币种一行，流水按该行币种过滤） */
+  currency: string
+  /** 每页条数，默认 20，上限 200 */
+  limit?: number
+  /** 偏移量，默认 0 */
+  offset?: number
+}
+
+/** report:counterparty-transactions 结果（rows 按日期倒序，最新在前） */
+export interface ReportCounterpartyTransactionsResult {
+  rows: CounterpartyFlowRow[]
+  /** 过滤后的总笔数（分页器用） */
+  total: number
 }
 
 /** M8：更新域（electron-updater 状态机，主进程持有） */

@@ -114,6 +114,17 @@ test('ADR 23：标记往来类 → 录入带对象 → 文件落 metadata → �
     await expect(loans).toContainText('李素珍')
     await expect(loans).toContainText('已结清')
     await expect(loans).toContainText('5,000')
+
+    // 6. 展开下钻（ADR 23）：点主表行 → 展开区是该对象的逐笔流水（嵌套 ProTable + 分页器）
+    await pane.locator('.ant-table-tbody').first().locator('tr').filter({ hasText: '李素珍' }).first().click()
+    const flow = pane.locator('.counterparty-flow')
+    await expect(flow).toContainText('李素珍 · CNY 流水', { timeout: 20000 })
+    await expect(flow).toContainText('共 2 笔')
+    const flowBody = flow.locator('.ant-table-tbody')
+    // 借出 5,000 → 还款 -5,000：账户列走账户库中文名，最新在前（还款行在最上）
+    await expect(flowBody).toContainText('借出')
+    await expect(flowBody).toContainText('-5,000')
+    await expect(flow.locator('.ant-pagination')).toContainText('共 2 条')
   } finally {
     // app.close() 必须进 finally：断言失败时若跳过，Electron 进程残留会让整个 worker 卡住
     await app?.close().catch(() => {})

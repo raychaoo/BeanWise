@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createDrizzle, openDatabase } from '../../db/index'
 import { entries, entryLinks, ledgerMeta, postings } from '../../db/schema'
 import { registerReportHandlers, type ReportDeps } from './ipc-handlers-report'
-import type { ReportCounterpartyLedgerResult } from '../../../shared/ipc'
+import type { ReportCounterpartyLedgerResult, ReportCounterpartyTransactionsResult } from '../../../shared/ipc'
 
 type IpcListener = (channel: string, listener: (...args: unknown[]) => unknown) => void
 type Registrar = { handle: ReturnType<typeof vi.fn<IpcListener>> }
@@ -463,7 +463,8 @@ describe('report:export-pdf', () => {
   })
 })
 
-/** 插入一条带往来对象的 posting（往来账按对象聚合，ADR 23）；link 可选（P2 核销） */
+/** 插入一条带往来对象的 posting（往来账按对象聚合，ADR 23）；link 可选（P2 核销），
+ * payee/narration 可选（展开下钻的流水需展示交易对象与说明，缺省 payee null / narration 't'） */
 function insertCounterpartyPosting(
   db: ReportDeps['db'],
   row: {
@@ -473,11 +474,13 @@ function insertCounterpartyPosting(
     currency: string
     counterparty: string | null
     link?: string
+    payee?: string | null
+    narration?: string | null
   }
 ): void {
   const entry = db
     .insert(entries)
-    .values({ type: 'Transaction', date: row.date, narration: 't' })
+    .values({ type: 'Transaction', date: row.date, payee: row.payee ?? null, narration: row.narration ?? 't' })
     .returning()
     .get()
   db.insert(postings)
@@ -551,5 +554,96 @@ describe('report:counterparty-ledger（ADR 23 往来账）', () => {
     ])
     // 汇总口径不变：5000 − 4000 + 800 = 1800
     expect(r.rows[0]!.net).toBe('1800')
+  })
+})
+
+describe('report:counterparty-transactions（ADR 23 展开下钻：逐笔流水，服务端分页）', () => {
+  const LEND = 'Assets:Receivables:Lend'
+
+  /** 5 笔李志全流水（日期递增、金额递增 → 累计 100/300/600/1000/1500），供分页与累计断言 */
+  function seedFlow(db: ReportDeps['db']): void {
+    const legs: Array<[string, string, string]> = [
+      ['2026-01-01', '100', '借出1'],
+      ['2026-01-02', '200', '借出2'],
+      ['2026-01-03', '300', '借出3'],
+      ['2026-01-04', '400', '借出4'],
+      ['2026-01-05', '500', '借出5']
+    ]
+    for (const [date, number, narration] of legs) {
+      insertCounterpartyPosting(db, { date, account: LEND, number, currency: 'CNY', counterparty: '李志全', payee: '李志全', narration })
+    }
+    // 干扰行：另一对象 + 未标注对象
+    insertCounterpartyPosting(db, { date: '2026-01-06', account: LEND, number: '900', currency: 'CNY', counterparty: '王五' })
+    insertCounterpartyPosting(db, { date: '2026-01-07', account: LEND, number: '800', currency: 'CNY', counterparty: null })
+  }
+
+  /** 注册往来类账户已标记的 handler 集（流水 + 汇总两张表共用一份数据） */
+  function handlersOf(db: ReportDeps['db']): Map<string, (...args: unknown[]) => Promise<unknown>> {
+    return registerWithDeps({ db, counterpartyAccounts: () => [LEND] })
+  }
+
+  it('limit/offset 切片 + total 为过滤后总数；rows 按日期倒序（最新在前）', async () => {
+    const db = createDrizzle(openDatabase(':memory:'))
+    seedFlow(db)
+    const flow = handlersOf(db).get('report:counterparty-transactions')!
+    const params = { counterparty: '李志全', currency: 'CNY', limit: 2 }
+
+    const p1 = (await flow({}, { ...params, offset: 0 })) as ReportCounterpartyTransactionsResult
+    expect(p1.total).toBe(5)
+    expect(p1.rows.map((x) => x.date)).toEqual(['2026-01-05', '2026-01-04'])
+
+    const p2 = (await flow({}, { ...params, offset: 2 })) as ReportCounterpartyTransactionsResult
+    expect(p2.total).toBe(5)
+    expect(p2.rows.map((x) => x.date)).toEqual(['2026-01-03', '2026-01-02'])
+  })
+
+  it('累计余额不随分页重启：每页 balance 仍是全量升序累计（最新一笔 === 主表净额）', async () => {
+    const db = createDrizzle(openDatabase(':memory:'))
+    seedFlow(db)
+    const handlers = handlersOf(db)
+
+    const p1 = (await handlers.get('report:counterparty-transactions')!({}, { counterparty: '李志全', currency: 'CNY', limit: 2, offset: 0 })) as ReportCounterpartyTransactionsResult
+    const p2 = (await handlers.get('report:counterparty-transactions')!({}, { counterparty: '李志全', currency: 'CNY', limit: 2, offset: 2 })) as ReportCounterpartyTransactionsResult
+    expect(p1.rows.map((x) => x.balance)).toEqual(['1500', '1000'])
+    // 第二页的余额接着历史走，不从头开始
+    expect(p2.rows.map((x) => x.balance)).toEqual(['600', '300'])
+
+    const ledger = (await handlers.get('report:counterparty-ledger')!()) as ReportCounterpartyLedgerResult
+    expect(ledger.rows.find((x) => x.counterparty === '李志全')!.net).toBe(p1.rows[0]!.balance)
+  })
+
+  it('payee/narration 透出（entries 关联；缺省为 null）', async () => {
+    const db = createDrizzle(openDatabase(':memory:'))
+    seedFlow(db)
+    const r = (await handlersOf(db).get('report:counterparty-transactions')!({}, { counterparty: '李志全', currency: 'CNY', limit: 1 })) as ReportCounterpartyTransactionsResult
+    expect(r.rows[0]!.payee).toBe('李志全')
+    expect(r.rows[0]!.narration).toBe('借出5')
+    expect(r.rows[0]!.account).toBe(LEND)
+  })
+
+  it('未标注对象（counterparty null）单独成流', async () => {
+    const db = createDrizzle(openDatabase(':memory:'))
+    seedFlow(db)
+    const r = (await handlersOf(db).get('report:counterparty-transactions')!({}, { counterparty: null, currency: 'CNY' })) as ReportCounterpartyTransactionsResult
+    expect(r.total).toBe(1)
+    expect(r.rows[0]!.number).toBe('800')
+  })
+
+  it('非法参数 → throw（counterparty 必须显式传、currency 非空、分页范围）', async () => {
+    const db = createDrizzle(openDatabase(':memory:'))
+    seedFlow(db)
+    const call = handlersOf(db).get('report:counterparty-transactions')!
+    await expect(call({}, { currency: 'CNY' })).rejects.toThrow('counterparty')
+    await expect(call({}, { counterparty: '李志全', currency: '' })).rejects.toThrow('currency')
+    await expect(call({}, { counterparty: '李志全', currency: 'CNY', limit: 0 })).rejects.toThrow('limit')
+    await expect(call({}, { counterparty: '李志全', currency: 'CNY', limit: 201 })).rejects.toThrow('limit')
+    await expect(call({}, { counterparty: '李志全', currency: 'CNY', offset: -1 })).rejects.toThrow('offset')
+  })
+
+  it('账户库未标记任何往来类账户 → 空集（不报错）', async () => {
+    const db = createDrizzle(openDatabase(':memory:'))
+    seedFlow(db)
+    const handler = registerWithDeps({ db, counterpartyAccounts: () => [] }).get('report:counterparty-transactions')!
+    expect(await handler({}, { counterparty: '李志全', currency: 'CNY' })).toEqual({ rows: [], total: 0 })
   })
 })

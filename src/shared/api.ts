@@ -43,6 +43,8 @@ import type {
   ReportBreakdownParams,
   ReportBreakdownResult,
   ReportCounterpartyLedgerResult,
+  ReportCounterpartyTransactionsParams,
+  ReportCounterpartyTransactionsResult,
   ResolveConflictParams,
   ResolveConflictResult,
   SaveAiConfigParams,
@@ -150,6 +152,10 @@ export interface BeanWiseApi {
   getBreakdownReport(params: ReportBreakdownParams): Promise<ReportBreakdownResult>
   /** 往来账（谁欠我多少 / 我欠谁多少；往来类账户由账户库 counterparty 标志圈定，空 = 未标记） */
   getCounterpartyLedgerReport(): Promise<ReportCounterpartyLedgerResult>
+  /** 某往来对象的逐笔交易流水（往来账展开行下钻；服务端分页，rows 按日期倒序） */
+  getCounterpartyTransactions(
+    params: ReportCounterpartyTransactionsParams
+  ): Promise<ReportCounterpartyTransactionsResult>
   /** 导出当前报表页为 PDF（printToPDF + 保存对话框；取消 → ok:true 无 path） */
   exportReportPdf(): Promise<ExportReportPdfResult>
   checkForUpdates(): Promise<UpdateCheckResult>

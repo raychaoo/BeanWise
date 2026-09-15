@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { APP_NAME } from '../shared/app'
 import type { BeanWiseApi } from '../shared/api'
 import { UPDATE_STATUS_CHANNEL } from '../shared/ipc'
-import type { AddEntryParams, AiParseParams, ConfigureSyncParams, ExcelImportParams, ExcelImportTemplate, ExcelParseParams, ExcelPreviewParams, GetEntryParams, ListEntriesParams, ReportBalancesParams, ReportBreakdownParams, ReportCashFlowParams, ReportCounterpartyLedgerResult, ReportIncomeExpenseParams, ReportNetWorthParams, ReportTrialBalanceParams, ReportYearsResult, ResolveConflictParams, SaveAccountsParams, SaveAiConfigParams, SaveFileParams, UpdateEntryParams, UpdateState } from '../shared/ipc'
+import type { AddEntryParams, AiParseParams, ConfigureSyncParams, ExcelImportParams, ExcelImportTemplate, ExcelParseParams, ExcelPreviewParams, GetEntryParams, ListEntriesParams, ReportBalancesParams, ReportBreakdownParams, ReportCashFlowParams, ReportCounterpartyLedgerResult, ReportCounterpartyTransactionsParams, ReportCounterpartyTransactionsResult, ReportIncomeExpenseParams, ReportNetWorthParams, ReportTrialBalanceParams, ReportYearsResult, ResolveConflictParams, SaveAccountsParams, SaveAiConfigParams, SaveFileParams, UpdateEntryParams, UpdateState } from '../shared/ipc'
 
 const api: BeanWiseApi = {
   appName: APP_NAME,
@@ -51,6 +51,7 @@ const api: BeanWiseApi = {
   getCashFlowReport: (params: ReportCashFlowParams) => ipcRenderer.invoke('report:cash-flow', params),
   getBreakdownReport: (params: ReportBreakdownParams) => ipcRenderer.invoke('report:breakdown', params),
   getCounterpartyLedgerReport: (): Promise<ReportCounterpartyLedgerResult> => ipcRenderer.invoke('report:counterparty-ledger'),
+  getCounterpartyTransactions: (params: ReportCounterpartyTransactionsParams): Promise<ReportCounterpartyTransactionsResult> => ipcRenderer.invoke('report:counterparty-transactions', params),
   exportReportPdf: () => ipcRenderer.invoke('report:export-pdf'),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   getUpdateStatus: () => ipcRenderer.invoke('update:status'),

@@ -5,8 +5,8 @@
 import { describe, expect, it } from 'vitest'
 import type { AccountBalance } from '../../shared/ipc'
 import type { PostingRow } from './report-aggregation'
-import { buildAccountTree, computeBreakdown, computeCashFlow, computeCounterpartyLedger, computeIncomeExpense, computeNetWorth, computeTrialBalance, periodKey } from './report-aggregation'
-import type { CashFlowPostingRow, CounterpartyPostingRow } from './report-aggregation'
+import { buildAccountTree, computeBreakdown, computeCashFlow, computeCounterpartyFlow, computeCounterpartyLedger, computeIncomeExpense, computeNetWorth, computeTrialBalance, periodKey } from './report-aggregation'
+import type { CashFlowPostingRow, CounterpartyFlowPostingRow, CounterpartyPostingRow } from './report-aggregation'
 
 const rows: PostingRow[] = [
   // 2025-03 收入 + 支出
@@ -502,5 +502,75 @@ describe('computeCounterpartyLedger（往来账：谁欠我多少 / 我欠谁多
 
   it('空输入 → 空数组', () => {
     expect(computeCounterpartyLedger([])).toEqual([])
+  })
+})
+
+describe('computeCounterpartyFlow（往来账展开：逐笔流水 + 累计余额）', () => {
+  const flowRows: CounterpartyFlowPostingRow[] = [
+    // 李志全：05-19 借出 5000 → 06-01 还 1000 → 06-02 借出 3000（同交易两腿，合并成一行）
+    { entryId: 1, date: '2026-05-19', account: 'Assets:Receivables:Lend', number: '5000', currency: 'CNY', counterparty: '李志全', payee: '李志全', narration: '借出' },
+    { entryId: 2, date: '2026-06-01', account: 'Assets:Receivables:Lend', number: '-1000', currency: 'CNY', counterparty: '李志全', payee: null, narration: '还款' },
+    { entryId: 3, date: '2026-06-02', account: 'Assets:Receivables:Lend', number: '2000', currency: 'CNY', counterparty: '李志全', payee: '李志全', narration: null },
+    { entryId: 3, date: '2026-06-02', account: 'Assets:Receivables:Lend', number: '1000', currency: 'CNY', counterparty: '李志全', payee: '李志全', narration: null },
+    // 另一对象 / 未标注对象 / 非往来语义账户（误标）：都不该混进李志全的流水
+    { entryId: 4, date: '2026-06-03', account: 'Assets:Receivables:Lend', number: '200', currency: 'CNY', counterparty: '王五', payee: '王五', narration: null },
+    { entryId: 5, date: '2026-05-01', account: 'Assets:Receivables:Lend', number: '888', currency: 'CNY', counterparty: null, payee: null, narration: '历史' },
+    { entryId: 6, date: '2026-05-02', account: 'Expenses:Food', number: '50', currency: 'CNY', counterparty: '李志全', payee: null, narration: null }
+  ]
+
+  it('按交易分组、最新在前、累计余额逐笔递增；末笔余额 === 主表净额（勾稽）', () => {
+    const r = computeCounterpartyFlow(flowRows, { counterparty: '李志全', currency: 'CNY' })
+    expect(r.map((x) => x.entryId)).toEqual([3, 2, 1])
+    expect(r.map((x) => x.date)).toEqual(['2026-06-02', '2026-06-01', '2026-05-19'])
+    expect(r.map((x) => x.number)).toEqual(['3000', '-1000', '5000'])
+    expect(r.map((x) => x.balance)).toEqual(['7000', '4000', '5000'])
+    // 同 entryId 两腿合并为一行，账户/交易对象/说明取首条
+    expect(r[0]!.account).toBe('Assets:Receivables:Lend')
+    expect(r.map((x) => x.payee)).toEqual(['李志全', null, '李志全'])
+    expect(r.map((x) => x.narration)).toEqual([null, '还款', '借出'])
+    // 勾稽：最新一笔的累计 = 主表该 (对象, 币种) 行的净额
+    expect(r[0]!.balance).toBe(
+      computeCounterpartyLedger(flowRows).find((x) => x.counterparty === '李志全' && x.currency === 'CNY')!.net
+    )
+  })
+
+  it('按币种过滤（主表每对象每币种一行，流水只出该行币种）', () => {
+    const withUsd: CounterpartyFlowPostingRow[] = [
+      ...flowRows,
+      { entryId: 7, date: '2026-06-04', account: 'Assets:Receivables:Lend', number: '100', currency: 'USD', counterparty: '李志全', payee: null, narration: null }
+    ]
+    const r = computeCounterpartyFlow(withUsd, { counterparty: '李志全', currency: 'USD' })
+    expect(r.map((x) => x.number)).toEqual(['100'])
+  })
+
+  it('未标注对象（counterparty null）单独成流，不与有名对象混淆', () => {
+    expect(computeCounterpartyFlow(flowRows, { counterparty: null, currency: 'CNY' })).toEqual([
+      {
+        entryId: 5,
+        date: '2026-05-01',
+        payee: null,
+        narration: '历史',
+        account: 'Assets:Receivables:Lend',
+        number: '888',
+        balance: '888'
+      }
+    ])
+  })
+
+  it('负债侧（我欠对方）：借入记负、归还未负，余额与主表 payable 同口径', () => {
+    const r = computeCounterpartyFlow(
+      [
+        { entryId: 1, date: '2026-01-01', account: 'Liabilities:Loans:Borrow', number: '-2000', currency: 'CNY', counterparty: '张三', payee: null, narration: '借入' },
+        { entryId: 2, date: '2026-01-10', account: 'Liabilities:Loans:Borrow', number: '500', currency: 'CNY', counterparty: '张三', payee: null, narration: '归还' }
+      ],
+      { counterparty: '张三', currency: 'CNY' }
+    )
+    expect(r.map((x) => x.number)).toEqual(['500', '-2000'])
+    expect(r.map((x) => x.balance)).toEqual(['-1500', '-2000'])
+  })
+
+  it('空输入 / 无匹配对象 → 空数组', () => {
+    expect(computeCounterpartyFlow([], { counterparty: '李志全', currency: 'CNY' })).toEqual([])
+    expect(computeCounterpartyFlow(flowRows, { counterparty: '查无此人', currency: 'CNY' })).toEqual([])
   })
 })

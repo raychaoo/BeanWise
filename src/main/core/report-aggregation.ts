@@ -7,7 +7,7 @@ import dayjs from 'dayjs'
 import isoWeek from 'dayjs/plugin/isoWeek'
 import { accountType } from '../../shared/account'
 import { addDecimalStrings, compareDecimalStrings, negateDecimal } from '../../shared/decimal'
-import type { AccountBalance, CashFlowPoint, CounterpartyBalance, IncomeExpensePoint, NetWorthPoint, ReportBreakdownParams, ReportGranularity, ReportYearRange, TrialBalanceRow } from '../../shared/ipc'
+import type { AccountBalance, CashFlowPoint, CounterpartyBalance, CounterpartyFlowRow, IncomeExpensePoint, NetWorthPoint, ReportBreakdownParams, ReportGranularity, ReportYearRange, TrialBalanceRow } from '../../shared/ipc'
 
 dayjs.extend(isoWeek)
 
@@ -481,4 +481,63 @@ export function computeCounterpartyLedger(rows: CounterpartyPostingRow[]): Count
     )
   })
   return out
+}
+
+/**
+ * 往来账流水输入行（ADR 23 展开下钻）：PostingRow + 必带 entryId（按交易分组）+
+ * 对象 + 交易对象/说明。行须已按「往来类账户」过滤（同 CounterpartyPostingRow）。
+ */
+export interface CounterpartyFlowPostingRow extends CounterpartyPostingRow {
+  entryId: number
+  payee: string | null
+  narration: string | null
+}
+
+/**
+ * 往来账流水（ADR 23 展开下钻）：某对象某币种下的逐笔交易，同一 entryId 合并为一行
+ * （一笔交易多腿时账户/交易对象取首条）。口径与 computeCounterpartyLedger 严格一致
+ * （仅 Assets/Liabilities 侧计入、同一符号约定）——故最新一笔的累计 balance === 主表该行 net。
+ * balance 按日期升序累计后整体倒排：倒序只影响阅读顺序，不改累计值（最新在前，流水习惯）。
+ */
+export function computeCounterpartyFlow(
+  rows: CounterpartyFlowPostingRow[],
+  opts: { counterparty: string | null; currency: string }
+): CounterpartyFlowRow[] {
+  const grouped = new Map<
+    number,
+    { date: string; account: string; payee: string | null; narration: string | null; number: string }
+  >()
+  for (const r of rows) {
+    if (r.counterparty !== opts.counterparty || r.currency !== opts.currency) continue
+    const type = accountType(r.account)
+    if (type !== 'Assets' && type !== 'Liabilities') continue
+    const hit = grouped.get(r.entryId)
+    if (hit) hit.number = addDecimalStrings(hit.number, r.number)
+    else {
+      grouped.set(r.entryId, {
+        date: r.date,
+        account: r.account,
+        payee: r.payee,
+        narration: r.narration,
+        number: r.number
+      })
+    }
+  }
+  const asc = [...grouped.entries()]
+    .map(([entryId, g]) => ({ entryId, ...g }))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.entryId - b.entryId)
+  let running = '0'
+  const out: CounterpartyFlowRow[] = asc.map((g) => {
+    running = addDecimalStrings(running, g.number)
+    return {
+      entryId: g.entryId,
+      date: g.date,
+      payee: g.payee,
+      narration: g.narration,
+      account: g.account,
+      number: g.number,
+      balance: running
+    }
+  })
+  return out.reverse()
 }

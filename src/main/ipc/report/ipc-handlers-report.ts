@@ -15,6 +15,8 @@ import type {
   ReportCashFlowParams,
   ReportCashFlowResult,
   ReportCounterpartyLedgerResult,
+  ReportCounterpartyTransactionsParams,
+  ReportCounterpartyTransactionsResult,
   ReportGranularity,
   ReportIncomeExpenseParams,
   ReportIncomeExpenseResult,
@@ -32,11 +34,13 @@ import {
   buildAccountTree,
   computeBreakdown,
   computeCashFlow,
+  computeCounterpartyFlow,
   computeCounterpartyLedger,
   computeIncomeExpense,
   computeNetWorth,
   computeTrialBalance,
   type CashFlowPostingRow,
+  type CounterpartyFlowPostingRow,
   type CounterpartyPostingRow,
   type PostingRow
 } from '../../core/report-aggregation'
@@ -102,6 +106,36 @@ function validateDate(raw: unknown, label: string): string | undefined {
   return raw
 }
 
+/** 解析往来对象（显式 string | null；string 须非空且 ≤200 字——同 listEntries 的 account 上限） */
+function validateCounterparty(raw: unknown): string | null {
+  if (raw === null) return null
+  if (typeof raw !== 'string' || raw.length === 0 || raw.length > 200) {
+    throw new Error('counterparty 必须是不超过 200 字的非空字符串或 null')
+  }
+  return raw
+}
+
+/** 解析币种（非空、≤24 字符——同 AddEntryPosting.currency 上限） */
+function validateCurrency(raw: unknown): string {
+  if (typeof raw !== 'string' || raw.length === 0 || raw.length > 24) {
+    throw new Error('currency 必须是不超过 24 字的非空字符串')
+  }
+  return raw
+}
+
+/** 解析分页参数（limit 缺省 20、上限 200；offset 缺省 0）——展开面板按页取数，不走全量 */
+function validatePaging(raw: { limit?: unknown; offset?: unknown }): { limit: number; offset: number } {
+  const limit = raw.limit === undefined ? 20 : raw.limit
+  const offset = raw.offset === undefined ? 0 : raw.offset
+  if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > 200) {
+    throw new Error('limit 必须是 1..200 的整数')
+  }
+  if (typeof offset !== 'number' || !Number.isInteger(offset) || offset < 0) {
+    throw new Error('offset 必须是不小于 0 的整数')
+  }
+  return { limit, offset }
+}
+
 /**
  * 加载 postings 行（join entries 取日期，按日期升序——累计口径依赖行序）。
  * where 传 SQL 表达式或 undefined（全量）：drizzle 实测 or(like, like) 与 like(..., '%')
@@ -121,6 +155,31 @@ function loadRows(db: DrizzleDb, where: SQL | undefined): PostingRow[] {
     .from(postings)
     .innerJoin(entries, eq(postings.entryId, entries.id))
     .where(where)
+    .orderBy(asc(entries.date), asc(postings.id))
+    .all()
+}
+
+/**
+ * 往来账流水行（ADR 23 展开下钻）：按「往来类账户」过滤，比 loadRows 多取
+ * entries.payee/narration（流水需展示交易对象与说明）。独立 loader 而非给共享 PostingRow
+ * 加可选字段——同 loadLoanRows 先例。
+ */
+function loadFlowRows(db: DrizzleDb, accounts: readonly string[]): CounterpartyFlowPostingRow[] {
+  if (accounts.length === 0) return []
+  return db
+    .select({
+      entryId: entries.id,
+      date: entries.date,
+      account: postings.account,
+      number: postings.unitsNumber,
+      currency: postings.unitsCurrency,
+      counterparty: postings.counterparty,
+      payee: entries.payee,
+      narration: entries.narration
+    })
+    .from(postings)
+    .innerJoin(entries, eq(postings.entryId, entries.id))
+    .where(inArray(postings.account, accounts))
     .orderBy(asc(entries.date), asc(postings.id))
     .all()
 }
@@ -275,6 +334,25 @@ export function registerReportHandlers(ipc: IpcRegistrar, deps: ReportDeps): voi
       accounts
     }
   })
+
+  // report:counterparty-transactions（ADR 23 展开下钻）：某往来对象某币种的逐笔交易流水。
+  // 与 report:counterparty-ledger 同口径（同一往来类账户集合 + 同一符号约定），累计余额按
+  // 全量升序算出后再切片——分页只切输出，不切累计起点，故每页余额都与主表净额勾稽。
+  // 独立成通道而非塞进汇总载荷：展开是少数行才触发的动作，汇总不该背全量流水的传输。
+  ipc.handle(
+    'report:counterparty-transactions',
+    async (_event: unknown, raw: unknown): Promise<ReportCounterpartyTransactionsResult> => {
+      const db = deps.db
+      const params = (raw ?? {}) as ReportCounterpartyTransactionsParams
+      const counterparty = validateCounterparty(params.counterparty)
+      const currency = validateCurrency(params.currency)
+      const { limit, offset } = validatePaging(params)
+      const accounts = deps.counterpartyAccounts?.() ?? []
+      if (accounts.length === 0) return { rows: [], total: 0 }
+      const all = computeCounterpartyFlow(loadFlowRows(db, accounts), { counterparty, currency })
+      return { rows: all.slice(offset, offset + limit), total: all.length }
+    }
+  )
 
   // report:export-pdf（批次 G #8）：webContents.printToPDF → dialog.showSaveDialog → writeFile。
   // 打印样式由渲染端 @media print 隔离（隐藏侧栏/Header/工具栏，.page-scroll 高度 auto）。
