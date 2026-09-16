@@ -12,10 +12,14 @@
  * 渲染体内联新建，导致每次切换都重渲染**所有已挂载 pane** 的全量行（行内 Input/Switch/Tooltip）。
  * 现按 tab 各自持有数据（useTabData，未变化的 tab 沿用旧数组引用）+ AccountsTable memo 化
  * + handlers useCallback 稳定引用，未变化的 pane 整棵跳过，切换只付首次挂载成本。
+ * 搜索（2026-09-16）：页头两个输入框——「名称 / 用途」与「账户路径」两条检索线 AND 叠加，
+ * 纯前端过滤（账户库整份在内存，见 utils/accountSearch）；过滤结果先于分 tab 取数，
+ * 未受影响的 tab 仍旧复用旧引用。输入用 useDeferredValue 降优先级，理由同上面那条性能注记：
+ * 每敲一个字都要重渲染各 pane 的全量行，框本身须保持跟手。
  */
 import { ProTable } from '@ant-design/pro-components'
 import type { ProColumns } from '@ant-design/pro-components'
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
+import { DeleteOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
 import {
   AutoComplete,
   Button,
@@ -34,10 +38,11 @@ import {
   Typography
 } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { ACCOUNT_TYPES, type AccountType } from '../../../../shared/account'
 import type { AccountEntry, AddEntryParams } from '../../../../shared/ipc'
 import { useLedgerStore } from '../../stores/ledger'
+import { matchesAccountSearch } from '../../utils/accountSearch'
 import {
   groupAccountsByTab,
   reuseUnchangedTabs,
@@ -68,6 +73,10 @@ const TAB_ITEMS: Array<{ key: TabKey; label: string }> = [
 const EMPTY_STRINGS: string[] = []
 const EMPTY_TAB_DATA: AccountTabData = groupAccountsByTab([])
 const TABLE_LOCALE = { emptyText: '暂无配置账户' }
+// 搜索无结果为「筛掉了」而非「账户库空了」：文案区分开，否则用户会以为配置丢了
+const TABLE_LOCALE_FILTERED = { emptyText: '无匹配科目' }
+// 表体最大高度：视口减去页面框架（.page-scroll 内边距 + Card 页头与内边距 + 搜索行 + 表头）
+const TABLE_MAX_HEIGHT = 'calc(100vh - 240px)'
 
 /**
  * 每个 tab 一份数据，且未变化的 tab 沿用旧数组引用（见 utils/accountTabs）——
@@ -84,6 +93,8 @@ function useTabData(configured: AccountEntry[]): AccountTabData {
 
 interface AccountsTableProps {
   data: AccountEntry[]
+  /** 搜索是否有生效的检索词（只影响空表文案：筛空 vs 本就没有账户） */
+  filtered: boolean
   usedValues: Set<string>
   onNameChange: (id: number, name: string) => void
   onDescriptionChange: (id: number, description: string) => void
@@ -102,6 +113,7 @@ interface AccountsTableProps {
  */
 const AccountsTable = memo(function AccountsTable({
   data,
+  filtered,
   usedValues,
   onNameChange,
   onDescriptionChange,
@@ -207,8 +219,10 @@ const AccountsTable = memo(function AccountsTable({
       dataSource={data}
       rowKey="id"
       pagination={false}
-      scroll={{ x: 'max-content' }}
-      locale={TABLE_LOCALE}
+      // x：路径是长 token，靠横向滚动保证名称/用途列不被挤压（见 accounts.less）；
+      // y：科目多时表体在视口内自滚动、表头固定，页面不再被表格拉成一长条
+      scroll={{ x: 'max-content', y: TABLE_MAX_HEIGHT }}
+      locale={filtered ? TABLE_LOCALE_FILTERED : TABLE_LOCALE}
       search={false}
       options={false}
       columns={columns}
@@ -232,6 +246,9 @@ export default function AccountsPage() {
   const [usedValues, setUsedValues] = useState<Set<string>>(new Set())
   const [activeTab, setActiveTab] = useState<TabKey>('all')
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // 搜索：两个输入框两条检索线（名称/用途、账户路径），AND 叠加；纯前端过滤（utils/accountSearch）
+  const [nameQuery, setNameQuery] = useState('')
+  const [pathQuery, setPathQuery] = useState('')
   // 批次 I 期初余额 Modal：null = 关闭；开启时记目标账户行 + 三输入
   const [obRecord, setObRecord] = useState<AccountEntry | null>(null)
   const [obAmount, setObAmount] = useState('')
@@ -288,6 +305,9 @@ export default function AccountsPage() {
     setNewDescription('')
     setNewValue('')
     setDrawerOpen(false)
+    // 搜索态下新科目未必命中检索词（否则用户也不会去新增）→ 清空两框，保证新行可见
+    setNameQuery('')
+    setPathQuery('')
   }
 
   // 下面几个 handler 直接作为 memo 表格的 props → 一律 useCallback 稳定引用，
@@ -390,8 +410,20 @@ export default function AccountsPage() {
     if (ok) message.success('账户配置已保存')
   }
 
-  // 各 tab 一份数据（引用稳定），不再让六个 pane 共用同一份全量 filtered
-  const byTab = useTabData(configured)
+  // 搜索为纯前端过滤：账户库整份已在内存（getAccountConfig 一次取全量），无需新增 IPC。
+  // useDeferredValue 让输入框保持跟手——每敲一个字都会让含匹配行的 pane 全量重渲染
+  // （行内是 Input/Switch/Tooltip），与上面「切 tab 卡顿」同源，交给 React 在表格之间让出主线程。
+  const deferredName = useDeferredValue(nameQuery)
+  const deferredPath = useDeferredValue(pathQuery)
+  const searching = deferredName.trim() !== '' || deferredPath.trim() !== ''
+  const filtered = useMemo(
+    () => configured.filter((e) => matchesAccountSearch(e, deferredName, deferredPath)),
+    [configured, deferredName, deferredPath]
+  )
+
+  // 各 tab 一份数据（引用稳定），不再让六个 pane 共用同一份全量 filtered；
+  // 搜索在分组之前过滤——未受检索词影响的 tab 仍能逐元素判等复用旧引用
+  const byTab = useTabData(filtered)
 
   return (
     <div className="accounts-view">
@@ -404,6 +436,29 @@ export default function AccountsPage() {
           </Space>
         }
       >
+        <div className="account-search-bar">
+          <Input
+            allowClear
+            className="account-search-bar__name"
+            prefix={<SearchOutlined />}
+            placeholder="搜索名称 / 用途"
+            value={nameQuery}
+            onChange={(e) => setNameQuery(e.target.value)}
+          />
+          <Input
+            allowClear
+            className="account-search-bar__path"
+            prefix={<SearchOutlined />}
+            placeholder="搜索账户路径"
+            value={pathQuery}
+            onChange={(e) => setPathQuery(e.target.value)}
+          />
+          {searching && (
+            <Typography.Text type="secondary">
+              筛选出 {filtered.length} 个科目
+            </Typography.Text>
+          )}
+        </div>
         <Tabs
           tabPosition="left"
           activeKey={activeTab}
@@ -414,6 +469,7 @@ export default function AccountsPage() {
             children: (
               <AccountsTable
                 data={byTab[t.key]}
+                filtered={searching}
                 usedValues={usedValues}
                 onNameChange={handleNameChange}
                 onDescriptionChange={handleDescriptionChange}

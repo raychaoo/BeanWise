@@ -1,6 +1,7 @@
 /**
  * 对账页：Tab① 三栏式科目余额表（批次 G #5：report:trial-balance，期初/发生/期末，
- * 每账户每币种一行；顶部日期 RangePicker → dateFrom/dateTo；币种 CheckableTag 筛选）
+ * 每账户每币种一行；顶部日期 RangePicker → dateFrom/dateTo；币种 CheckableTag 筛选；
+ * 2026-09-16 追加账户搜索框——按中文名或原始路径过滤，纯前端（行已在内存），表体视口内滚动）
  * + Tab② 明细账（批次 F）：账户 TreeSelect（五大类分组）→ listEntries 服务端 account
  * 精确过滤 + 交易对象/说明关键词 + 独立金额框（InputNumber，不与文本搜索混用，见 ADR 25）
  * + order desc 分页查询；显示稳定 ID 与秒级交易时间，复用 EntryEditDrawer 按 ID 编辑。
@@ -12,10 +13,11 @@ import type { ProColumns } from '@ant-design/pro-components'
 import { EditOutlined, SearchOutlined } from '@ant-design/icons'
 import { Alert, Button, DatePicker, Empty, Input, InputNumber, Space, Spin, Tabs, Tag, Tooltip, TreeSelect, Typography } from 'antd'
 import type { Dayjs } from 'dayjs'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import type { LedgerEntryRow, ListEntriesFilters, ReportTrialBalanceParams, TrialBalanceCell, TrialBalanceRow } from '../../../../shared/ipc'
 import { useLedgerStore } from '../../stores/ledger'
 import type { AccountOption } from '../../stores/ledger'
+import { matchesAccountLabel } from '../../utils/accountSearch'
 import { formatAmount } from '../../utils/format'
 import EntryEditDrawer from '../entries/EntryEditDrawer'
 import '../../styles/views/reconcile.less'
@@ -62,6 +64,9 @@ function buildAccountTree(options: AccountOption[]) {
 }
 
 const DETAIL_PAGE_SIZE = 20
+
+// 表体最大高度：视口减去页面框架（.page-scroll 内边距 + Tabs 导航 + 工具栏 + 表头）
+const TABLE_MAX_HEIGHT = 'calc(100vh - 220px)'
 
 /** 明细账 Tab（批次 F）：单一账户的服务端分页查询，选择即查，切换账户重置页码 */
 function DetailLedgerTab() {
@@ -318,10 +323,12 @@ function DetailLedgerTab() {
 
 export default function ReconcilePage() {
   const accountOptions = useLedgerStore((s) => s.accountOptions)
-  const accountNameMap = new Map(accountOptions.map((o) => [o.value, o.label]))
+  // 账户名映射要参与搜索的 useMemo 依赖，故稳定引用（原来每次渲染新建 Map）
+  const accountNameMap = useMemo(() => new Map(accountOptions.map((o) => [o.value, o.label])), [accountOptions])
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null)
   const [rows, setRows] = useState<TrialBalanceRow[]>([])
   const [currencyFilter, setCurrencyFilter] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -349,7 +356,16 @@ export default function ReconcilePage() {
   // 币种筛选：Tag 从当前数据派生；筛选币种随数据消失时自动退化为「全部」（防空表困惑）
   const currencies = useMemo(() => [...new Set(rows.map((r) => r.opening.currency))].sort(), [rows])
   const effectiveFilter = currencyFilter !== null && currencies.includes(currencyFilter) ? currencyFilter : null
-  const visibleRows = effectiveFilter === null ? rows : rows.filter((r) => r.opening.currency === effectiveFilter)
+  // 账户搜索：纯前端过滤（余额表一次返回全部行，不需要服务端通道 + 分页）；
+  // useDeferredValue 让输入框跟手——本表无分页，每敲一个字都要重渲染全部行。
+  // 币种 Tag 仍从全量派生，不随搜索收缩（否则清空搜索前币种选项就没了）。
+  const deferredQuery = useDeferredValue(query)
+  const searching = deferredQuery.trim() !== ''
+  const visibleRows = useMemo(() => {
+    const byCurrency = effectiveFilter === null ? rows : rows.filter((r) => r.opening.currency === effectiveFilter)
+    if (!searching) return byCurrency
+    return byCurrency.filter((r) => matchesAccountLabel(accountNameMap.get(r.name) ?? r.name, r.name, deferredQuery))
+  }, [rows, effectiveFilter, searching, deferredQuery, accountNameMap])
 
   const columns: ProColumns<TrialBalanceRow>[] = [
     {
@@ -360,9 +376,11 @@ export default function ReconcilePage() {
         return label === row.name ? row.name : <Tooltip title={row.name}>{label}</Tooltip>
       }
     },
-    { title: '期初', dataIndex: 'opening', align: 'right', render: (_dom: unknown, row: TrialBalanceRow) => <TrialBalanceCellView cell={row.opening} /> },
-    { title: '发生', dataIndex: 'period', align: 'right', render: (_dom: unknown, row: TrialBalanceRow) => <TrialBalanceCellView cell={row.period} /> },
-    { title: '期末', dataIndex: 'closing', align: 'right', render: (_dom: unknown, row: TrialBalanceRow) => <TrialBalanceCellView cell={row.closing} /> }
+    // 三个金额列定宽：加了 scroll.y 之后 rc-table 强制 tableLayout: fixed，
+    // 无宽度声明的列会平分剩余宽度（「0 CNY」也占一整列）——定宽后富余宽度归账户列
+    { title: '期初', dataIndex: 'opening', width: 160, align: 'right', render: (_dom: unknown, row: TrialBalanceRow) => <TrialBalanceCellView cell={row.opening} /> },
+    { title: '发生', dataIndex: 'period', width: 160, align: 'right', render: (_dom: unknown, row: TrialBalanceRow) => <TrialBalanceCellView cell={row.period} /> },
+    { title: '期末', dataIndex: 'closing', width: 160, align: 'right', render: (_dom: unknown, row: TrialBalanceRow) => <TrialBalanceCellView cell={row.closing} /> }
   ]
 
   const balanceTable = (
@@ -389,6 +407,15 @@ export default function ReconcilePage() {
             ))}
           </Space>
         )}
+        {/* 账户搜索（2026-09-16）：中文名与原始路径任一命中；纯前端过滤，与币种筛选 AND 叠加 */}
+        <Input
+          allowClear
+          className="reconcile-trial-search"
+          prefix={<SearchOutlined />}
+          placeholder="搜索账户名称"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
       </div>
       {error && <Alert type="error" showIcon style={{ marginBottom: 12 }} message={error} />}
       <Spin spinning={loading}>
@@ -398,7 +425,11 @@ export default function ReconcilePage() {
           dataSource={visibleRows}
           columns={columns}
           pagination={false}
-          locale={{ emptyText: <Empty description="暂无余额数据，请先录入账目" /> }}
+          // 科目多时表体在视口内自滚动、表头固定（无 y 则整表被页面拉成一长条）
+          scroll={{ x: 'max-content', y: TABLE_MAX_HEIGHT }}
+          locale={{
+            emptyText: <Empty description={searching ? '无匹配账户' : '暂无余额数据，请先录入账目'} />
+          }}
           search={false}
           options={false}
         />

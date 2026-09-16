@@ -2,7 +2,7 @@
  * E2E fixture 副本工具（M4）：main.beancount 副本 → 临时文件。
  * 绿灯链路对账本做写入断言，必须用副本保护 fixture 原文件。
  */
-import { copyFileSync, mkdtempSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { Page } from '@playwright/test'
@@ -15,6 +15,16 @@ export function createFixtureCopy(): string {
   const target = join(dir, 'main.beancount')
   copyFileSync(FIXTURE_SOURCE, target)
   return target
+}
+
+/**
+ * 预置账户库配置（`<workspace>/.beanwise/accounts.json`）——须在 `activateWorkspace` 前写入，
+ * 之后渲染端 reload 才能读到（账户中文名映射依赖它）。
+ */
+export function seedAccountConfig(ledgerPath: string, accounts: unknown[]): void {
+  const dir = join(dirname(ledgerPath), '.beanwise')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'accounts.json'), JSON.stringify({ accounts }, null, 2), 'utf8')
 }
 
 /** 清理副本所在临时目录 */

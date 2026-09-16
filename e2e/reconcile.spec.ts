@@ -2,11 +2,11 @@
  * 对账页 E2E（批次 F）：明细账 Tab 账户过滤接真数据（超 UI 层 #2 收尾）。
  * 进对账页 → Tab② TreeSelect 选 Expenses:Food → 表格出现该账户分录行且账户列含 Food。
  */
-import { _electron as electron, expect, test, type Page } from '@playwright/test'
+import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { cleanupFixture, createFixtureCopy } from './fixtures/setup'
+import { cleanupFixture, createFixtureCopy, seedAccountConfig } from './fixtures/setup'
 
 // GitHub Actions 的 ubuntu runner 无 user namespaces，需关 Chromium 沙箱；本机 Windows 不用
 const launchArgs = process.env['CI'] ? ['.', '--no-sandbox'] : ['.']
@@ -81,6 +81,55 @@ test('批次 F：明细账账户过滤（TreeSelect 选 Expenses:Food → 该账
     await app.close()
   } finally {
     cleanupFixture(ledgerPath)
+  }
+})
+
+test('对账科目余额表：账户搜索（中文名 / 原始路径任一命中）+ 表体视口滚动', async () => {
+  const ledgerPath = createFixtureCopy()
+  // 账户库给中文名：不然 label === 路径，只剩「按路径搜」一条线可验
+  seedAccountConfig(ledgerPath, [
+    { id: 1, name: '招商银行', value: 'Assets:Bank:CNB' },
+    { id: 2, name: '吃饭', value: 'Expenses:Food' }
+  ])
+  let app: ElectronApplication | undefined
+  try {
+    app = await electron.launch({ args: launchArgs })
+    const win = await app.firstWindow()
+    await activateWorkspace(win, ledgerPath)
+
+    await win.getByRole('menuitem', { name: '对账' }).click()
+    // Tab① 科目余额表为默认激活页：余额行 = 有分录的账户（fixture 两个，各 1 币种）
+    const pane = win.locator('.ant-tabs-tabpane-active')
+    const rows = pane.locator('.ant-table-tbody .ant-table-row')
+    await expect(rows).toHaveCount(2, { timeout: 15_000 })
+    await expect(pane).toContainText('招商银行')
+    await expect(pane).toContainText('吃饭')
+
+    // 表体滚动条（2026-09-16）：y 触发 rc-table 固定表头（表头/表体拆两个 table），
+    // 表体挂 maxHeight + overflowY——只配 x 时不会有 .ant-table-body 这个节点
+    await expect(pane.locator('.ant-table-body')).toHaveCSS('overflow-y', 'scroll')
+
+    const search = win.getByPlaceholder('搜索账户名称')
+    // 中文名命中（label ≠ path 时表格只显示中文名）
+    await search.fill('招商')
+    await expect(rows).toHaveCount(1)
+    await expect(pane).toContainText('招商银行')
+    // 原始路径同样命中（用户可能记得路径）
+    await search.fill('food')
+    await expect(rows).toHaveCount(1)
+    await expect(pane).toContainText('吃饭')
+    // 无匹配：空态文案与「暂无余额数据」区分
+    await search.fill('不存在')
+    await expect(pane.locator('.ant-table-placeholder')).toContainText('无匹配账户')
+    // allowClear 清空 → 恢复全量
+    await pane.locator('.reconcile-trial-search .ant-input-clear-icon').click()
+    await expect(rows).toHaveCount(2)
+
+    await app.close()
+  } finally {
+    await app?.close().catch(() => {})
+    // 断言失败时 app 仍在运行、SQLite 句柄未释放 → 重试封顶（线性退避，20 次 ≈ 21s）快速报错
+    rmSync(dirname(ledgerPath), { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
   }
 })
 

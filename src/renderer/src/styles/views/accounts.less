@@ -12,3 +12,20 @@
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+
+// 搜索行（2026-09-16）：名称/用途 + 账户路径两个独立输入框，两条检索线 AND 叠加
+.account-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+
+  .account-search-bar__name {
+    width: 240px;
+  }
+
+  .account-search-bar__path {
+    width: 280px;
+  }
+}

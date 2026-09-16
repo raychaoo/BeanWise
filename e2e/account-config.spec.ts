@@ -1,20 +1,13 @@
-import { _electron as electron, expect, test } from '@playwright/test'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test'
+import { readFileSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { cleanupFixture, createFixtureCopy } from './fixtures/setup'
+import { cleanupFixture, createFixtureCopy, seedAccountConfig } from './fixtures/setup'
 
 // GitHub Actions 的 ubuntu runner 无 user namespaces，需关 Chromium 沙箱；本机 Windows 不用
 const launchArgs = process.env['CI'] ? ['.', '--no-sandbox'] : ['.']
 
 // 并行批次 e2e / 多会话并跑时 CPU 饱载，渲染与 IPC 往返显著变慢：整体放宽单测预算
 test.setTimeout(240_000)
-
-/** 预置账户库配置（<workspace>/.beanwise/accounts.json），激活工作区前写入 */
-function seedAccountConfig(workspaceDir: string, accounts: unknown[]): void {
-  mkdirSync(join(workspaceDir, '.beanwise'), { recursive: true })
-  writeFileSync(join(workspaceDir, '.beanwise', 'accounts.json'), JSON.stringify({ accounts }, null, 2), 'utf8')
-}
 
 /** E2E 不复用全局工作目录；显式激活临时目录后重载（同 ledger-index.spec.ts）。 */
 async function launchWithWorkspace(ledgerPath: string) {
@@ -53,7 +46,7 @@ test('启停用：账户页停用并保存 → enabled 落盘 → 录入下拉�
   const ledgerPath = createFixtureCopy()
   const accountsPath = join(dirname(ledgerPath), '.beanwise', 'accounts.json')
   try {
-    seedAccountConfig(dirname(ledgerPath), [
+    seedAccountConfig(ledgerPath, [
       { id: 1, name: '银行卡', value: 'Assets:Bank:CNB' },
       { id: 2, name: '旧账户', value: 'Assets:Old', enabled: false },
       { id: 3, name: '吃饭', value: 'Expenses:Food' }
@@ -116,7 +109,7 @@ test('启停用：账户页停用并保存 → enabled 落盘 → 录入下拉�
 test('期初余额：账户页录入 → 走 add-entry 落账本（Equity 配对 + 未 open 账户自动补 open）→ 索引平衡', async () => {
   const ledgerPath = createFixtureCopy()
   try {
-    seedAccountConfig(dirname(ledgerPath), [
+    seedAccountConfig(ledgerPath, [
       { id: 1, name: '银行卡', value: 'Assets:Bank:CNB' },
       { id: 2, name: '现金', value: 'Assets:Cash' } // fixture 未 open → 实测主进程自动补 open 行
     ])
@@ -164,5 +157,64 @@ test('期初余额：账户页录入 → 走 add-entry 落账本（Equity 配对
     await app.close()
   } finally {
     cleanupFixture(ledgerPath)
+  }
+})
+
+test('科目管理搜索：名称/用途 + 账户路径两个输入框（AND 叠加、清空复原、表体滚动）', async () => {
+  const ledgerPath = createFixtureCopy()
+  let app: ElectronApplication | undefined
+  try {
+    seedAccountConfig(ledgerPath, [
+      { id: 1, name: '招商银行', value: 'Assets:Bank:CNB', description: '工资卡' },
+      { id: 2, name: '现金', value: 'Assets:Cash', description: '备用零钱' },
+      { id: 3, name: '吃饭', value: 'Expenses:Food', description: '日常餐饮' }
+    ])
+    const launched = await launchWithWorkspace(ledgerPath)
+    app = launched.app
+    const win = launched.win
+
+    const tbody = win.locator('.ant-table-tbody')
+    const rows = tbody.locator('.ant-table-row')
+    await expect(rows).toHaveCount(3, { timeout: 20000 })
+
+    // 表体滚动条（2026-09-16）：y 触发 rc-table 固定表头（表头/表体拆两个 table），
+    // 表体挂 maxHeight + overflowY——只配 x 时不会有 .ant-table-body 这个节点
+    await expect(win.locator('.ant-table-body')).toHaveCSS('overflow-y', 'scroll')
+
+    const nameSearch = win.getByPlaceholder('搜索名称 / 用途')
+    const pathSearch = win.getByPlaceholder('搜索账户路径')
+
+    // 名称/用途列渲染的是 Input（值不在文本内容里，读不出 textContent），
+    // 故「剩下哪一行」按路径列文本判定——它是 Typography.Text，有真实文本。
+    await nameSearch.fill('招商')
+    await expect(rows).toHaveCount(1)
+    await expect(tbody).toContainText('Assets:Bank:CNB')
+    // 同一框也命中「用途」
+    await nameSearch.fill('备用')
+    await expect(rows).toHaveCount(1)
+    await expect(tbody).toContainText('Assets:Cash')
+
+    // 路径线独立成框，大小写不敏感
+    await nameSearch.fill('')
+    await pathSearch.fill('expenses')
+    await expect(rows).toHaveCount(1)
+    await expect(tbody).toContainText('Expenses:Food')
+
+    // 两条线 AND 叠加：名称命中 + 路径不命中 → 空表，文案区别于「暂无配置账户」
+    await nameSearch.fill('招商')
+    await expect(rows).toHaveCount(0)
+    await expect(win.locator('.ant-table-placeholder')).toContainText('无匹配科目')
+
+    // 清空两框复原全量
+    await nameSearch.fill('')
+    await pathSearch.fill('')
+    await expect(rows).toHaveCount(3)
+
+    await app.close()
+  } finally {
+    await app?.close().catch(() => {})
+    // 断言失败时 app 仍在运行、SQLite 句柄未释放 → 重试封顶（线性退避，20 次 ≈ 21s）快速报错，
+    // 不用 cleanupFixture：它按 120 次线性退避上限约 30 分钟，失败时久等不报
+    rmSync(dirname(ledgerPath), { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
   }
 })
