@@ -241,7 +241,7 @@
   font-size: 13px;
 }
 
-// ---------- 最近流水：可读列表（等宽数字 + 正负色 + 单行信息层级）----------
+// ---------- 最近流水：可读列表（等宽数字 + 交易性质色 + 单行信息层级）----------
 .entry-recent-title {
   font-size: 12px;
   color: var(--bw-text-secondary);
@@ -307,8 +307,15 @@
   color: var(--bw-text-base);
   white-space: nowrap;
 
-  &.num-negative {
-    color: var(--bw-negative);
+  // 金额由 AmountCell 渲染（类型标签 + 按交易性质着色）：列窄，标签与金额收紧间距，
+  // 并把标签压到 9px，免得挤掉「交易对象」列的可读宽度
+  .amount-cell {
+    gap: 4px;
+  }
+
+  .tx-kind {
+    font-size: 9px;
+    padding: 2px 4px;
   }
 }
 

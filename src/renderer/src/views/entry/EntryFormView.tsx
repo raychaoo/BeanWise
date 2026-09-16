@@ -11,8 +11,8 @@ import type { AddEntryParams } from '../../../../shared/ipc'
 import { useEntryFormStore } from '../../stores/entry-form'
 import { useLedgerStore } from '../../stores/ledger'
 import { useAiStore } from '../../stores/ai'
-import { formatAmount } from '../../utils/format'
 import '../../styles/views/entry.less'
+import AmountCell from '../entries/AmountCell'
 import AiEntryDrawer from './AiEntryDrawer'
 import EntryForm from './EntryForm'
 import ExcelImportDrawer from './ExcelImportDrawer'
@@ -121,7 +121,6 @@ export default function EntryFormView() {
           <ul className="entry-recent-list">
             {recentEntries.slice(0, 20).map((e) => {
               const accountLabel = e.pnlAccount !== null ? (accountNameMap.get(e.pnlAccount) ?? e.pnlAccount) : null
-              const negative = e.amount !== null && e.amount.startsWith('-')
               const headline = e.payee ?? e.narration ?? '—'
               return (
                 <li key={e.id} className="entry-recent-item">
@@ -132,8 +131,10 @@ export default function EntryFormView() {
                       <span className="entry-recent-account">{accountLabel}</span>
                     )}
                   </span>
-                  <span className={`entry-recent-amount${negative ? ' num-negative' : ''}`}>
-                    {e.amount !== null ? `${formatAmount(e.amount)} ${e.currency ?? ''}`.trimEnd() : '—'}
+                  {/* 与明细页 / 对账明细账共用 AmountCell：类型标签 + 按交易性质着色（口径单源，
+                      顺带补上 flowAmount 兜底——借出/还款/转账的 amount 按设计为 null） */}
+                  <span className="entry-recent-amount">
+                    <AmountCell row={e} />
                   </span>
                 </li>
               )

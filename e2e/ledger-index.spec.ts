@@ -262,9 +262,14 @@ test('M4+ 明细：服务端倒序/正序、时间筛选与关键词搜索（超
     await amountSearch.fill('')
     await expect(dataRows).toHaveCount(5, { timeout: 10_000 })
 
-    // 录入页最近流水卡显示交易金额（超 UI 层 #1，资产流视角：支出负）
+    // 录入页最近流水卡显示交易金额（超 UI 层 #1，资产流视角：支出负）+ 类型标记
+    // （与明细页/对账明细账共用 AmountCell：Coffee 属支出类目 → 「支出」标签 + 支出色。
+    //   列表按日期倒序，首行即 Coffee -25，与明细页 dataRows.first() 同一笔）
     await win.getByRole('menuitem', { name: '录入' }).click()
     await expect(win.locator('.entry-recent-list')).toContainText('-15 CNY')
+    const recentFirst = win.locator('.entry-recent-list li').first()
+    await expect(recentFirst.locator('.tx-kind')).toHaveText('支出')
+    await expect(recentFirst.locator('.num--expense')).toContainText('-25 CNY')
 
     await app.close()
   } finally {
