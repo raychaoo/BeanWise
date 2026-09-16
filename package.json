@@ -14,7 +14,7 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test:unit": "vitest run",
-    "test:e2e": "npm run build && playwright test",
+    "test:e2e": "playwright test",
     "dist:win": "npm run build && electron-builder --win",
     "build:python": "node scripts/build-python.mjs",
     "postinstall": "node scripts/postinstall.mjs"
