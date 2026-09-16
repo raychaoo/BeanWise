@@ -1,6 +1,8 @@
-// 与 src/renderer/src/theme/tokens.ts 的 BW_COLORS / BW_COLORS_DARK 保持同步（修改任一侧必须同步另一侧）
+// 主题语义色与 src/renderer/src/theme/tokens.ts 的 ThemePalette 保持同步（修改任一侧必须同步另一侧）
 // antd token 需真实色值（色板算法不能用 CSS var），Less 侧同名变量作运行期兜底。
 // 明暗双档：:root（默认亮色）+ [data-theme='dark']（暗色，由 useTheme 切换 html 属性）。
+// 例外：--bw-ink-*（交易金额文字色）是**主题无关**的固定语义色，只此一处、不进 tokens.ts——
+// 与 --bw-negative 同理（交易性质在任何主题色下含义相同）。
 
 // ---- Less 变量（编译期，供 @bw-* 引用）----
 @bw-primary: #1d39c4;
@@ -36,6 +38,22 @@
   --bw-inflow-soft: rgba(8, 151, 156, 0.08);
   --bw-outflow-soft: rgba(212, 107, 8, 0.1);
   --bw-negative-soft: rgba(207, 19, 34, 0.08);
+
+  // ---- 交易金额 ink 色（明细类表格的金额文字与类型标签，2026-09-16）----
+  // 色编码的是**会计性质，不是资金方向**：青=形成收益、橙=形成费用、
+  // 靛=只变债权债务（借出/借入/收回/还款）、灰=纯内部搬移（转账/权益调整）。
+  // 与 --bw-negative 一样是**固定语义色**，不随主题色变化（交易性质在任何主题下含义相同）。
+  // 单独一档而非复用 --bw-inflow/--bw-outflow：那两个是图表/填充用的语义色，直接当文字色
+  // 对比度不足（#08979c 与 #d46b08 对浅色底仅 3.31:1，低于正文 AA 的 4.5:1）。
+  // 下列取值按 WCAG 相对亮度实测，取每档最不利的底色（亮：#f5f7fa 布局底；暗：#1e293b 分录底）。
+  --bw-ink-income: #0f766e; // 5.10:1
+  --bw-ink-expense: #a8500a; // 5.13:1
+  --bw-ink-lend: #4338ca; // 7.36:1
+  --bw-ink-neutral: #475569; // 7.06:1
+  --bw-ink-income-soft: rgba(15, 118, 110, 0.1);
+  --bw-ink-expense-soft: rgba(168, 80, 10, 0.1);
+  --bw-ink-lend-soft: rgba(67, 56, 202, 0.1);
+  --bw-ink-neutral-soft: rgba(71, 85, 105, 0.08);
 }
 
 // 暗色档：覆盖 CSS 变量（antd 组件色板由 ConfigProvider darkAlgorithm 派生，此处仅补语义色）
@@ -58,4 +76,14 @@
   --bw-inflow-soft: rgba(44, 203, 201, 0.1);
   --bw-outflow-soft: rgba(245, 165, 61, 0.12);
   --bw-negative-soft: rgba(255, 77, 79, 0.1);
+
+  // 交易金额 ink 色（暗档提亮，实测对比度见 :root 处的注记）
+  --bw-ink-income: #2ccbc9; // 7.31:1
+  --bw-ink-expense: #f5a53d; // 7.20:1
+  --bw-ink-lend: #9aa2fb; // 6.22:1
+  --bw-ink-neutral: #94a3b8; // 5.71:1
+  --bw-ink-income-soft: rgba(44, 203, 201, 0.12);
+  --bw-ink-expense-soft: rgba(245, 165, 61, 0.12);
+  --bw-ink-lend-soft: rgba(154, 162, 251, 0.14);
+  --bw-ink-neutral-soft: rgba(148, 163, 184, 0.12);
 }

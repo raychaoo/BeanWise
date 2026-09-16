@@ -87,7 +87,7 @@ test('M6 绿灯：配置空仓 → 保存自动 push → 裸仓可见', async ()
 
     await app.close()
   } finally {
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
     await server.close()
     rmSync(bareDir, { recursive: true, force: true })
   }
@@ -149,7 +149,7 @@ test('M6 冲突：远端已有不同内容 → 配置即冲突 → 采用远端 
 
     await app.close()
   } finally {
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
     await server.close()
     rmSync(bareDir, { recursive: true, force: true })
   }
@@ -185,7 +185,7 @@ test('M6 拉取：远端新增 → 手动拉取 → 文件更新 + 明细联动'
 
     await app.close()
   } finally {
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
     await server.close()
     rmSync(bareDir, { recursive: true, force: true })
   }

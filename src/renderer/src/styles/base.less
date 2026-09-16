@@ -27,6 +27,67 @@ body,
   color: var(--bw-negative); // 仅负数/赤字（与 --bw-negative 一致）
 }
 
+// ---- 交易金额的类型标记（明细页 / 对账明细账，2026-09-16）----
+// 色编码**会计性质**而非资金方向（青收益 / 橙费用 / 靛债权债务 / 灰内部搬移，见 tokens.less）；
+// 红色只留给「负数/赤字」，金额列不再用 .num-negative——借出是正数，靠正负号着不了色。
+// block 级 flex（非 inline-flex）：撑满单元格宽度后靠 flex-end 右对齐，
+// 各行的数字右边缘才对得齐——inline-flex 只会按内容收缩、由父级 text-align 决定位置，
+// 于是「-17.4」与「8,000.00」的右缘一个前一个后，金额列失去数位感。
+.amount-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+// 类型标签：颜色之外的第二重标记（色觉障碍 / 灰度打印 / 类型图例），hover 出完整口径说明
+.tx-kind {
+  flex: none;
+  font-family: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 3px;
+  cursor: help;
+}
+
+.num--income,
+.tx-kind--income {
+  color: var(--bw-ink-income);
+}
+
+.num--expense,
+.tx-kind--expense {
+  color: var(--bw-ink-expense);
+}
+
+.num--lend,
+.tx-kind--lend {
+  color: var(--bw-ink-lend);
+}
+
+.num--neutral,
+.tx-kind--neutral {
+  color: var(--bw-ink-neutral);
+}
+
+.tx-kind--income {
+  background: var(--bw-ink-income-soft);
+}
+
+.tx-kind--expense {
+  background: var(--bw-ink-expense-soft);
+}
+
+.tx-kind--lend {
+  background: var(--bw-ink-lend-soft);
+}
+
+.tx-kind--neutral {
+  background: var(--bw-ink-neutral-soft);
+}
+
 // 主内容区滚动条（细圆角，跟随主题）
 .page-scroll {
   &::-webkit-scrollbar {

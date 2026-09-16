@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { accountDisplay, amountDisplay } from './entryRowDisplay'
+import type { TxKind } from '../../../../shared/ipc'
+import { TX_KIND_META, accountDisplay, amountDisplay } from './entryRowDisplay'
 
 /** 账户库中文名映射（未命中回落路径本身，与 EntriesView 的 nameOf 同口径） */
 const LABELS: Record<string, string> = {
@@ -20,6 +21,7 @@ const row = (patch: Partial<Row> = {}): Row => ({
   amount: null,
   currency: null,
   flowAmount: null,
+  txKind: null,
   ...patch
 })
 
@@ -65,23 +67,30 @@ describe('accountDisplay（明细页「账户」列取值）', () => {
 })
 
 describe('amountDisplay（明细页「金额」列取值）', () => {
-  it('损益金额 → 千分位 + 币种后缀，负数为红（资产流视角）', () => {
-    expect(amountDisplay(row({ amount: '-1234.5', currency: 'CNY' }))).toEqual({
+  it('损益金额 → 千分位 + 币种后缀；kind 透出给渲染层着色', () => {
+    expect(amountDisplay(row({ amount: '-1234.5', currency: 'CNY', txKind: 'expense' }))).toEqual({
       text: '-1,234.5 CNY',
-      negative: true
+      kind: 'expense'
     })
-    expect(amountDisplay(row({ amount: '25', currency: 'CNY' }))).toEqual({ text: '25 CNY', negative: false })
+    expect(amountDisplay(row({ amount: '25', currency: 'CNY', txKind: 'income' }))).toEqual({
+      text: '25 CNY',
+      kind: 'income'
+    })
   })
 
   it('无币种 → 仅金额（不输出尾随空格）', () => {
     expect(amountDisplay(row({ amount: '-15' }))?.text).toBe('-15')
   })
 
-  it('账内搬移 → 显发生额且不着色（搬移不产生损益，正负号无意义）', () => {
-    expect(amountDisplay(row({ flowAmount: '3000', currency: 'CNY' }))).toEqual({
+  it('账内搬移 → 显发生额（借出：正数且不是收入，着色只能靠 kind）', () => {
+    expect(amountDisplay(row({ flowAmount: '3000', currency: 'CNY', txKind: 'lend' }))).toEqual({
       text: '3,000 CNY',
-      negative: false
+      kind: 'lend'
     })
+  })
+
+  it('withCurrency:false → 币种由独立列承载，金额不带后缀（对账明细账）', () => {
+    expect(amountDisplay(row({ flowAmount: '3000', currency: 'CNY' }), { withCurrency: false })?.text).toBe('3,000')
   })
 
   it('损益金额优先于搬移发生额（两者互斥，同真时以损益为准）', () => {
@@ -90,5 +99,38 @@ describe('amountDisplay（明细页「金额」列取值）', () => {
 
   it('两者皆空 → null（渲染为「—」，如 Open 条目）', () => {
     expect(amountDisplay(row({}))).toBeNull()
+  })
+})
+
+describe('TX_KIND_META（类型标记：色之外的第二重标记）', () => {
+  const ALL_KINDS: TxKind[] = [
+    'income',
+    'expense',
+    'lend',
+    'borrow',
+    'recover',
+    'repay',
+    'transfer',
+    'equity'
+  ]
+
+  it('8 种交易类型全部配有标签/色调/说明（漏配会让金额列静默不带标记）', () => {
+    for (const k of ALL_KINDS) {
+      expect(TX_KIND_META[k]?.label, k).toBeTruthy()
+      expect(TX_KIND_META[k]?.hint, k).toBeTruthy()
+      expect(['income', 'expense', 'lend', 'neutral'], k).toContain(TX_KIND_META[k]?.tone)
+    }
+    expect(Object.keys(TX_KIND_META).sort()).toEqual([...ALL_KINDS].sort())
+  })
+
+  it('标签两两不同（标签是色觉障碍用户唯一的区分手段）', () => {
+    const labels = ALL_KINDS.map((k) => TX_KIND_META[k].label)
+    expect(new Set(labels).size).toBe(labels.length)
+  })
+
+  it('往来四型共用「靛」色调：只变债权债务，不产生损益', () => {
+    for (const k of ['lend', 'borrow', 'recover', 'repay'] as TxKind[]) {
+      expect(TX_KIND_META[k].tone, k).toBe('lend')
+    }
   })
 })

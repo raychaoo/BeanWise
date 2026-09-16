@@ -16,8 +16,9 @@ import { useEffect, useState } from 'react'
 import type { LedgerEntryRow, ListEntriesFilters } from '../../../../shared/ipc'
 import { useLedgerStore } from '../../stores/ledger'
 import '../../styles/views/entries.less'
+import AmountCell from './AmountCell'
 import EntryEditDrawer from './EntryEditDrawer'
-import { accountDisplay, amountDisplay } from './entryRowDisplay'
+import { accountDisplay } from './entryRowDisplay'
 
 const PAGE_SIZE = 20
 
@@ -213,14 +214,11 @@ export default function EntriesView() {
     {
       title: '金额',
       dataIndex: 'amount',
-      width: 120,
-      // 交易金额（超 UI 层 #1）：资产流视角（收入 +、支出 -），千分位 + 负数红；
-      // 账内搬移（转账/还款/往来/权益调整）无损益，改显发生额且不着色；Open 行无金额
-      render: (_dom: unknown, row: LedgerEntryRow) => {
-        const cell = amountDisplay(row)
-        if (!cell) return '—'
-        return <span className={`num${cell.negative ? ' num-negative' : ''}`}>{cell.text}</span>
-      }
+      width: 150,
+      // 交易金额（超 UI 层 #1）：损益额取资产流视角（收入 +、支出 -），账内搬移显发生额；
+      // 着色与文字标签按 txKind（主进程算的交易类型）——借出是正数，靠正负号无法着色。
+      // 原对账明细账各自写了一遍这个渲染且漏了兜底分支，故收到 AmountCell 里单源
+      render: (_dom: unknown, row: LedgerEntryRow) => <AmountCell row={row} />
     },
     {
       title: '操作',

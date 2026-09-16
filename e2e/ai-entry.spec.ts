@@ -102,7 +102,7 @@ test('M7 绿灯：自然语言 → 草稿 → 填表确认 → 落盘全链路',
 
     await app.close()
   } finally {
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
     await ai.close()
   }
 })
@@ -149,7 +149,7 @@ test('M7 拒绝：mock 非法输出 → 校验拒绝提示 + 文件不变', asyn
 
     await app.close()
   } finally {
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
     await ai.close()
   }
 })

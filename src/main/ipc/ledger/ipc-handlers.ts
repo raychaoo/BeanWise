@@ -207,7 +207,8 @@ export function registerLedgerHandlers(ipc: IpcRegistrar, deps: LedgerDeps): voi
   // （ipcMain.handle 对同步 throw 同样转为 invoke 拒绝，两者对调用方无差别）
   ipc.handle('ledger:list-entries', async (_event: unknown, params: unknown) => {
     const { limit, offset, order, dateFrom, dateTo, keyword, amount, account } = validateListParams(params)
-    return listEntries(deps.db, limit, offset, order, { dateFrom, dateTo, keyword, amount, account })
+    // 往来类账户一并传入：明细行的 txKind 据此区分借出/还款与普通转账（口径在主进程算，见 index-builder）
+    return listEntries(deps.db, limit, offset, order, { dateFrom, dateTo, keyword, amount, account }, deps.counterpartyAccounts?.() ?? [])
   })
 
   ipc.handle('ledger:get-entry', (_event: unknown, raw: unknown): GetEntryResult => {

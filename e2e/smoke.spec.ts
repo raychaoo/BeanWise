@@ -52,6 +52,6 @@ test('应用启动并渲染主窗口（总览默认选中 + 四页骨架可用�
 
     await app.close()
   } finally {
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
   }
 })

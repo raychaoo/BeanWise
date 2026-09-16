@@ -62,7 +62,7 @@ test('M5 绿灯：打开账本 → beancount 高亮 → 编辑保存 → 校验�
 
     await app.close()
   } finally {
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
   }
 })
 
@@ -106,7 +106,7 @@ test('M5 冲突：外部修改 → 保存触发冲突面板 → 重新加载回�
 
     await app.close()
   } finally {
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
   }
 })
 
@@ -133,6 +133,6 @@ test('M5 失败：保存校验失败 → 错误提示 + 文件字节不变', asy
 
     await app.close()
   } finally {
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
   }
 })

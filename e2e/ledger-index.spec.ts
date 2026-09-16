@@ -78,7 +78,7 @@ test('M4 绿灯：录入一笔 → 落文件 → 校验 → 索引更新（端�
 
     await app.close()
   } finally {
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
   }
 })
 
@@ -112,7 +112,7 @@ test('M4 方向：账户行序不影响记账方向（资产在前也记为 支�
 
     await app.close()
   } finally {
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
   }
 })
 
@@ -140,7 +140,7 @@ test('录入自动平衡：逐字输入金额，只读第二行须全程跟随�
 
     await app.close()
   } finally {
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
   }
 })
 
@@ -212,8 +212,12 @@ test('M4+ 明细：服务端倒序/正序、时间筛选与关键词搜索（超
     // （注：runner 下模拟点击列头存在协议层挂死，方向切换的 SQL 语义由 index-builder 单测 order=asc/desc 覆盖）
     const firstCell = dataRows.first().locator('td').first()
     await expect(firstCell).toHaveText('2026-01-03', { timeout: 5000 })
-    // 金额列（资产流视角：支出负、收入正，千分位格式化）
+    // 金额列（资产流视角：支出负、收入正，千分位格式化；类型标记见下）
     await expect(dataRows.first()).toContainText('-25 CNY')
+    // 类型标记（2026-09-16）：Coffee 是 Expenses 类目 → 「支出」标签 + 支出色。
+    // 标签是颜色之外的第二重标记（色觉障碍用户靠它区分），故断言文字而非色值
+    await expect(dataRows.first().locator('.tx-kind')).toHaveText('支出')
+    await expect(dataRows.first().locator('.num--expense')).toContainText('-25 CNY')
     await expect(win.getByRole('columnheader', { name: /日期/ })).toHaveAttribute('aria-sort', 'descending', { timeout: 5000 })
 
     // 时间筛选（服务端 dateFrom/dateTo）：今日 → fixture 全为 2026-01 → 空态；切「全部」恢复
@@ -264,7 +268,7 @@ test('M4+ 明细：服务端倒序/正序、时间筛选与关键词搜索（超
 
     await app.close()
   } finally {
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
   }
 })
 
@@ -332,6 +336,6 @@ test('M4+ 编辑：明细抽屉按 ID 回填多分录，保存后 ID 不变', as
     expect(content).toContain('Assets:Bank:CNB  -30.00 CNY')
   } finally {
     await app?.close().catch(() => {})
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
   }
 })

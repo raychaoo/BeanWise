@@ -314,6 +314,51 @@ describe('索引重建管线（M3）', () => {
     expect(aaa).toHaveLength(2)
     expect(new Set(aaa.map((l) => l.entryId)).size).toBe(2)
   }, 30_000)
+
+  it('txKind：往来类账户须由调用方传入——传入才认借出/收回，不传退化为「转账」', async () => {
+    copyFileSync(LOANS_FIXTURE, workFile)
+    expect((await refreshIndex(drizzle, engine, workFile)).status).toBe('ok')
+
+    const kindOf = (rows: ReturnType<typeof listEntries>['entries'], narration: string): string | null =>
+      rows.find((e) => e.narration === narration)?.txKind ?? null
+
+    // 未传往来类账户（默认 []）→ 三笔往来搬移都不臆造类型，一律 transfer
+    const plain = listEntries(drizzle, 100, 0, 'asc')
+    expect(kindOf(plain.entries, '借出5000')).toBe('transfer')
+    expect(kindOf(plain.entries, '还4000')).toBe('transfer')
+
+    // 传入往来类账户 → 资产侧应收增加为借出、减少为收回（复用 isNewLoanPosting 的欠款方向口径）
+    const marked = listEntries(drizzle, 100, 0, 'asc', undefined, ['Assets:Receivables:Lend'])
+    expect(kindOf(marked.entries, '借出5000')).toBe('lend')
+    expect(kindOf(marked.entries, '再借3000')).toBe('lend')
+    expect(kindOf(marked.entries, '借出800')).toBe('lend')
+    expect(kindOf(marked.entries, '还4000')).toBe('recover')
+  }, 30_000)
+
+  it('txKind：损益按账户类型判定（退款金额为正仍属支出）、权益调整与 Open 条目各归其位', async () => {
+    copyFileSync(MAIN_FIXTURE, workFile)
+    // 退款：损益腿为负 → amount 为正数，但类目仍是 Expenses
+    writeFileSync(
+      workFile,
+      '\n2026-01-05 * "超市" "退款"\n  Assets:Bank:CNB  30.00 CNY\n  Expenses:Food  -30.00 CNY\n' +
+        '\n2026-01-06 * "" "期初余额"\n  Assets:Bank:CNB  100.00 CNY\n  Equity:Opening-Balances  -100.00 CNY\n',
+      { flag: 'a' }
+    )
+    expect((await refreshIndex(drizzle, engine, workFile)).status).toBe('ok')
+
+    const listed = listEntries(drizzle, 100, 0, 'asc')
+    const refund = listed.entries.find((e) => e.narration === '退款')
+    expect(refund?.amount).toBe('30') // 资产流视角：冲减支出 → 正数
+    expect(refund?.txKind).toBe('expense') // 但类目是支出，不能因正负号误判成收入
+
+    expect(listed.entries.find((e) => e.narration === '期初余额')?.txKind).toBe('equity')
+    expect(listed.entries.find((e) => e.narration === 'Breakfast')?.txKind).toBe('expense')
+
+    // Open 条目无分录无金额 → 不打类型标记
+    const open = listed.entries.find((e) => e.type === 'Open')
+    expect(open?.txKind).toBeNull()
+    expect(open?.amount).toBeNull()
+  }, 30_000)
 })
 
 describe('索引 schema 版本闸门', () => {

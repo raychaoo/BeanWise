@@ -6,9 +6,31 @@ import type { DrizzleDb } from '../db/index'
 import { entries, entryLinks, ledgerMeta, postings } from '../db/schema'
 import { accountType, isPnlAccountType } from '../../shared/account'
 import { addDecimalStrings, negateDecimal, normalizeAmountMagnitude } from '../../shared/decimal'
+import { isNewLoanPosting } from './loan-links'
 import type { PythonSvc } from './python-svc'
 
 export type LedgerIndexStatus = 'ok' | 'error' | 'missing'
+
+/**
+ * 交易类型（金额列的类型标记，2026-09-16）：色与标签都据此定，口径**只在主进程算一次**。
+ *
+ * - 损益（有 Income/Expenses 腿）：`income` / `expense`——按 `pnlAccount` 的**账户类型**判定而非金额
+ *   正负：退款冲减支出是一笔正数，但它仍属支出类目。
+ * - 往来（账户库 `counterparty` 标志的账户参与，ADR 23）：按 [`isNewLoanPosting`](./loan-links.ts)
+ *   的「新增欠款」方向二分——`Assets 正 / Liabilities 负` = 欠款增加，故 `Assets → lend`（借出，
+ *   我方应收增加）、`Liabilities → borrow`（借入，我方应付增加）；反向即债权的收回与债务的偿还。
+ * - 搬移（无损益、无往来）：含 Equity 腿 → `equity`（权益调整 / 期初余额），其余 → `transfer`。
+ * - 无金额的条目（Open / Balance / Note）→ null。
+ */
+export type TxKind =
+  | 'income'
+  | 'expense'
+  | 'lend'
+  | 'borrow'
+  | 'recover'
+  | 'repay'
+  | 'transfer'
+  | 'equity'
 
 export interface RefreshResult {
   /** 内容未变（hash 相同）→ false；未变时 status 反映当前索引状态 */
@@ -55,6 +77,8 @@ export interface LedgerEntryRow {
   flowTo: string[]
   /** 账内搬移的发生额（正腿之和，正数、同 currency 口径）；有损益腿或无分录 → null */
   flowAmount: string | null
+  /** 交易类型（金额列的类型标记）：着色与文字标签的依据；无金额的条目 → null */
+  txKind: TxKind | null
 }
 
 export interface ListEntriesParams {
@@ -320,6 +344,12 @@ export function getEntryById(db: DrizzleDb, externalId: string): LedgerEntryDeta
  *    原序去重）与 `flowAmount`（发生额）描述——否则这类行在明细页「账户」「金额」两列都是「—」。
  * ③ 无分录条目（Open/Balance 等）或运算异常：全空。
  *
+ * 同时定 `txKind`（金额列的类型标记，2026-09-16）：损益腿 → `income`/`expense`（按账户类型而非
+ * 金额正负）；账内搬移 → 往来类账户参与则按 [`isNewLoanPosting`](./loan-links.ts) 的欠款方向二分，
+ * 否则含 Equity 腿为 `equity`、其余为 `transfer`。类型判定与金额同在**主进程**算：往来类账户须读
+ * 账户库（main 的 `counterpartyAccounts()` 不过滤 enabled，停用账户的历史借出仍能正确标记），
+ * 且与「口径收在主进程」（超 UI 层 #1）一致。
+ *
  * 「有无损益腿」按**全币种**判定：运营货币下恰好没有损益腿的外币收支交易仍属损益类，不可退化成
  * 账内搬移（否则会被显示成「A → B」账户串）。求和一律走 shared/decimal 十进制字符串运算。
  */
@@ -330,12 +360,13 @@ interface EntryAmount {
   flowFrom: string[]
   flowTo: string[]
   flowAmount: string | null
+  txKind: TxKind | null
 }
 
 type PostingLike = { account: string; unitsNumber: string; unitsCurrency: string }
 
 function emptyAmount(currency: string | null = null): EntryAmount {
-  return { amount: null, currency, pnlAccount: null, flowFrom: [], flowTo: [], flowAmount: null }
+  return { amount: null, currency, pnlAccount: null, flowFrom: [], flowTo: [], flowAmount: null, txKind: null }
 }
 
 /** 账内搬移的账户串 + 发生额：负腿 = 资金流出方、正腿 = 流入方（各自去重保序）；
@@ -357,12 +388,29 @@ function entryFlow(ps: PostingLike[]): Pick<EntryAmount, 'flowFrom' | 'flowTo' |
   return { flowFrom, flowTo, flowAmount: inflow !== '0' ? inflow : negateDecimal(outflow) }
 }
 
-function entryAmount(ps: PostingLike[], primaryCurrency: string | null): EntryAmount {
+/** 账内搬移的交易类型：往来类账户参与 → 按欠款方向二分（借出/借入 vs 收回/还款）；
+ *  否则含 Equity 腿为权益调整、其余为普通转账。 */
+function flowKind(ps: PostingLike[], counterpartyAccounts: readonly string[]): TxKind {
+  const hit = ps.find((p) => counterpartyAccounts.includes(p.account))
+  if (hit) {
+    const asset = accountType(hit.account) === 'Assets'
+    return isNewLoanPosting(hit.account, hit.unitsNumber)
+      ? (asset ? 'lend' : 'borrow')
+      : (asset ? 'recover' : 'repay')
+  }
+  return ps.some((p) => accountType(p.account) === 'Equity') ? 'equity' : 'transfer'
+}
+
+function entryAmount(
+  ps: PostingLike[],
+  primaryCurrency: string | null,
+  counterpartyAccounts: readonly string[] = []
+): EntryAmount {
   if (ps.length === 0) return emptyAmount()
   const currency = primaryCurrency ?? ps[0]!.unitsCurrency
   if (!ps.some((p) => isPnlAccountType(accountType(p.account)))) {
     try {
-      return { ...emptyAmount(currency), ...entryFlow(ps) }
+      return { ...emptyAmount(currency), ...entryFlow(ps), txKind: flowKind(ps, counterpartyAccounts) }
     } catch {
       return emptyAmount(currency)
     }
@@ -371,7 +419,13 @@ function entryAmount(ps: PostingLike[], primaryCurrency: string | null): EntryAm
   if (pl.length === 0) return emptyAmount(currency)
   try {
     const sum = pl.reduce((acc, p) => addDecimalStrings(acc, p.unitsNumber), '0')
-    return { ...emptyAmount(currency), amount: negateDecimal(sum), pnlAccount: pl[0]!.account }
+    return {
+      ...emptyAmount(currency),
+      amount: negateDecimal(sum),
+      pnlAccount: pl[0]!.account,
+      // 按账户类型判收支（不按金额正负）：退款/冲销的金额是正的，但仍属支出类目
+      txKind: accountType(pl[0]!.account) === 'Income' ? 'income' : 'expense'
+    }
   } catch {
     return emptyAmount(currency)
   }
@@ -382,7 +436,10 @@ export function listEntries(
   limit: number,
   offset: number,
   order: 'asc' | 'desc' = 'asc',
-  filters?: ListEntriesFilters
+  filters?: ListEntriesFilters,
+  /** 往来类账户路径（账户库 counterparty 标志）：`txKind` 据此区分借出/还款与普通转账。
+   *  未传 → 往来类交易退化为 `transfer`/`equity`（默认不误标），先例同 `loadLoanRows(db, accounts)`。 */
+  counterpartyAccounts: readonly string[] = []
 ): ListEntriesResult {
   // 过滤条件（超 UI 层 #2）：日期含端点（YYYY-MM-DD 字典序即时间序）+ 关键词交易级命中 + 账户精确过滤。
   // LIKE 手工转义 % _ \，ESCAPE '\' 保证搜索词按字面匹配。
@@ -446,7 +503,10 @@ export function listEntries(
     db.select().from(ledgerMeta).where(eq(ledgerMeta.id, 1)).get()?.operatingCurrency ?? null
   )[0] ?? null
 
-  const out = rows.map((r) => ({ ...r, ...entryAmount(byEntry.get(r.id) ?? [], primaryCurrency) }))
+  const out = rows.map((r) => ({
+    ...r,
+    ...entryAmount(byEntry.get(r.id) ?? [], primaryCurrency, counterpartyAccounts)
+  }))
   return { entries: out as LedgerEntryRow[], total }
 }
 

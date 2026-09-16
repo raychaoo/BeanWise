@@ -61,7 +61,7 @@ test('M8 升级演练：检查到新版本 → 下载 → downloaded', async () 
 
     await app.close()
   } finally {
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
     await update.close()
   }
 })

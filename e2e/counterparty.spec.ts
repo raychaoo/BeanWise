@@ -128,7 +128,7 @@ test('ADR 23：标记往来类 → 录入带对象 → 文件落 metadata → �
   } finally {
     // app.close() 必须进 finally：断言失败时若跳过，Electron 进程残留会让整个 worker 卡住
     await app?.close().catch(() => {})
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
   }
 })
 
@@ -147,6 +147,6 @@ test('ADR 23：账户库未标记往来类 → 往来账给出「去标记」引
     await expect(pane).toContainText('科目管理')
   } finally {
     await app?.close().catch(() => {})
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
   }
 })

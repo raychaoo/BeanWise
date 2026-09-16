@@ -3,7 +3,7 @@
  * 进对账页 → Tab② TreeSelect 选 Expenses:Food → 表格出现该账户分录行且账户列含 Food。
  */
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { cleanupFixture, createFixtureCopy, seedAccountConfig } from './fixtures/setup'
@@ -80,7 +80,7 @@ test('批次 F：明细账账户过滤（TreeSelect 选 Expenses:Food → 该账
 
     await app.close()
   } finally {
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
   }
 })
 
@@ -128,8 +128,7 @@ test('对账科目余额表：账户搜索（中文名 / 原始路径任一命�
     await app.close()
   } finally {
     await app?.close().catch(() => {})
-    // 断言失败时 app 仍在运行、SQLite 句柄未释放 → 重试封顶（线性退避，20 次 ≈ 21s）快速报错
-    rmSync(dirname(ledgerPath), { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
+    await cleanupFixture(ledgerPath)
   }
 })
 
@@ -140,6 +139,7 @@ test('对账明细账：ID/完整时间展示，金额、交易对象、说明�
     ledgerPath,
     'option "title" "Reconcile Detail"\noption "operating_currency" "CNY"\n\n' +
       '2026-01-01 open Assets:Bank:CNB\n' +
+      '2026-01-01 open Assets:Receivables:Lend\n' +
       '2026-01-01 open Expenses:Food\n\n' +
       '2026-08-22 * "麦当劳" "早餐"\n' +
       '  id: "bw-reconcile-1"\n' +
@@ -150,9 +150,17 @@ test('对账明细账：ID/完整时间展示，金额、交易对象、说明�
       '  id: "bw-reconcile-2"\n' +
       '  time: "2026-08-23 12:34:56"\n' +
       '  Expenses:Food  25.00 CNY\n' +
-      '  Assets:Bank:CNB  -25.00 CNY\n',
+      '  Assets:Bank:CNB  -25.00 CNY\n\n' +
+      // 账内搬移（借出）：amount 按设计为 null，发生额在 flowAmount 上
+      '2026-08-24 * "张三" "借出5000"\n' +
+      '  id: "bw-reconcile-3"\n' +
+      '  time: "2026-08-24 09:00:00"\n' +
+      '  Assets:Receivables:Lend  5000.00 CNY\n' +
+      '  Assets:Bank:CNB  -5000.00 CNY\n',
     'utf8'
   )
+  // 往来类账户须在 openWorkspace 前落盘：主进程读它才能把该行判成「借出」而非普通转账
+  seedAccountConfig(ledgerPath, [{ id: 1, name: '借出应收', value: 'Assets:Receivables:Lend', counterparty: true }])
 
   try {
     const app = await electron.launch({ args: launchArgs })
@@ -214,11 +222,24 @@ test('对账明细账：ID/完整时间展示，金额、交易对象、说明�
     await expect(rows.first()).toContainText('抽屉编辑后')
     expect(readFileSync(ledgerPath, 'utf8')).toContain('id: "bw-reconcile-2"')
 
+    // 账内搬移（借出）的金额必须可见 + 带类型标记。回归：本页此前只读 row.amount，而借出的
+    // amount 按设计为 null（发生额在 flowAmount 上）→ 金额列恒为「—」，借出的钱根本看不到。
+    // 账户库已配置中文名，故树节点与过滤都按「借出应收」而非路径（同 account-config.spec）。
+    await win.locator('.reconcile-detail-toolbar .ant-select-clear').click()
+    await expect(win.getByText('选择账户后查看其明细分录')).toBeVisible()
+    await win.locator('.reconcile-detail-toolbar .ant-select').click()
+    await win.locator('.reconcile-detail-toolbar .ant-select-selection-search-input').fill('借出应收')
+    await win.locator('.ant-select-tree-title', { hasText: '借出应收' }).click()
+    await expect(rows).toHaveCount(1, { timeout: 10_000 })
+    const lendRow = rows.first()
+    await expect(lendRow).toContainText('借出5000')
+    await expect(lendRow.locator('.num')).toContainText('5,000') // 不再是「—」
+    await expect(lendRow.locator('.tx-kind')).toHaveText('借出')
+
     await app.close()
   } finally {
-    // Windows 下 Electron 退出与 SQLite 连接关闭存在短暂竞态（同 fixtures/setup.cleanupFixture），
-    // 给句柄释放留重试窗口。重试按**线性**退避（第 n 次等 n×retryDelay），故上限取小值：
-    // 20 次 ≈ 21s 封顶——若测试中途断言失败（app.close() 未执行、句柄仍在），要快速报错而非久等。
-    rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
+    // Windows 下 Electron 退出与 SQLite 句柄释放存在短暂竞态，统一走 fixtures/setup.cleanupFixture
+    // （异步 rm + 线性退避，上限约 47 秒；同步 rmSync 在 Windows 上不重试，不能用）
+    await cleanupFixture(ledgerPath)
   }
 })

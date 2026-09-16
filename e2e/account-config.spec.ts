@@ -1,5 +1,5 @@
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test'
-import { readFileSync, rmSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { cleanupFixture, createFixtureCopy, seedAccountConfig } from './fixtures/setup'
 
@@ -102,7 +102,7 @@ test('启停用：账户页停用并保存 → enabled 落盘 → 录入下拉�
     await expect(selectedAccounts.filter({ hasText: '吃饭' })).toBeVisible({ timeout: 10000 })
     await app.close()
   } finally {
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
   }
 })
 
@@ -156,7 +156,7 @@ test('期初余额：账户页录入 → 走 add-entry 落账本（Equity 配对
     await expect(win.locator('.ant-table-tbody')).toContainText('期初余额', { timeout: 30000 })
     await app.close()
   } finally {
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
   }
 })
 
@@ -213,8 +213,6 @@ test('科目管理搜索：名称/用途 + 账户路径两个输入框（AND 叠
     await app.close()
   } finally {
     await app?.close().catch(() => {})
-    // 断言失败时 app 仍在运行、SQLite 句柄未释放 → 重试封顶（线性退避，20 次 ≈ 21s）快速报错，
-    // 不用 cleanupFixture：它按 120 次线性退避上限约 30 分钟，失败时久等不报
-    rmSync(dirname(ledgerPath), { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
+    await cleanupFixture(ledgerPath)
   }
 })

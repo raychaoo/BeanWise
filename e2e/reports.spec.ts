@@ -133,6 +133,6 @@ test('M8 报表：真实数据渲染（IPC 聚合 + 余额表 + 图表容器）'
 
     await app.close()
   } finally {
-    cleanupFixture(ledgerPath)
+    await cleanupFixture(ledgerPath)
   }
 })

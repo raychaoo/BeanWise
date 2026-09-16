@@ -6,7 +6,8 @@
  * 精确过滤 + 交易对象/说明关键词 + 独立金额框（InputNumber，不与文本搜索混用，见 ADR 25）
  * + order desc 分页查询；显示稳定 ID 与秒级交易时间，复用 EntryEditDrawer 按 ID 编辑。
  * 本地查询状态（不经共享 store entries 槽，防跨页串扰）。
- * 金额 formatAmount 千分位 + .num 右对齐，负数 .num-negative（红色语义唯一化）。
+ * 余额表金额 formatAmount 千分位 + .num 右对齐，负数 .num-negative（红色语义唯一化）；
+ * 明细账金额与明细页共用 AmountCell（类型标签 + 按 txKind 着色），见 entryRowDisplay。
  */
 import { ProTable } from '@ant-design/pro-components'
 import type { ProColumns } from '@ant-design/pro-components'
@@ -19,6 +20,7 @@ import { useLedgerStore } from '../../stores/ledger'
 import type { AccountOption } from '../../stores/ledger'
 import { matchesAccountLabel } from '../../utils/accountSearch'
 import { formatAmount } from '../../utils/format'
+import AmountCell from '../entries/AmountCell'
 import EntryEditDrawer from '../entries/EntryEditDrawer'
 import '../../styles/views/reconcile.less'
 
@@ -217,11 +219,12 @@ function DetailLedgerTab() {
     {
       title: '金额',
       dataIndex: 'amount',
-      width: 140,
+      width: 150,
       align: 'right',
-      // 交易金额（超 UI 层 #1）：资产流视角（收入 +、支出 -），千分位 + 负数红；转账/Open 行无金额
-      render: (_dom: unknown, row: LedgerEntryRow) =>
-        row.amount === null ? '—' : <span className={`num${row.amount.startsWith('-') ? ' num-negative' : ''}`}>{formatAmount(row.amount)}</span>
+      // 交易金额（超 UI 层 #1）：损益额取资产流视角（收入 +、支出 -），账内搬移显发生额。
+      // 与明细页共用 AmountCell——此前这里只读 row.amount，而借出/还款/转账的 amount 按设计为
+      // null（发生额在 flowAmount 上），这类行金额列恒为「—」，借出的钱看不到。
+      render: (_dom: unknown, row: LedgerEntryRow) => <AmountCell row={row} withCurrency={false} />
     },
     { title: '币种', dataIndex: 'currency', width: 80, render: (_dom: unknown, row: LedgerEntryRow) => row.currency ?? '—' },
     {

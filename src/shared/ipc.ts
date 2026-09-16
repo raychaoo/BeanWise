@@ -13,7 +13,8 @@ import type {
   ListEntriesFilters,
   ListEntriesParams,
   ListEntriesResult,
-  RefreshResult
+  RefreshResult,
+  TxKind
 } from '../main/core/index-builder'
 
 export type {
@@ -24,7 +25,8 @@ export type {
   ListEntriesFilters,
   ListEntriesParams,
   ListEntriesResult,
-  RefreshResult
+  RefreshResult,
+  TxKind
 }
 
 export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list-entries'
