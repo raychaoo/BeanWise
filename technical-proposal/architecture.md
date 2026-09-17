@@ -71,9 +71,10 @@
 | `.gitignore` | `<workspace>/.gitignore` | 同步范围内的受托管块（`# >>> BeanWise 同步托管块 >>>`），只追加不覆写用户规则 |
 | git 仓库 | `<workspace>/.git` | 追踪账本 + 账户库 + 模板 + `.gitignore`（范围见 `src/shared/sync-files.ts`），分支固定 main |
 | 本机 git 网络配置 | electron-store `git-network`（userData，**不在工作目录内**） | M12：代理地址 + 超时。**机器级**——代理是机器/网络属性，换工作目录不该重填，也不进仓库 |
+| 提交人身份 | electron-store `git-identity`（userData，**不在工作目录内**） | M13：手填姓名/邮箱（**机器级**，同代理）+ PAT 识别出的 GitHub 身份缓存（**按工作目录键隔离**——它是该目录 PAT 的派生物）。提交时纯本地求值，绝不联网；见 ADR 30 |
 
 - 主进程持有一份**动态运行时**（`Runtime`：db / ledgerPath / gitSync / syncTokens / syncConfig / accountConfig），`activateWorkspace(dir)` 先关旧 DB → 重建全部组件 → fire-and-forget 刷新索引；已注册 IPC handler 经 getter 读到最新值
-- PAT / API Key **不写在工作目录内**：safeStorage 加密后存 electron-store（`sync-tokens` 按工作目录路径小写键隔离、`ai-tokens`），避免凭据进仓库；M12 的 `git-network` 同理不进工作目录（代理地址不含凭据，见 ADR 29）
+- PAT / API Key **不写在工作目录内**：safeStorage 加密后存 electron-store（`sync-tokens` 按工作目录路径小写键隔离、`ai-tokens`），避免凭据进仓库；M12 的 `git-network` 同理不进工作目录（代理地址不含凭据，见 ADR 29）；M13 的 `git-identity` 里手填提交人是机器级、识别缓存按工作目录键隔离（见 ADR 30）
 - 当前路径 + 最近打开列表（上限 10）存 electron-store（`workspace`）；启动时若上次目录存在则自动激活，否则渲染端显示 WorkspaceGate 选择界面
 - `workspace:open` 校验目录存在与可写 → 创建/接管 `main.beancount` → 初始化本地 git（无 `.git` 则 `initRepo`）→ commit 初始快照；成功后渲染端 `window.location.reload()` 整页重载，杜绝各域 zustand store 跨目录残留状态
 

@@ -29,9 +29,10 @@
 | M10 | 通用 Excel 流水导入 | M4, M9 | 非微信 xlsx/csv 经列映射+账户映射导入；新交易账户检测/处理（策略 C）；去重；多模板持久化 |
 | M11 | 同步范围扩展（文件集） | M6, M9, M10 | 换电脑 clone 后账户库与 Excel 模板自动恢复；两机各自新增账户/模板 → 无冲突并集；索引缓存/本机同步配置不进仓库，且无改动时不再产生空提交 ✅（2026-09-17） |
 | M12 | 同步网络适应性（本机代理 + 可配置超时） | M6, M11 | 同步设置里可配 HTTP 代理与超时并即时生效（无需重启/切目录）；配了代理后直连与回环行为不变（回环绕过有单测+E2E 钉死）；连接测试能把「代理不可达」「代理未放行」「PAT 不对」分开报 ✅（2026-09-17） |
+| M13 | 提交人身份（PAT 自动识别 + 手填覆盖） | M6, M11, M12 | 未手填时用该目录 PAT 识别出 GitHub 身份（`<id>+<login>@users.noreply.github.com`），手填姓名+邮箱可覆盖，都没有则回落到内置 `BeanWise <beanwise@local>`；识别缓存与 PAT 同域（换账本目录不串身份）；提交路径零联网（离线保存不卡）；手填值拒绝换行/尖括号（防 commit 头注入）；E2E 读真实 commit 对象验证 author/committer ✅（2026-09-18） |
 
 ```plain
-M1 ──┬──▶ M3 ──┬──▶ M4 ──┬──▶ M8 ──▶ M9 ──▶ M10 ──▶ M11 ──▶ M12
+M1 ──┬──▶ M3 ──┬──▶ M4 ──┬──▶ M8 ──▶ M9 ──▶ M10 ──▶ M11 ──▶ M12 ──▶ M13
 M2 ──┘        ├──▶ M5    ┘
               ├──▶ M6
               └──▶ M7
@@ -62,7 +63,7 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
 - 类型定义唯一来源：`src/shared/ipc.ts` → preload 白名单 → main handler 注册，禁止旁路
 - 通道命名：`{domain}:{action}` 小写 kebab，如 `ledger:validate`、`sync:push`、`ai:parse`
 - 主进程对所有入参做类型与路径校验（防目录穿越）
-- M3 定稿 ledger 通道 + M6 追加 sync 六通道 + M7 追加 ai 四通道 + M9 追加 accounts/workspace + M12 追加 sync 网络三通道（类型唯一来源 `src/shared/ipc.ts`，跨里程碑复用）：
+- M3 定稿 ledger 通道 + M6 追加 sync 六通道 + M7 追加 ai 四通道 + M9 追加 accounts/workspace + M12 追加 sync 网络三通道 + M13 追加 sync 身份三通道（类型唯一来源 `src/shared/ipc.ts`，跨里程碑复用）：
 
   | 通道 | params | result 要点 |
   |---|---|---|
@@ -82,6 +83,9 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
   | `sync:get-network`（M12） | 无 | `GitNetworkConfig`（proxyUrl / timeoutSec；**机器级**，不随工作目录） |
   | `sync:save-network`（M12） | `GitNetworkConfig` | `{ok, error?, network?}`（非法代理地址 → ok:false 回显，不 reject） |
   | `sync:test-connection`（M12） | `{repoUrl?}`（缺省用已保存配置） | `{ok, message}`（真实 git 握手 `listServerRefs`；诊断区分代理不可达 / 未放行 / 认证失败） |
+  | `sync:get-identity`（M13） | 无 | `GitIdentityState`（manual / detected / effective；手填机器级、识别缓存按工作目录隔离） |
+  | `sync:save-identity`（M13） | `{name?, email?}`（两个都填才生效；都空 = 清空手填值） | `{ok, error?, state?}`（非法/半填 → ok:false 回显，不 reject） |
+  | `sync:detect-identity`（M13） | 无（API 根只由主进程注入，绝不接受渲染端传入） | `{ok, message, state?}`（用该目录 PAT 调 `GET /user`；诊断区分 PAT 无效 / 限流 / 代理未放行 / 代理不可达） |
   | `ai:get-status`（M7） | 无 | `AiStatus`（configured/model；**不含 Key**——渲染端永不接触密钥） |
   | `ai:save-config`（M7） | `{apiKey}` | `{ok, error?}`（Key 经 safeStorage 存主进程，渲染端不落 state） |
   | `ai:clear-config`（M7） | 无 | `{ok}` |
@@ -141,6 +145,7 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
 | M10 | 通用 Excel 流水导入（excel 域七通道 + 列映射/方向判定/账户映射两层映射 + 新交易账户检测与处理策略 C + `beanwise-import` 去重标记 + 多模板持久化 `.beanwise/excel-import-templates.json`；复用 open 校正/原子落盘/索引重建/账户库同步） | 关键字自动归类（对方/商品→科目）；微信导入重构为通用模板；导入回滚；多币种自动折算 |
 | M11 | 同步范围扩展（2026-09-17）：追踪文件集 = 账本 + 账户库 + Excel 模板 + 受托管 `.gitignore`（`src/shared/sync-files.ts` 单一事实源）；`index.db`/`sync-config.json` 走托管忽略块；GitSync 多文件化（`addTrackedFiles`/`ensureGitignore`/`blobTextAt`，add 带 `force` 防用户忽略规则吞数据）；脏判定改逐文件比对 HEAD blob（修掉「每次 push 产生空提交」）；`core/merge-engine.ts` 纯函数三态合并 + JSON 语义键结构化并集（收敛性属性测试）+ 两阶段落盘；冲突载荷改逐文件三态，ConflictView 按文件分 tab（JSON 只做二选一）；账户库/模板保存后自动 push + `generation` 驱动视图重载；场景 B 判据收窄为「任一内容文件非空」（不再 clone 覆盖本地账户库） | 三方合并的 base 快照 UI（当前只对比 ours/theirs）；`.gitignore` 冲突不做专项 UI（走文本三路合并）；账户库跨机 id 稳定（当前可重排，仅影响界面排序） |
 | M12 | 同步网络适应性（2026-09-17）：`core/git-network.ts` 包 http 插件注入代理 agent（isomorphic-git 顶层命令不收 `agent`，只有插件层透传给 simple-get）；机器级 electron-store `git-network`（代理 + 超时）；同步设置「本机网络」区 + `sync:get/save-network`、`sync:test-connection` 三通道；超时 1~600s 可配（默认 30），`network()` 每次调用求值即时生效；目标回环一律直连 | SOCKS5；系统代理/环境变量自动探测（只手动填）；带认证的代理（需把密码放 safeStorage）；超时后中断底层 socket（isomorphic-git 1.41.3 不支持 signal，仍是 `Promise.race`）；代理只作用于 git 同步（updater 走 Electron 网络栈、AI 走主进程 fetch，都不动） |
+| M13 | 提交人身份（2026-09-18）：`core/git-identity.ts` 纯函数三级优先（手填 > PAT 识别 > 内置兜底）；机器级 electron-store `git-identity`（手填值机器级 + 识别缓存按工作目录键隔离，与 PAT 同域共用 `utils/workspace-key.ts`）；`commit()` 收 `identity` 注入（author == committer，缺省行为不变）；同步设置「提交人身份」区 + `sync:get/save/detect-identity` 三通道；`configure` 成功后 best-effort 识别（仅真 GitHub 远端）；`fake-github-server.ts` 供单测/E2E 覆盖识别链路 | 历史改写（只影响之后的提交）；非 GitHub 托管的识别（Gitee 等）；per-repo 身份（机器级一份）；GPG/SSH 提交签名；`committer` 单独配置；识别失败时的重试/退避（用户可再点按钮） |
 
 ## 排序理由与风险
 

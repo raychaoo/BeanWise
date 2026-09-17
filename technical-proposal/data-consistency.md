@@ -40,7 +40,7 @@ Beancount 文件 ──唯一事实源──▶ 变更后增量解析 ──▶ 
 - 解析结果缓存（文件 mtime + hash 判空跳过）
 - 增量解析失败时回退全量解析，并记录日志
 
-## git 同步与冲突处理（M6 定稿 2026-08-10；M11 扩展为文件集；M12 加本机代理 2026-09-17）
+## git 同步与冲突处理（M6 定稿 2026-08-10；M11 扩展为文件集；M12 加本机代理 2026-09-17；M13 加提交人身份 2026-09-18）
 
 - 同步引擎：isomorphic-git（1.41.3，纯 JS 实现 git 协议，无原生依赖），封装为 GitSync（init/addTrackedFiles/ensureGitignore/commit/fetch/analyzeMerge/blobTextAt）；账本目录即 git 工作区（唯一事实源铁律），**同步范围见下一节**，分支固定 `main`、remote 固定 `origin`
 - 传输：**isomorphic-git 1.x 不支持 file:// 本地传输**（1.x 已移除），测试/E2E 用进程内 smart-HTTP 服务器（`src/main/utils/test-servers/git-test-server.ts`）替代；URL 校验放行测试通道 `http://127.0.0.1:<port>` / `http://localhost:<port>`（仅回环）+ 生产通道 `https://github.com/owner/repo`
@@ -53,6 +53,7 @@ Beancount 文件 ──唯一事实源──▶ 变更后增量解析 ──▶ 
 - 推送失败（网络 / 权限 / 校验失败）：本地提交/文件保留，lastError 落状态条提示重试；**pull 只拉不推**（只读 PAT 不失败、不静默发布本地改动）
 - syncing 互斥：push / pull / configure / resolve 任一进行中，其余触发即拒绝（writeLock 之外的第二道闸）
 - **本机代理与超时（M12）**：GitHub 直连不可达时同步只剩「git 操作超时（30000ms）」，无从下手。故同步设置新增「本机网络」区——**代理地址**（只支持 HTTP/HTTPS，手动填写，不读系统代理/环境变量；拒绝携带用户名密码，密钥只进 safeStorage）与**超时**（1~600 秒，默认 30）。代理经 `core/git-network.ts` 包一层 http 插件注入 `agent`（isomorphic-git 顶层命令不接受 `agent`，只有插件层收并透传给 simple-get，见 ADR 29）；配置存**机器级** electron-store `git-network`（不随工作目录、不进仓库），`network()` 每次远端调用求值 → 改完立即生效；**目标为本机回环时一律绕过代理**（否则配了代理连测试用的进程内 git 服务器都走代理）。三个通道：`sync:get-network` / `sync:save-network`（非法地址返回 ok:false 而非 reject）/ `sync:test-connection`（用已保存配置做真实 git 握手 `listServerRefs`，把「代理没开」「代理没放行」「PAT 不对」分开报）
+- **提交人身份（M13）**：M12 修掉超时后暴露的下一个问题——提交人硬编码 `BeanWise <beanwise@local>`，GitHub 按邮箱归属账号，这些提交不属于任何人。**三级优先：手填 > PAT 识别 > 内置兜底**。手填「姓名 + 邮箱」（两个都填才生效）存**机器级** electron-store `git-identity`；识别用该目录的 PAT 调 `GET /user`，提交邮箱拼 `<id>+<login>@users.noreply.github.com`（**绝不用响应里的 `email`**：私有邮箱时为 null，且可能未在该账号验证 → 会把提交算到别人名下）。识别缓存按**工作目录**键隔离（与 PAT 同域，共用 `utils/workspace-key.ts`）——否则换目录会把上一个账本的 GitHub 身份带过来，新账本首个提交就挂错人；`sync:clear` 清识别缓存、保留手填值。`resolveGitIdentity` 是纯函数、**提交路径绝不联网**（识别只发生在 configure 成功后 best-effort 与用户点按钮两处）。识别走 `https.request` + `proxyAgentFor`（全局 `fetch` 不吃应用内代理）；`formatAuthor` 零转义 → 手填值拒绝换行/尖括号（防往 commit 对象注入头行），识别值净化（退化则用 login）。身份只影响**之后**的提交，已有历史不改写（见 ADR 30）
 
 ## 同步文件集与合并算法（M11 定稿，2026-09-17）
 

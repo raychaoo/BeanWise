@@ -11,6 +11,8 @@
 - AI 请求由主进程代理发出，响应再回传渲染进程
 - PAT / Key 密文存应用 userData，**不落账本工作目录**（避免凭据进 git 仓库）
 - 本机代理配置（electron-store `git-network`，M12）是**明文普通设置**，故 `parseProxyUrl` **拒绝携带用户名密码的代理地址**（密钥只进 safeStorage，见 ADR 29）；代理地址也不会被写进错误信息以外的日志/上报
+- 提交人身份（electron-store `git-identity`，M13）**不含密钥**：手填的姓名/邮箱是明文普通设置；PAT 自动识别用该工作目录的 PAT 调 `GET https://api.github.com/user`，走 `https.request` + 代理 `CONNECT` 隧道（隧道内是到 api.github.com 的端到端 TLS）——**代理只看得到目标主机名，看不到 `Authorization` 头**。API 根只由主进程 env 注入且白名单只放行官方域名与回环明文，渲染端**无法**把 PAT 指到任意地址（见 ADR 30）；识别请求与响应都不落日志
+- 手填提交人**拒绝**换行/尖括号/控制字符：isomorphic-git 的 `formatAuthor` 零转义，GitHub 昵称又是用户可改的自由文本——不拦就能往 commit 对象里注入头行（识别值走净化路径）
 
 ## 进程边界
 

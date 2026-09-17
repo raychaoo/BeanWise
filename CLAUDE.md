@@ -42,6 +42,8 @@ pytest python/tests  # Python 引擎测试
 - VS Code 集成终端会泄漏 `ELECTRON_RUN_AS_NODE=1`，导致 `npm run dev` / E2E 报 "module 'electron' does not provide an export named 'BrowserWindow'"；运行前 `env -u ELECTRON_RUN_AS_NODE`
 - 国内网络打包需镜像变量：`ELECTRON_MIRROR`（Electron 二进制）+ `ELECTRON_BUILDER_BINARIES_MIRROR`（NSIS 工具链），缺一不可
 - 日志用 electron-log，**禁止记录 PAT / API Key 等敏感信息**（脱敏）
+- **机器级配置**（electron-store `git-network` / `git-identity`）**跨 E2E 运行持久化**（E2E 不隔离 userData）→ 新增此类配置必须在 `e2e/sync.spec.ts` 的 `resetSync` 里复位，否则随机失败；反过来，凡「按工作目录隔离」的状态（PAT、GitHub 识别缓存）**必须共用 `src/main/utils/workspace-key.ts` 的键函数**，否则换账本目录会串用上一个目录的凭据/身份
+- 改 git 提交人身份只影响**之后的提交**（提交对象含 author 行，身份变了 SHA 也变）；任何情况下都**不改写已有历史**
 - 测试配套：新功能按层补测试（前端 Vitest / 引擎 pytest / 关键链路 Playwright E2E）
 
 ## 跑测试时
@@ -54,7 +56,7 @@ pytest python/tests  # Python 引擎测试
 |---|---|---|
 | `technical-proposal/tech-stack.md` | 技术栈清单（框架 / 数据 / UI / 工程化） | 选版本、加依赖 |
 | `technical-proposal/architecture.md` | 整体架构、进程边界、数据流、工作目录运行时模型 | 改架构、加 IPC |
-| `technical-proposal/design-decisions.md` | 关键设计决策（ADR 1–21：Monaco / isomorphic-git / AI Function Calling / 工作目录 / 账户库 / 报表 / 升级链…） | 改实现方式、排坑 |
+| `technical-proposal/design-decisions.md` | 关键设计决策（ADR 1–30：Monaco / isomorphic-git / AI Function Calling / 工作目录 / 账户库 / 报表 / 升级链 / 同步网络与提交人身份…） | 改实现方式、排坑 |
 | `technical-proposal/data-consistency.md` | 文件与索引一致性、工作目录隔离、git 同步与冲突处理 | 改写入 / 同步链路 |
 | `technical-proposal/security.md` | 密钥管理、CSP、IPC 白名单 | 改安全相关 |
 | `technical-proposal/release-pipeline.md` | CI/CD、签名、electron-updater 自动更新 | 改构建发布 |

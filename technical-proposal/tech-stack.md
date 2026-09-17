@@ -18,7 +18,7 @@
 | stdio JSON-RPC | Node ↔ Python 通信协议，JSONL 逐行 | 无端口冲突，生命周期随主进程 |
 | better-sqlite3 + Drizzle ORM | SQLite 索引层 | 原生模块；13.x 自带 in-tarball N-API prebuild，`asarUnpack` + `npmRebuild: false` 即可（M3 实测，无需 electron-rebuild） |
 | isomorphic-git | git 同步引擎（纯 JS 实现 git 协议，无原生依赖），对接 GitHub 私有仓库；M6 封装为 GitSync（账本目录即 git 工作区，分支固定 main）；**M11 起追踪文件集 = 账本 + 账户库 + Excel 模板 + 受托管 `.gitignore`**（`src/shared/sync-files.ts`）；合并提交双亲语义（[HEAD, 远端]） | 1.41.3（仅 http/https 传输，**不支持 file:// 本地传输**——测试/E2E 用进程内 smart-HTTP 服务器 `src/main/utils/test-servers/git-test-server.ts`）；替代已停维护的 libgit2 绑定（nodegit） |
-| https-proxy-agent | **M12 本机代理**：CONNECT 隧道型 `http.Agent`，按目标 host 升级 TLS SNI；经 `src/main/core/git-network.ts` 注入 isomorphic-git 的 http 插件（顶层命令不接受 `agent`，只有插件层透传给 simple-get）。只需 `dependencies`（纯 JS，无需 `asarUnpack`） | 9.x（ESM-only，Node ≥20；只支持 HTTP/HTTPS 代理，不做 SOCKS） |
+| https-proxy-agent | **M12 本机代理**：CONNECT 隧道型 `http.Agent`，按目标 host 升级 TLS SNI；经 `src/main/core/git-network.ts` 注入 isomorphic-git 的 http 插件（顶层命令不接受 `agent`，只有插件层透传给 simple-get）。**M13 复用**：GitHub 身份识别（`GET /user`）也是 `https.request({ agent: proxyAgentFor(...) })`——主进程没有别的代理感知 HTTP 通道（AI 那条走全局 `fetch`，不吃应用内代理）。只需 `dependencies`（纯 JS，无需 `asarUnpack`） | 9.x（ESM-only，Node ≥20；只支持 HTTP/HTTPS 代理，不做 SOCKS） |
 
 ## UI 层
 
@@ -60,7 +60,7 @@
 | 技术 | 说明 |
 |---|---|
 | electron-log | 日志 |
-| electron-store | 应用级配置（工作目录 current/recents、PAT/Key 密文、**M12 本机 git 网络配置 `git-network`**——代理地址与超时属机器级，刻意不随工作目录）；git 同步配置（repoUrl/branch/adopted/lastSyncAt/lastError）自 M9 起移入工作目录 `<workspace>/.beanwise/sync-config.json`（`JsonSyncConfigStore`）——PAT 密文存 electron-store `sync-tokens`（safeStorage 加密后 base64，按工作目录路径键隔离），不落明文 |
+| electron-store | 应用级配置（工作目录 current/recents、PAT/Key 密文、**M12 本机 git 网络配置 `git-network`**——代理地址与超时属机器级，刻意不随工作目录、**M13 提交人身份 `git-identity`**——手填姓名/邮箱机器级 + PAT 识别缓存按工作目录键隔离，两者都无密钥故明文存）；git 同步配置（repoUrl/branch/adopted/lastSyncAt/lastError）自 M9 起移入工作目录 `<workspace>/.beanwise/sync-config.json`（`JsonSyncConfigStore`）——PAT 密文存 electron-store `sync-tokens`（safeStorage 加密后 base64，按工作目录路径键隔离），不落明文 |
 | Vitest + pytest + Playwright | 前端单测 / Python 引擎测试 / Electron E2E |
 | electron-builder | 打包（无签名口径，`CSC_IDENTITY_AUTO_DISCOVERY=false`） |
 | electron-updater | 自动更新，对接 GitHub Releases |
