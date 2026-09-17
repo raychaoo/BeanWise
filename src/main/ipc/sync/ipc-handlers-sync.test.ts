@@ -10,8 +10,10 @@ import { SYNC_ACCOUNTS_FILE, SYNC_GITIGNORE_FILE } from '../../../shared/sync-fi
 import { getLedgerStatus } from '../../core/index-builder'
 import { registerSyncHandlers } from './ipc-handlers-sync'
 import type { IpcRegistrar } from '../ledger/ipc-handlers'
-import type { ConfigureSyncResult, SyncConfig, SyncResult } from '../../../shared/ipc'
+import type { ConfigureSyncResult, GitNetworkConfig, SaveNetworkResult, SyncConfig, SyncResult, TestConnectionResult } from '../../../shared/ipc'
 import { PythonSvc } from '../../core/python-svc'
+import { normalizeGitNetwork } from '../../core/git-network'
+import type { GitNetworkStore } from '../../stores/git-network-store'
 import type { SyncConfigStore, TokenStore } from '../../stores/token-store'
 import git from 'isomorphic-git'
 import http from 'isomorphic-git/http/node'
@@ -36,6 +38,12 @@ class InMemoryConfigStore implements SyncConfigStore {
   save(c: SyncConfig) { this.cfg = c }
   clear() { this.cfg = null }
 }
+/** 内存 GitNetworkStore（M12 机器级网络配置；CI 无 electron-store） */
+class InMemoryNetworkStore implements GitNetworkStore {
+  private cfg = normalizeGitNetwork(null)
+  load() { return this.cfg }
+  save(c: GitNetworkConfig) { this.cfg = normalizeGitNetwork(c) }
+}
 
 describe('sync handlers（M6）', () => {
   let db: ReturnType<typeof createDrizzle>
@@ -53,21 +61,23 @@ describe('sync handlers（M6）', () => {
     return server.url
   }
 
-  async function setup(opts: { seed?: string; withLocal?: boolean } = {}): Promise<{ tokens: TokenStore; config: SyncConfigStore }> {
+  async function setup(opts: { seed?: string; withLocal?: boolean } = {}): Promise<{ tokens: TokenStore; config: SyncConfigStore; network: InMemoryNetworkStore }> {
     workDir = mkdtempSync(join(tmpdir(), 'beanwise-synch-'))
     ledgerPath = join(workDir, 'main.beancount')
     if (opts.withLocal !== false) copyFileSync(FIXTURE, ledgerPath)
     const tokens: TokenStore = new InMemoryTokenStore()
     const config: SyncConfigStore = new InMemoryConfigStore()
+    const network = new InMemoryNetworkStore()
     const gitSync = new GitSync({
       ledgerPath,
-      auth: () => ({ username: 'x-access-token', password: tokens.load() ?? '' })
+      auth: () => ({ username: 'x-access-token', password: tokens.load() ?? '' }),
+      network: () => network.load()
     })
     const ipc: IpcRegistrar = { handle: (c, l) => { handlers[c] = l as (...args: unknown[]) => unknown } }
     handlers = {}
-    registerSyncHandlers(ipc, { db, engine, ledgerPath, tokens, config, git: gitSync, now: () => FIXED_NOW })
+    registerSyncHandlers(ipc, { db, engine, ledgerPath, tokens, config, network, git: gitSync, now: () => FIXED_NOW })
     if (opts.seed) await seedRemote(server!.url, opts.seed)
-    return { tokens, config }
+    return { tokens, config, network }
   }
 
   afterEach(async () => {
@@ -462,5 +472,64 @@ describe('sync handlers（M6）', () => {
     expect(settled).toContain('fulfilled')
     const results = [a, b].map((r) => (r.status === 'fulfilled' ? (r.value as SyncResult) : null))
     expect(results.some((r) => r?.ok === false && r?.message?.includes('同步进行中')) || results.every((r) => r?.ok)).toBe(true)
+  }, 30_000)
+
+  // ==================== M12：本机代理与超时（机器级） ====================
+
+  it('M12 sync:get-network 默认 → 直连 + 30s', async () => {
+    await setup()
+    expect(handlers['sync:get-network']()).toEqual({ proxyUrl: null, timeoutSec: 30 })
+  }, 30_000)
+
+  it('M12 sync:save-network：合法保存按 origin 规范化，非法一律 ok:false 且不落盘', async () => {
+    await setup()
+    expect(await handlers['sync:save-network']({}, { proxyUrl: 'http://127.0.0.1:7890/', timeoutSec: 60 }))
+      .toEqual({ ok: true, network: { proxyUrl: 'http://127.0.0.1:7890', timeoutSec: 60 } })
+    expect(handlers['sync:get-network']()).toEqual({ proxyUrl: 'http://127.0.0.1:7890', timeoutSec: 60 })
+    // 空串是合法值（= 直连），不是错误
+    expect(await handlers['sync:save-network']({}, { proxyUrl: '   ', timeoutSec: 30 }))
+      .toEqual({ ok: true, network: { proxyUrl: null, timeoutSec: 30 } })
+
+    const bad: Array<[Record<string, unknown>, string]> = [
+      [{ proxyUrl: 'socks5://127.0.0.1:1080', timeoutSec: 30 }, '仅支持 HTTP/HTTPS 代理地址'],
+      [{ proxyUrl: 'http://127.0.0.1', timeoutSec: 30 }, '代理地址需带端口'],
+      [{ proxyUrl: 'http://user:pw@127.0.0.1:7890', timeoutSec: 30 }, '代理地址不要携带用户名密码'],
+      [{ proxyUrl: null, timeoutSec: 0 }, '超时必须是'],
+      [{ proxyUrl: null, timeoutSec: 601 }, '超时必须是'],
+      [{ proxyUrl: null, timeoutSec: 1.5 }, '超时必须是']
+    ]
+    for (const [params, hint] of bad) {
+      const r = await handlers['sync:save-network']({}, params) as SaveNetworkResult
+      expect(r.ok, JSON.stringify(params)).toBe(false)
+      expect(r.error).toContain(hint)
+    }
+    // 非法保存不落盘：仍是上一次的合法值
+    expect(handlers['sync:get-network']()).toEqual({ proxyUrl: null, timeoutSec: 30 })
+  }, 30_000)
+
+  it('M12 sync:test-connection：未配置仓库地址 → 提示先填', async () => {
+    await setup()
+    const r = await handlers['sync:test-connection']({}, {}) as TestConnectionResult
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('请先填写并保存仓库地址')
+  }, 30_000)
+
+  it('M12 回环绕过：配了代理，对回环仓库的握手仍直连成功', async () => {
+    const url = await newRepo()
+    const { network } = await setup()
+    const direct = await handlers['sync:test-connection']({}, { repoUrl: url }) as TestConnectionResult
+    expect(direct).toEqual({ ok: true, message: '连接成功（直连）' })
+    // 代理指向死端口：目标是回环 → 必须绕过代理（否则单测/E2E 全灭）
+    network.save({ proxyUrl: 'http://127.0.0.1:1', timeoutSec: 30 })
+    expect(await handlers['sync:test-connection']({}, { repoUrl: url })).toMatchObject({ ok: true })
+  }, 60_000)
+
+  it('M12 sync:test-connection：代理不可达 → 诊断文案带出代理地址（零外网依赖）', async () => {
+    const { network } = await setup()
+    network.save({ proxyUrl: 'http://127.0.0.1:1', timeoutSec: 30 })
+    // 目标非回环才会走代理；端口 1 必被拒 → 立即失败，不触外网
+    const r = await handlers['sync:test-connection']({}, { repoUrl: 'https://github.com/beanwise/test' }) as TestConnectionResult
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('http://127.0.0.1:1')
   }, 30_000)
 })

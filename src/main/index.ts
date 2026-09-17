@@ -8,6 +8,7 @@ import { UPDATE_STATUS_CHANNEL, type UpdateState } from '../shared/ipc'
 import { applyCsp } from './core/csp'
 import { createDrizzle, openDatabase } from './db'
 import { GitSync } from './core/git-sync'
+import { defaultGitNetwork } from './core/git-network'
 import { refreshIndex } from './core/index-builder'
 import { registerAiHandlers } from './ipc/ai/ipc-handlers-ai'
 import { registerLedgerHandlers } from './ipc/ledger/ipc-handlers'
@@ -22,6 +23,7 @@ import { registerExcelHandlers } from './ipc/excel/ipc-handlers-excel'
 import { JsonExcelTemplateStore } from './excel/config-store'
 import { ElectronAiTokenStore, ElectronWorkspaceTokenStore } from './stores/token-store'
 import type { SyncConfigStore, TokenStore } from './stores/token-store'
+import { ElectronGitNetworkStore } from './stores/git-network-store'
 import { createUpdaterService } from './stores/updater'
 import { ElectronWorkspaceStore } from './stores/workspace-store'
 import { JsonSyncConfigStore } from './stores/workspace-config-store'
@@ -92,6 +94,8 @@ const runtime: Runtime = {
 let pythonSvc: PythonSvc | null = null
 let quitHandled = false
 let workspaceStore: ElectronWorkspaceStore | null = null
+/** M12 本机 git 网络配置（代理 + 超时）：机器级，**不随工作目录重建** */
+let gitNetworkStore: ElectronGitNetworkStore | null = null
 
 /** 往来类账户路径（ADR 23）：读账户库 counterparty 标志，**调用时实时取值**
  * （账户库可先于账本变化，注册时快照会读到旧值）。录入挂链与往来账报表共用此源。 */
@@ -121,7 +125,9 @@ function activateWorkspace(workspaceDir: string): void {
   runtime.ledgerPath = ledgerPath
   runtime.gitSync = new GitSync({
     ledgerPath,
-    auth: () => ({ username: 'x-access-token', password: runtime.syncTokens?.load() ?? '' })
+    auth: () => ({ username: 'x-access-token', password: runtime.syncTokens?.load() ?? '' }),
+    // M12：每次远端调用实时求值 → 同步设置里改完代理/超时立即生效，无需重建 GitSync
+    network: () => gitNetworkStore?.load() ?? null
   })
 
   // 刷新索引（fire-and-forget）
@@ -137,6 +143,7 @@ app.whenReady().then(() => {
 
   pythonSvc = new PythonSvc({ command: resolveEngineCommand() })
   workspaceStore = new ElectronWorkspaceStore()
+  gitNetworkStore = new ElectronGitNetworkStore()
 
   // 工作目录域四通道（choose/open/get-status；open 内部触发 activateWorkspace）
   registerWorkspaceHandlers(ipcMain, {
@@ -193,7 +200,7 @@ app.whenReady().then(() => {
     }
   })
 
-  // sync 域六通道
+  // sync 域九通道（M6/M11 六 + M12 网络三）
   registerSyncHandlers(ipcMain, {
     get engine() { return pythonSvc! },
     get db() { return runtime.db! },
@@ -213,6 +220,13 @@ app.whenReady().then(() => {
         runtime.syncConfig.save(config)
       },
       clear: () => runtime.syncConfig?.clear()
+    },
+    network: {
+      load: () => gitNetworkStore?.load() ?? defaultGitNetwork(),
+      save: (config) => {
+        if (!gitNetworkStore) throw new Error('内部错误：应用尚未就绪')
+        gitNetworkStore.save(config)
+      }
     },
     get git() { return runtime.gitSync! }
   })

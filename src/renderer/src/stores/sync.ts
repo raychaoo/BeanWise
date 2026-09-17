@@ -9,7 +9,7 @@
  */
 import { message } from 'antd'
 import { create } from 'zustand'
-import type { ResolveFileParam, SyncFileConflict, SyncStatus } from '../../../shared/ipc'
+import type { GitNetworkConfig, ResolveFileParam, SyncFileConflict, SyncStatus, TestConnectionResult } from '../../../shared/ipc'
 import { describeConflicts } from '../../../shared/sync-files'
 import { useLedgerStore } from './ledger'
 
@@ -23,12 +23,17 @@ interface SyncState {
   syncing: boolean
   /** 成功合并/落盘一次自增（视图级重载信号：账户页、Excel 模板列表） */
   generation: number
+  /** M12 本机网络配置（代理 + 超时）——机器级，与工作目录无关 */
+  network: GitNetworkConfig | null
   loadStatus(): Promise<void>
   configure(repoUrl: string, pat: string): Promise<boolean>
   push(): Promise<void>
   pull(): Promise<void>
   resolveConflict(resolved: ResolveFileParam[]): Promise<boolean>
   clear(): Promise<void>
+  loadNetwork(): Promise<void>
+  saveNetwork(config: GitNetworkConfig): Promise<boolean>
+  testConnection(repoUrl?: string): Promise<TestConnectionResult>
 }
 
 /** 响应是否携带可用的冲突快照（conflict:true 但载荷缺失视为普通失败） */
@@ -41,6 +46,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   conflict: null,
   syncing: false,
   generation: 0,
+  network: null,
 
   loadStatus: async () => {
     try {
@@ -164,6 +170,45 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       message.success('已清除同步配置')
     } catch (err) {
       message.error(`清除失败：${String(err)}`)
+    }
+  },
+
+  // ---- M12 本机网络配置（代理 + 超时）：机器级，与工作目录/账本仓库无关 ----
+
+  loadNetwork: async () => {
+    try {
+      set({ network: await window.beanwise.getGitNetwork() })
+    } catch (err) {
+      set({ network: null })
+      message.error(`读取网络设置失败：${String(err)}`)
+    }
+  },
+
+  saveNetwork: async (config) => {
+    try {
+      const r = await window.beanwise.saveGitNetwork(config)
+      if (!r.ok) {
+        message.error(r.error ?? '网络设置保存失败')
+        return false
+      }
+      set({ network: r.network ?? config })
+      message.success('网络设置已保存')
+      return true
+    } catch (err) {
+      message.error(`网络设置保存失败：${String(err)}`)
+      return false
+    }
+  },
+
+  /**
+   * 连接测试。**不弹 toast**——返回的诊断文案（超时/代理不可达/认证失败）要留在弹窗里
+   * 供用户对着改代理地址，几秒即散的 toast 是错误介质。
+   */
+  testConnection: async (repoUrl) => {
+    try {
+      return await window.beanwise.testSyncConnection({ repoUrl })
+    } catch (err) {
+      return { ok: false, message: `连接测试失败：${String(err)}` }
     }
   }
 }))

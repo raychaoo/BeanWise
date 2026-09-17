@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { APP_NAME } from '../shared/app'
 import type { BeanWiseApi } from '../shared/api'
 import { UPDATE_STATUS_CHANNEL } from '../shared/ipc'
-import type { AddEntryParams, AiParseParams, ConfigureSyncParams, ExcelImportParams, ExcelImportTemplate, ExcelParseParams, ExcelPreviewParams, GetEntryParams, ListEntriesParams, ReportBalancesParams, ReportBreakdownParams, ReportCashFlowParams, ReportCounterpartyLedgerResult, ReportCounterpartyTransactionsParams, ReportCounterpartyTransactionsResult, ReportIncomeExpenseParams, ReportNetWorthParams, ReportTrialBalanceParams, ReportYearsResult, ResolveConflictParams, SaveAccountsParams, SaveAiConfigParams, SaveFileParams, UpdateEntryParams, UpdateState } from '../shared/ipc'
+import type { AddEntryParams, AiParseParams, ConfigureSyncParams, ExcelImportParams, ExcelImportTemplate, ExcelParseParams, ExcelPreviewParams, GetEntryParams, GitNetworkConfig, ListEntriesParams, ReportBalancesParams, ReportBreakdownParams, ReportCashFlowParams, ReportCounterpartyLedgerResult, ReportCounterpartyTransactionsParams, ReportCounterpartyTransactionsResult, ReportIncomeExpenseParams, ReportNetWorthParams, ReportTrialBalanceParams, ReportYearsResult, ResolveConflictParams, SaveAccountsParams, SaveAiConfigParams, SaveFileParams, TestConnectionParams, UpdateEntryParams, UpdateState } from '../shared/ipc'
 
 const api: BeanWiseApi = {
   appName: APP_NAME,
@@ -39,6 +39,9 @@ const api: BeanWiseApi = {
   pullLedger: () => ipcRenderer.invoke('sync:pull'),
   resolveSyncConflict: (params: ResolveConflictParams) => ipcRenderer.invoke('sync:resolve-conflict', params),
   clearSync: () => ipcRenderer.invoke('sync:clear'),
+  getGitNetwork: (): Promise<GitNetworkConfig> => ipcRenderer.invoke('sync:get-network'),
+  saveGitNetwork: (params: GitNetworkConfig) => ipcRenderer.invoke('sync:save-network', params),
+  testSyncConnection: (params: TestConnectionParams) => ipcRenderer.invoke('sync:test-connection', params),
   getAiStatus: () => ipcRenderer.invoke('ai:get-status'),
   saveAiConfig: (params: SaveAiConfigParams) => ipcRenderer.invoke('ai:save-config', params),
   clearAiConfig: () => ipcRenderer.invoke('ai:clear-config'),

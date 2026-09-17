@@ -18,6 +18,7 @@ import type {
   ExcelTemplateListResult,
   ExcelTemplateSaveResult,
   GetEntryParams,
+  GitNetworkConfig,
   GetEntryResult,
   AccountsResult,
   SaveAccountsParams,
@@ -51,8 +52,11 @@ import type {
   SaveAiConfigResult,
   SaveFileParams,
   SaveFileResult,
+  SaveNetworkResult,
   SyncResult,
   SyncStatus,
+  TestConnectionParams,
+  TestConnectionResult,
   UpdateEntryParams,
   UpdateCheckResult,
   UpdateInstallResult,
@@ -128,6 +132,12 @@ export interface BeanWiseApi {
   resolveSyncConflict(params: ResolveConflictParams): Promise<ResolveConflictResult>
   /** 清除同步配置与 PAT */
   clearSync(): Promise<{ ok: boolean }>
+  /** 读本机网络配置（代理 + 超时；机器级，与工作目录无关） */
+  getGitNetwork(): Promise<GitNetworkConfig>
+  /** 保存本机网络配置（非法代理地址 → ok:false + error，不 throw） */
+  saveGitNetwork(params: GitNetworkConfig): Promise<SaveNetworkResult>
+  /** 连接测试：按已保存网络配置对仓库做一次真实 git 握手（验证代理/网络/地址/PAT） */
+  testSyncConnection(params: TestConnectionParams): Promise<TestConnectionResult>
   /** AI 配置状态（不含 Key——渲染端永不接触密钥） */
   getAiStatus(): Promise<AiStatus>
   /** 配置 DeepSeek API Key（safeStorage 加密，仅主进程持有） */

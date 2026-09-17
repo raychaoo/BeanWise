@@ -20,8 +20,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import fs from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import git, { Errors, type AuthCallback, type AuthFailureCallback } from 'isomorphic-git'
-import http from 'isomorphic-git/http/node'
+import type { HttpClient } from 'isomorphic-git/http/node'
 import { SYNC_GITIGNORE_BEGIN, SYNC_GITIGNORE_BLOCK, SYNC_GITIGNORE_FILE, SYNC_LEDGER_FILE, SYNC_TRACKED_FILES } from '../../shared/sync-files'
+import type { GitNetworkConfig } from '../../shared/ipc'
+import { createGitHttp } from './git-network'
 import type { FileTriple } from './merge-engine'
 
 export const GIT_AUTHOR = { name: 'BeanWise', email: 'beanwise@local' }
@@ -46,8 +48,13 @@ export interface GitSyncOptions {
   /** 覆盖追踪文件集（测试用）；缺省 SYNC_TRACKED_FILES，其中账本项按 ledgerPath 的实际文件名替换 */
   trackedFiles?: readonly string[]
   auth?: AuthProvider
-  /** 远端操作超时（ms），默认 30_000 */
+  /** 远端操作超时（ms），默认 30_000；被 `network` 的 timeoutSec 覆盖（后者优先） */
   timeoutMs?: number
+  /**
+   * M12 本机网络配置（代理 + 超时）——**每次远端调用求值**，故设置改完立即生效、无需重建 GitSync。
+   * 缺省（测试/未注入）→ 直连 + timeoutMs。
+   */
+  network?: () => GitNetworkConfig | null
 }
 
 export class GitSync {
@@ -56,6 +63,9 @@ export class GitSync {
   private readonly files: readonly string[]
   private readonly auth: AuthProvider
   private readonly timeoutMs: number
+  private readonly network?: () => GitNetworkConfig | null
+  /** 包了代理注入的 http 插件（唯一注入面，见 core/git-network） */
+  private readonly http: HttpClient
 
   constructor(opts: GitSyncOptions) {
     this.dir = dirname(opts.ledgerPath)
@@ -63,6 +73,8 @@ export class GitSync {
     this.files = (opts.trackedFiles ?? SYNC_TRACKED_FILES).map((f) => (f === SYNC_LEDGER_FILE ? ledgerFile : f))
     this.auth = opts.auth ?? (() => ({ username: 'x-access-token', password: 'x-oauth-basic' }))
     this.timeoutMs = opts.timeoutMs ?? 30_000
+    this.network = opts.network
+    this.http = createGitHttp(() => this.network?.() ?? null)
   }
 
   /** 追踪文件集（IPC 层用于「本地是否已有内容」判据等） */
@@ -70,12 +82,19 @@ export class GitSync {
     return this.files
   }
 
+  /** 生效超时：本机网络配置（秒）优先，缺省回落到构造参数（默认 30s） */
+  private timeoutMsOf(): number {
+    const sec = this.network?.()?.timeoutSec
+    return typeof sec === 'number' && Number.isFinite(sec) && sec > 0 ? sec * 1000 : this.timeoutMs
+  }
+
   /** 所有远端操作包超时（本地文件协议同样计数，防 io 悬挂） */
   private withTimeout<T>(p: Promise<T>): Promise<T> {
+    const ms = this.timeoutMsOf()
     return Promise.race([
       p,
       new Promise<T>((_, reject) =>
-        setTimeout(() => reject(new Error(`git 操作超时（${this.timeoutMs}ms）`)), this.timeoutMs))
+        setTimeout(() => reject(new Error(`git 操作超时（${ms}ms）：请检查网络，或在「Git 同步设置 → 网络」里配置本机代理`)), ms))
     ])
   }
 
@@ -147,7 +166,7 @@ export class GitSync {
 
   async fetch(): Promise<void> {
     await this.withTimeout(git.fetch({
-      fs, http, dir: this.dir, remote: SYNC_REMOTE, ref: SYNC_BRANCH,
+      fs, http: this.http, dir: this.dir, remote: SYNC_REMOTE, ref: SYNC_BRANCH,
       singleBranch: true, onAuth: this.onAuth(), onAuthFailure: this.onAuthFailure()
     }))
   }
@@ -196,7 +215,7 @@ export class GitSync {
 
   async push(force = false): Promise<void> {
     await this.withTimeout(git.push({
-      fs, http, dir: this.dir, remote: SYNC_REMOTE, ref: SYNC_BRANCH, force,
+      fs, http: this.http, dir: this.dir, remote: SYNC_REMOTE, ref: SYNC_BRANCH, force,
       onAuth: this.onAuth(), onAuthFailure: this.onAuthFailure()
     }))
   }
@@ -214,14 +233,14 @@ export class GitSync {
   async clone(url: string): Promise<void> {
     mkdirSync(this.dir, { recursive: true })
     await this.withTimeout(git.clone({
-      fs, http, dir: this.dir, url, ref: SYNC_BRANCH,
+      fs, http: this.http, dir: this.dir, url, ref: SYNC_BRANCH,
       singleBranch: true, onAuth: this.onAuth(), onAuthFailure: this.onAuthFailure()
     }))
   }
 
   async listServerRefs(url: string): Promise<Array<{ ref: string; oid: string }>> {
     const refs = await this.withTimeout(git.listServerRefs({
-      url, http, onAuth: this.onAuth(), onAuthFailure: this.onAuthFailure()
+      url, http: this.http, onAuth: this.onAuth(), onAuthFailure: this.onAuthFailure()
     }))
     return refs.map((r) => ({ ref: r.ref, oid: r.oid }))
   }

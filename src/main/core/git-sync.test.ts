@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { GitSync, GIT_AUTHOR, SYNC_BRANCH } from './git-sync'
 import { mergeTrackedFiles } from './merge-engine'
 import { createBareRepo, readRemoteFile, remoteCommitCount, seedRemote, startGitServer } from '../utils/test-servers/git-test-server'
+import { startFakeProxy, type FakeProxy } from '../utils/test-servers/fake-proxy-server'
 import { SYNC_ACCOUNTS_FILE, SYNC_GITIGNORE_BEGIN, SYNC_GITIGNORE_FILE } from '../../shared/sync-files'
 
 const FIXTURE = resolve('python/tests/fixtures/main.beancount')
@@ -20,6 +21,7 @@ describe('GitSync（M6）', () => {
   let bareDir: string
   let remoteUrl: string
   let server: { url: string; close: () => Promise<void> }
+  let fakeProxy: FakeProxy | null = null
 
   beforeEach(async () => {
     workDir = mkdtempSync(join(tmpdir(), 'beanwise-gitsync-'))
@@ -30,6 +32,8 @@ describe('GitSync（M6）', () => {
     remoteUrl = server.url
   })
   afterEach(async () => {
+    if (fakeProxy) await fakeProxy.close()
+    fakeProxy = null
     await server.close()
     rmSync(workDir, { recursive: true, force: true })
     rmSync(bareDir, { recursive: true, force: true })
@@ -360,5 +364,43 @@ describe('GitSync（M6）', () => {
     await seedRemote(remoteUrl, REMOTE_SEED_PATCH)
     const refs = await sync.listServerRefs(remoteUrl)
     expect(refs.some((r) => r.ref === `refs/heads/${SYNC_BRANCH}`)).toBe(true)
+  }, 30_000)
+
+  // ==================== M12：本机代理与超时 ====================
+
+  it('M12 回环绕过：配了代理，对回环仓库的 fetch/push 仍直连可用', async () => {
+    // 代理指向死端口：目标回环必须绕过它，否则整个同步链路（含全部 E2E）当场断掉
+    const sync = new GitSync({
+      ledgerPath,
+      network: () => ({ proxyUrl: 'http://127.0.0.1:1', timeoutSec: 30 })
+    })
+    await sync.initRepo(); await sync.addTrackedFiles(); await sync.commit('init')
+    await sync.addRemote(remoteUrl)
+    await sync.push()
+    expect(await readRemoteFile(bareDir)).toBe(readFileSync(ledgerPath, 'utf8'))
+    await sync.fetch()
+  }, 60_000)
+
+  it('M12 代理生效：非回环目标走代理（假代理收到 CONNECT），不再直连', async () => {
+    fakeProxy = await startFakeProxy()
+    const sync = new GitSync({
+      ledgerPath,
+      network: () => ({ proxyUrl: fakeProxy!.url, timeoutSec: 30 })
+    })
+    // 不存在的域名 + 假代理：确定性证明请求被送进了代理（零外网）
+    await expect(sync.listServerRefs('https://example.invalid/beanwise.git')).rejects.toThrow()
+    expect(fakeProxy.connects).toEqual(['example.invalid:443'])
+  }, 30_000)
+
+  it('M12 超时可配置：超时毫秒数取自 network（覆盖构造参数）', async () => {
+    fakeProxy = await startFakeProxy({ hang: true })
+    const sync = new GitSync({
+      ledgerPath,
+      timeoutMs: 30_000,
+      network: () => ({ proxyUrl: fakeProxy!.url, timeoutSec: 1 })
+    })
+    // 假代理只收 CONNECT、不回包 → 必然超时；文案里的数值必须是 network 的 1s，而不是构造参数的 30s
+    await expect(sync.listServerRefs('https://example.invalid/beanwise.git'))
+      .rejects.toThrow('git 操作超时（1000ms）')
   }, 30_000)
 })

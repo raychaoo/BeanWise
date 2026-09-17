@@ -20,6 +20,8 @@
  *   无条件渲染）随迁至此；conflict-t6.spec.ts 删除，不留重复冲突测试。
  * - M11 起同步范围是**文件集**（账本 + 账户库 + Excel 模板 + .gitignore）：冲突载荷为逐文件三态，
  *   冲突视图按文件分 tab（JSON 文件只做「采用本地 / 采用远端」二选一，不做手工编辑）。
+ * - M12 起可在同步设置里配**机器级**代理与超时（electron-store `git-network`）。该配置同样跨运行
+ *   持久化，故 resetSync 一并复位；目标为本机回环时一律绕过代理——最后一条用例把这条钉死。
  */
 import { _electron as electron, expect, test, type Page } from '@playwright/test'
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -49,9 +51,12 @@ async function activateWorkspace(win: Page, ledgerPath: string): Promise<void> {
   await win.reload()
 }
 
-/** 清掉 electron-store 残留同步配置（跨测试持久化），重载回未配置态 */
+/** 复位同步相关残留（跨用例 + 跨运行持久化）：本工作目录的配置/PAT + **机器级**网络配置（M12） */
 async function resetSync(win: Page): Promise<void> {
-  await win.evaluate(() => window.beanwise.clearSync())
+  await win.evaluate(async () => {
+    await window.beanwise.clearSync()
+    await window.beanwise.saveGitNetwork({ proxyUrl: null, timeoutSec: 30 })
+  })
   await win.reload()
   await expect(win.getByRole('button', { name: '配置同步' })).toBeVisible()
 }
@@ -326,6 +331,52 @@ test('M11 JSON 冲突：账户库同科目两侧改动 → 冲突 tab 二选一 
 
     expect(localText(ledgerPath, ACCOUNTS_REL)).toContain('餐费')
     await expect.poll(async () => (await readRemoteFile(bareDir, ACCOUNTS_REL)) ?? '').toContain('餐费')
+
+    await app.close()
+  } finally {
+    await cleanupFixture(ledgerPath)
+    await server.close()
+    rmSync(bareDir, { recursive: true, force: true })
+  }
+})
+
+// ==================== M12：本机代理与超时 ====================
+
+test('M12 网络：保存本机代理与超时；配了代理也不影响回环仓库同步', async () => {
+  test.setTimeout(180_000)
+  const bareDir = await createBareRepo()
+  const server = await startGitServer(bareDir)
+  const ledgerPath = createFixtureCopy()
+  try {
+    const app = await electron.launch({
+      args: launchArgs,
+      env: { ...process.env, BEANWISE_LEDGER_PATH: ledgerPath }
+    })
+    const win = await app.firstWindow()
+    await activateWorkspace(win, ledgerPath)
+    await resetSync(win)
+
+    // 1. 未配置态打开同步设置 → 网络区填「死端口」代理 + 超时 45s → 保存并回读
+    await win.getByRole('button', { name: '配置同步' }).click()
+    await win.getByPlaceholder('http://127.0.0.1:7890').fill('http://127.0.0.1:1')
+    await win.getByRole('spinbutton').fill('45')
+    await win.getByRole('button', { name: '保存网络设置' }).click()
+    await expect(win.locator('.ant-message')).toContainText('网络设置已保存')
+    expect(await win.evaluate(() => window.beanwise.getGitNetwork()))
+      .toEqual({ proxyUrl: 'http://127.0.0.1:1', timeoutSec: 45 })
+
+    // 2. 还没填仓库地址就测试连接 → 明确告知缺什么，而不是含糊的「超时」
+    await win.getByRole('button', { name: '测试连接' }).click()
+    await expect(win.getByText('请先填写并保存仓库地址')).toBeVisible()
+
+    // 3. 关键回归：代理指向死端口，但仓库是回环测试服务器 → 必须绕过代理，配置并同步照常成功
+    //    （把「回环绕过」这条规则钉死在端到端链路上，否则将来删掉它会静默搞垮全部同步测试）
+    await win.getByPlaceholder('https://github.com/yourname/beanwise').fill(server.url)
+    await win.getByPlaceholder('ghp_...').fill('test-pat')
+    await win.getByRole('button', { name: /并同步/ }).click()
+    await expect(win.locator('.ant-message')).toContainText('同步配置成功')
+    expect(readFileSync(ledgerPath, 'utf8')).toContain('Breakfast')
+    await expect.poll(async () => ((await readRemoteFile(bareDir)) ?? '').includes('Breakfast')).toBe(true)
 
     await app.close()
   } finally {

@@ -37,6 +37,7 @@ export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list
   | 'workspace:rename' | 'workspace:archive' | 'workspace:delete'
   | 'sync:get-status' | 'sync:configure' | 'sync:push' | 'sync:pull'
   | 'sync:resolve-conflict' | 'sync:clear'
+  | 'sync:get-network' | 'sync:save-network' | 'sync:test-connection'
   | 'ai:get-status' | 'ai:save-config' | 'ai:clear-config' | 'ai:parse'
   | 'report:net-worth' | 'report:balances' | 'report:income-expense' | 'report:years' | 'report:trial-balance' | 'report:cash-flow' | 'report:breakdown' | 'report:export-pdf' | 'report:counterparty-ledger' | 'report:counterparty-transactions'
   | 'update:check' | 'update:status' | 'update:install'
@@ -419,6 +420,43 @@ export interface SyncStatus {
 export interface ConfigureSyncParams {
   repoUrl: string
   pat: string
+}
+
+/** git 网络配置的取值范围：主进程校验（core/git-network）与渲染端表单共用一份，防两处漂移 */
+export const GIT_TIMEOUT_SEC_DEFAULT = 30
+export const GIT_TIMEOUT_SEC_MIN = 1
+export const GIT_TIMEOUT_SEC_MAX = 600
+
+/**
+ * 本机 git 网络配置（代理 + 超时）。存应用级 electron-store（`git-network`）——**机器级**，
+ * 不随工作目录隔离、不进仓库：代理是机器/网络属性，换工作目录不该重填。
+ * 代理**只靠手动填写**（不读 Windows 系统代理、不读 HTTP_PROXY 环境变量，有意设计）。
+ */
+export interface GitNetworkConfig {
+  /** HTTP/HTTPS 代理地址（如 http://127.0.0.1:7890）；null / 空串 = 直连 */
+  proxyUrl: string | null
+  /** 单个远端 git 操作超时（秒），1~600，默认 30 */
+  timeoutSec: number
+}
+
+/** sync:save-network 结果（校验失败 → ok:false，不 throw——渲染端直接回显） */
+export interface SaveNetworkResult {
+  ok: boolean
+  error?: string
+  /** 规范化后的配置（保存成功时回传） */
+  network?: GitNetworkConfig
+}
+
+/** sync:test-connection 入参（用**已保存**的网络配置探测；未保存的代理请先保存再测） */
+export interface TestConnectionParams {
+  /** 待测仓库地址；缺省用已保存配置的 repoUrl */
+  repoUrl?: string
+}
+
+/** sync:test-connection 结果（message 是可读中文诊断——超时/代理不可达/认证失败分别给话术） */
+export interface TestConnectionResult {
+  ok: boolean
+  message: string
 }
 
 /**

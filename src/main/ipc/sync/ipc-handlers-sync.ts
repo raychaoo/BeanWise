@@ -1,5 +1,7 @@
 /**
- * M6/M11：同步 IPC 六通道（get-status / configure / push / pull / resolve-conflict / clear）。
+ * M6/M11/M12：同步 IPC 九通道。
+ * M6/M11 六通道：get-status / configure / push / pull / resolve-conflict / clear。
+ * M12 三通道：get-network / save-network / test-connection（本机代理与超时，见 core/git-network）。
  *
  * 同步范围是**文件集**（shared/sync-files.ts）：账本 + 账户库 + Excel 模板 + 受托管 .gitignore。
  * 编排：场景 A/B/C 首同步判别、push/pull 前置快照提交、fetch → analyzeMerge →
@@ -16,16 +18,18 @@
  */
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import type { ConfigureSyncParams, ConfigureSyncResult, ResolveConflictParams, ResolveConflictResult, ResolveFileParam, SyncConfig, SyncResult, SyncStatus } from '../../../shared/ipc'
+import type { ConfigureSyncParams, ConfigureSyncResult, GitNetworkConfig, ResolveConflictParams, ResolveConflictResult, ResolveFileParam, SaveNetworkResult, SyncConfig, SyncResult, SyncStatus, TestConnectionParams, TestConnectionResult } from '../../../shared/ipc'
 import { SYNC_ACCOUNTS_FILE, SYNC_GITIGNORE_FILE, SYNC_TEMPLATES_FILE } from '../../../shared/sync-files'
 import type { DrizzleDb } from '../../db/index'
 import { SYNC_BRANCH, type GitSync, type MergeStatus } from '../../core/git-sync'
+import { normalizeGitNetwork } from '../../core/git-network'
 import { mergeTrackedFiles, parseAccountsFile, parseTemplatesFile, type MergePlan, type MergedFile } from '../../core/merge-engine'
 import { refreshIndex } from '../../core/index-builder'
 import { commitStagedLedger, stageLedgerChecked } from '../../utils/ledger-writer'
 import { writeJsonChecked } from '../../utils/json-writer'
 import type { PythonSvc } from '../../core/python-svc'
 import type { IpcRegistrar } from '../ledger/ipc-handlers'
+import type { GitNetworkStore } from '../../stores/git-network-store'
 import type { SyncConfigStore, TokenStore } from '../../stores/token-store'
 import { withWriteLock } from '../../utils/write-lock'
 
@@ -35,6 +39,8 @@ export interface SyncDeps {
   ledgerPath: string
   tokens: TokenStore
   config: SyncConfigStore
+  /** M12 本机网络配置（代理 + 超时）——机器级，与工作目录无关 */
+  network: GitNetworkStore
   git: GitSync
   /** 可注入时间源（lastSyncAt 测试） */
   now?: () => number
@@ -89,6 +95,49 @@ function validateResolveParams(raw: unknown, allowed: readonly string[]): Resolv
   })
   if (bytes > MAX_SYNC_CONTENT_BYTES) throw new Error('合并内容超过 20MB 上限')
   return resolved
+}
+
+/** 把 git 握手的失败翻成人话——「代理没配好」与「PAT 不对」在原始错误里长得一样，必须分开说 */
+function describeConnectionError(err: unknown, network: GitNetworkConfig): string {
+  const message = String(err).replace(/^Error:\s*/, '')
+  if (message.includes('超时')) return message // withTimeout 的文案已含代理提示，直接用
+  // isomorphic-git 的 HttpError.data 只有 { statusCode, statusMessage, response }（无 url/headers，无泄漏）
+  const status = (err as { data?: { statusCode?: number } })?.data?.statusCode
+  if (status === 401 || status === 403) return '网络已通，但认证失败：请检查 PAT 是否有效（需 repo scope）'
+  if (status === 404) return '网络已通，但仓库不存在或无权访问：请检查仓库地址与 PAT 权限'
+  if (typeof status === 'number' && status >= 500) {
+    return network.proxyUrl
+      ? `代理 ${network.proxyUrl} 返回 ${status}：代理未放行该站点，或代理节点不可用`
+      : `远端返回 ${status}：请稍后重试`
+  }
+  // 代理软件没开 / 端口填错 → 连接被拒（最常见的一种填错）
+  const code = (err as { code?: string })?.code
+  if (network.proxyUrl && (code === 'ECONNREFUSED' || code === 'ECONNRESET' || code === 'EHOSTUNREACH')) {
+    return `无法连接代理 ${network.proxyUrl}（${code}）：请确认代理软件已启动、端口与地址正确`
+  }
+  return network.proxyUrl ? `连接失败（当前代理 ${network.proxyUrl}）：${message}` : message
+}
+
+/**
+ * M12 连接测试：用**已保存**的网络配置做一次真实 git 握手（listServerRefs）——一次同时验证
+ * 代理、网络、仓库地址、PAT 四件事（比 ping 主机说明力强得多）。
+ * 读配置不做任何写入，故不进 writeLock / SYNCING（不该被进行中的 push/pull 挡住）。
+ */
+async function testConnection(deps: SyncDeps, raw: unknown): Promise<TestConnectionResult> {
+  const p = (raw ?? {}) as Partial<TestConnectionParams>
+  const saved = deps.config.load()
+  const repoUrl = typeof p.repoUrl === 'string' && p.repoUrl.trim() !== '' ? p.repoUrl.trim() : (saved?.repoUrl ?? '')
+  if (repoUrl === '') return { ok: false, message: '请先填写并保存仓库地址' }
+  if (!GITHUB_REPO_URL_RE.test(repoUrl) && !isLoopbackHttpUrl(repoUrl)) {
+    return { ok: false, message: '仓库地址必须是 GitHub 仓库地址（https://github.com/owner/repo）' }
+  }
+  const network = deps.network.load()
+  try {
+    await deps.git.listServerRefs(repoUrl)
+    return { ok: true, message: network.proxyUrl ? `连接成功（经代理 ${network.proxyUrl}）` : '连接成功（直连）' }
+  } catch (err) {
+    return { ok: false, message: describeConnectionError(err, network) }
+  }
 }
 
 /** 同步互斥：push/pull/resolve/configure 任一进行中，其余触发即拒绝 */
@@ -236,6 +285,23 @@ export function registerSyncHandlers(ipc: IpcRegistrar, deps: SyncDeps): void {
     deps.config.clear()
     return { ok: true }
   })
+
+  // M12 网络配置三通道（代理 + 超时）。机器级配置，与工作目录/账本仓库无关，故不参与 sync:clear。
+  ipc.handle('sync:get-network', (): GitNetworkConfig => deps.network.load())
+
+  ipc.handle('sync:save-network', (_event: unknown, raw: unknown): SaveNetworkResult => {
+    // 非法地址不让保存（返回 ok:false 而非 reject——表单要就地回显错在哪，如「需带端口」）
+    try {
+      const network = normalizeGitNetwork(raw)
+      deps.network.save(network)
+      return { ok: true, network }
+    } catch (err) {
+      return { ok: false, error: String(err).replace(/^Error:\s*/, '') }
+    }
+  })
+
+  ipc.handle('sync:test-connection', (_event: unknown, raw: unknown): Promise<TestConnectionResult> =>
+    testConnection(deps, raw))
 
   ipc.handle('sync:configure', (_event: unknown, raw: unknown): Promise<ConfigureSyncResult> =>
     withWriteLock(async () => {

@@ -17,6 +17,9 @@ type StubApi = {
   pullLedger: ReturnType<typeof vi.fn>
   resolveSyncConflict: ReturnType<typeof vi.fn>
   clearSync: ReturnType<typeof vi.fn>
+  getGitNetwork: ReturnType<typeof vi.fn>
+  saveGitNetwork: ReturnType<typeof vi.fn>
+  testSyncConnection: ReturnType<typeof vi.fn>
   getLedgerStatus: ReturnType<typeof vi.fn>
   listLedgerEntries: ReturnType<typeof vi.fn>
   listLedgerAccounts: ReturnType<typeof vi.fn>
@@ -34,6 +37,9 @@ function stubBeanwise(overrides: Partial<StubApi> = {}): StubApi {
     pullLedger: vi.fn().mockResolvedValue({ ok: true }),
     resolveSyncConflict: vi.fn().mockResolvedValue({ ok: true, status: 'ok', entryCount: 0, errorCount: 0 }),
     clearSync: vi.fn().mockResolvedValue({ ok: true }),
+    getGitNetwork: vi.fn().mockResolvedValue({ proxyUrl: null, timeoutSec: 30 }),
+    saveGitNetwork: vi.fn().mockResolvedValue({ ok: true, network: { proxyUrl: null, timeoutSec: 30 } }),
+    testSyncConnection: vi.fn().mockResolvedValue({ ok: true, message: '连接成功（直连）' }),
     getLedgerStatus: vi.fn().mockResolvedValue(null),
     listLedgerEntries: vi.fn().mockResolvedValue({ entries: [], total: 0 }),
     listLedgerAccounts: vi.fn().mockResolvedValue({ accounts: [] }),
@@ -49,7 +55,7 @@ function stubBeanwise(overrides: Partial<StubApi> = {}): StubApi {
 
 beforeEach(() => {
   vi.unstubAllGlobals()
-  useSyncStore.setState({ status: null, conflict: null, syncing: false, generation: 0 })
+  useSyncStore.setState({ status: null, conflict: null, syncing: false, generation: 0, network: null })
   useLedgerStore.setState({
     status: null, entries: [], total: 0, accountOptions: [], accountValues: [], loading: false, error: null,
     editorContent: null, editorOriginal: null, editorFingerprint: null,
@@ -247,4 +253,47 @@ it('账户库保存失败 → 不触发 push', async () => {
   const ok = await useLedgerStore.getState().saveAccountConfig([])
   expect(ok).toBe(false)
   expect(api.pushLedger).not.toHaveBeenCalled()
+})
+
+// ==================== M12：本机网络配置（代理 + 超时） ====================
+
+it('loadNetwork → 配置落 store；失败则置空并提示', async () => {
+  stubBeanwise({ getGitNetwork: vi.fn().mockResolvedValue({ proxyUrl: 'http://127.0.0.1:7890', timeoutSec: 60 }) })
+  await useSyncStore.getState().loadNetwork()
+  expect(useSyncStore.getState().network).toEqual({ proxyUrl: 'http://127.0.0.1:7890', timeoutSec: 60 })
+
+  stubBeanwise({ getGitNetwork: vi.fn().mockRejectedValue(new Error('boom')) })
+  await useSyncStore.getState().loadNetwork()
+  expect(useSyncStore.getState().network).toBeNull()
+  expect(message.error).toHaveBeenCalled()
+})
+
+it('saveNetwork：成功落 store + 提示；校验失败 → ok:false + 错误提示（回显主进程文案）', async () => {
+  const api = stubBeanwise({
+    saveGitNetwork: vi.fn()
+      .mockResolvedValueOnce({ ok: true, network: { proxyUrl: 'http://127.0.0.1:7890', timeoutSec: 30 } })
+      .mockResolvedValueOnce({ ok: false, error: '代理地址需带端口，如 http://127.0.0.1:7890' })
+  })
+  expect(await useSyncStore.getState().saveNetwork({ proxyUrl: 'http://127.0.0.1:7890', timeoutSec: 30 })).toBe(true)
+  expect(useSyncStore.getState().network).toEqual({ proxyUrl: 'http://127.0.0.1:7890', timeoutSec: 30 })
+  expect(message.success).toHaveBeenCalled()
+
+  expect(await useSyncStore.getState().saveNetwork({ proxyUrl: 'http://127.0.0.1', timeoutSec: 30 })).toBe(false)
+  expect(message.error).toHaveBeenCalledWith('代理地址需带端口，如 http://127.0.0.1:7890')
+  expect(api.saveGitNetwork).toHaveBeenCalledTimes(2)
+})
+
+it('testConnection：把诊断文案原样返回（不当 toast 弹掉），异常也兜成结果对象', async () => {
+  stubBeanwise({
+    testSyncConnection: vi.fn()
+      .mockResolvedValueOnce({ ok: false, message: '无法连接代理 http://127.0.0.1:1（ECONNREFUSED）' })
+      .mockRejectedValueOnce(new Error('boom'))
+  })
+  const failed = await useSyncStore.getState().testConnection('https://github.com/a/b')
+  expect(failed).toEqual({ ok: false, message: '无法连接代理 http://127.0.0.1:1（ECONNREFUSED）' })
+  expect(message.error).not.toHaveBeenCalled() // 诊断留在弹窗里，不走 toast
+
+  const thrown = await useSyncStore.getState().testConnection()
+  expect(thrown.ok).toBe(false)
+  expect(thrown.message).toContain('连接测试失败')
 })
