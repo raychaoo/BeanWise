@@ -85,7 +85,7 @@ export function registerWorkspaceHandlers(ipc: IpcRegistrar, deps: WorkspaceDeps
       if (!(await git.isRepo())) {
         await git.initRepo()
       }
-      await git.addLedgerFile()
+      await git.addTrackedFiles()
       if (await git.hasUncommitted()) {
         await git.commit('init: BeanWise 工作目录')
       }

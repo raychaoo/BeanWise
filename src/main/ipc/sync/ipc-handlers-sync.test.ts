@@ -1,11 +1,12 @@
-import { appendFileSync, copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import fs from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { createDrizzle, openDatabase } from '../../db/index'
 import { GitSync, GIT_AUTHOR, SYNC_BRANCH } from '../../core/git-sync'
-import { createBareRepo, readRemoteFile, seedRemote, seedRemoteInit, startGitServer } from '../../utils/test-servers/git-test-server'
+import { createBareRepo, readRemoteFile, remoteCommitCount, seedRemote, seedRemoteInit, startGitServer } from '../../utils/test-servers/git-test-server'
+import { SYNC_ACCOUNTS_FILE, SYNC_GITIGNORE_FILE } from '../../../shared/sync-files'
 import { getLedgerStatus } from '../../core/index-builder'
 import { registerSyncHandlers } from './ipc-handlers-sync'
 import type { IpcRegistrar } from '../ledger/ipc-handlers'
@@ -133,7 +134,7 @@ describe('sync handlers（M6）', () => {
     expect(r).toMatchObject({ ok: true })
   }, 30_000)
 
-  it('sync:configure 场景 C 不一致：conflict 三路快照（base 空串）', async () => {
+  it('sync:configure 场景 C 不一致：conflict 逐文件三路快照（账本 base=null）', async () => {
     const url = await newRepo()
     // 远端初始 = 本地 fixture 内容（一致），再追加一笔（→ 与本地不一致）
     await seedRemoteInit(url, readFileSync(FIXTURE, 'utf8'))
@@ -142,9 +143,11 @@ describe('sync handlers（M6）', () => {
     const r = (await handlers['sync:configure']({}, { repoUrl: url, pat: 'p' })) as ConfigureSyncResult
     expect(r.ok).toBe(false)
     expect(r.conflict).toBe(true)
-    expect(r.base).toBe('')
-    expect(r.ours).toContain('Breakfast')
-    expect(r.theirs).toContain('远端独有')
+    // M11：冲突载荷为逐文件三态（unrelated histories → 账本无共同祖先，base 为 null）
+    const ledger = r.conflicts?.find((c) => c.path === 'main.beancount')
+    expect(ledger?.base).toBeNull()
+    expect(ledger?.ours).toContain('Breakfast')
+    expect(ledger?.theirs).toContain('远端独有')
   }, 30_000)
 
   it('sync:configure 非法入参拒绝（URL 格式 / PAT 空）', async () => {
@@ -202,9 +205,10 @@ describe('sync handlers（M6）', () => {
     const r = (await handlers['sync:push']()) as SyncResult
     expect(r.ok).toBe(false)
     expect(r.conflict).toBe(true)
-    expect(r.ours).toContain('Breakfast-Local')
-    expect(r.theirs).toContain('Breakfast-Remote')
-    expect(r.base).toContain('Breakfast')
+    const ledger = r.conflicts?.find((c) => c.path === 'main.beancount')
+    expect(ledger?.ours).toContain('Breakfast-Local')
+    expect(ledger?.theirs).toContain('Breakfast-Remote')
+    expect(ledger?.base).toContain('Breakfast')
     expect(readFileSync(ledgerPath, 'utf8')).toBe(before) // 冲突不落盘
   }, 30_000)
 
@@ -241,7 +245,7 @@ describe('sync handlers（M6）', () => {
     expect(conflict.lastError).toBeTruthy()
     // 手动解决：保留本地改行 + 追加一笔（合并内容任意合法 beancount）
     const merged = readFileSync(ledgerPath, 'utf8') + '\n2026-08-09 * "远端独有" "冲突解决"\n  Expenses:Food  2.00 CNY\n  Assets:Bank:CNB  -2.00 CNY\n'
-    const r = (await handlers['sync:resolve-conflict']({}, { content: merged })) as { ok: boolean }
+    const r = (await handlers['sync:resolve-conflict']({}, { resolved: [{ path: 'main.beancount', content: merged }] })) as { ok: boolean }
     expect(r.ok).toBe(true)
     expect(await readRemoteFile(bareDir)).toBe(merged)
   }, 30_000)
@@ -250,9 +254,16 @@ describe('sync handlers（M6）', () => {
     const url = await newRepo()
     await setup()
     await handlers['sync:configure']({}, { repoUrl: url, pat: 'p' })
+    // 先制造真冲突（同行修改），否则 resolve 无可解决的冲突
+    const remoteLedger = (await readRemoteFile(bareDir))!.replace('* "Breakfast"', '* "Breakfast-Remote"')
+    await seedRemote(url, { 'main.beancount': remoteLedger })
+    writeFileSync(ledgerPath, readFileSync(ledgerPath, 'utf8').replace('* "Breakfast"', '* "Breakfast-Local"'))
+    const pushed = (await handlers['sync:push']()) as SyncResult
+    expect(pushed.conflict).toBe(true)
+
     const before = readFileSync(ledgerPath, 'utf8')
     const bad = '2026-08-09 * "坏" "内容"\n  Expenses:Food  10.00 CNY\n  Assets:Bank:CNB  -9.00 CNY\n'
-    const r = (await handlers['sync:resolve-conflict']({}, { content: bad })) as { ok: boolean; message?: string }
+    const r = (await handlers['sync:resolve-conflict']({}, { resolved: [{ path: 'main.beancount', content: bad }] })) as { ok: boolean; message?: string }
     expect(r.ok).toBe(false)
     expect(r.message).toBeTruthy()
     expect(readFileSync(ledgerPath, 'utf8')).toBe(before)
@@ -285,12 +296,148 @@ describe('sync handlers（M6）', () => {
     // resolve：re-fetch 发现远端已推进 → ok:false，文件不动、远端不被 force push 覆盖
     const before = readFileSync(ledgerPath, 'utf8')
     const merged = before + '\n2026-08-09 * "解决" "内容"\n  Expenses:Food  5.00 CNY\n  Assets:Bank:CNB  -5.00 CNY\n'
-    const r = (await handlers['sync:resolve-conflict']({}, { content: merged })) as SyncResult
+    const r = (await handlers['sync:resolve-conflict']({}, { resolved: [{ path: 'main.beancount', content: merged }] })) as SyncResult
     expect(r.ok).toBe(false)
     expect(r.message).toContain('远端已有新变更')
     expect(readFileSync(ledgerPath, 'utf8')).toBe(before)
     expect(await readRemoteFile(bareDir)).not.toContain('解决')
   }, 30_000)
+
+  // ---- M11：多文件同步（账户库 / Excel 模板随账本一起提交） ----
+
+  /** 账户库文件文本（结构对齐 JsonAccountConfigStore.save） */
+  const accountsJson = (...entries: Array<{ id: number; name: string; value: string }>): string =>
+    JSON.stringify({ accounts: entries.map((e) => ({ ...e, description: '' })) }, null, 2)
+  const seedLocal = (relPath: string, content: string): void => {
+    const full = join(workDir, relPath)
+    mkdirSync(dirname(full), { recursive: true })
+    writeFileSync(full, content, 'utf8')
+  }
+  const localText = (relPath: string): string => readFileSync(join(workDir, relPath), 'utf8')
+
+  it('账户库随账本一起同步：本地已有账户库 → 配置空仓即推送到裸仓', async () => {
+    const url = await newRepo()
+    await setup()
+    seedLocal(SYNC_ACCOUNTS_FILE, accountsJson({ id: 1, name: '餐饮', value: 'Expenses:Food' }))
+    await handlers['sync:configure']({}, { repoUrl: url, pat: 'p' })
+    expect(await readRemoteFile(bareDir, SYNC_ACCOUNTS_FILE)).toContain('Expenses:Food')
+    expect(await readRemoteFile(bareDir, SYNC_GITIGNORE_FILE)).toContain('.beanwise/index.db')
+    // 本地缓存/元数据不进仓库
+    seedLocal('.beanwise/index.db', 'binary')
+    seedLocal('.beanwise/sync-config.json', '{"repoUrl":"x"}')
+    await handlers['sync:push']()
+    expect(await readRemoteFile(bareDir, '.beanwise/index.db')).toBeNull()
+    expect(await readRemoteFile(bareDir, '.beanwise/sync-config.json')).toBeNull()
+  }, 30_000)
+
+  it('场景 B 收窄：账本为空但账户库非空 → 不 clone（改走合并，避免本地账户库被覆盖）', async () => {
+    const url = await newRepo()
+    await seedRemoteInit(url, {
+      'main.beancount': readFileSync(FIXTURE, 'utf8'),
+      [SYNC_ACCOUNTS_FILE]: accountsJson({ id: 1, name: '房租', value: 'Expenses:Rent' })
+    })
+    await setup() // 本地也存在账本 → 走场景 C；下面把账本清空、只留账户库，模拟「新机器已建账户库」
+    rmSync(ledgerPath, { force: true })
+    writeFileSync(ledgerPath, '', 'utf8')
+    seedLocal(SYNC_ACCOUNTS_FILE, accountsJson({ id: 1, name: '餐饮', value: 'Expenses:Food' }))
+
+    const r = (await handlers['sync:configure']({}, { repoUrl: url, pat: 'p' })) as ConfigureSyncResult
+    expect(r.ok).toBe(true)
+    // 账本从远端纳入，账户库为两侧并集（本地未被 clone 覆盖）
+    expect(readFileSync(ledgerPath, 'utf8')).toContain('Breakfast')
+    const accounts = localText(SYNC_ACCOUNTS_FILE)
+    expect(accounts).toContain('Expenses:Food')
+    expect(accounts).toContain('Expenses:Rent')
+  }, 30_000)
+
+  it('多文件冲突：账本 + 账户库同时冲突 → 逐文件快照；resolve 一次提交全部', async () => {
+    const url = await newRepo()
+    await setup()
+    seedLocal(SYNC_ACCOUNTS_FILE, accountsJson({ id: 1, name: '餐饮', value: 'Expenses:Food' }))
+    await handlers['sync:configure']({}, { repoUrl: url, pat: 'p' })
+
+    // 远端：改账本同行 + 改同一账户（与本地冲突）
+    const remoteLedger = (await readRemoteFile(bareDir))!.replace('* "Breakfast"', '* "Breakfast-Remote"')
+    await seedRemote(url, {
+      'main.beancount': remoteLedger,
+      [SYNC_ACCOUNTS_FILE]: accountsJson({ id: 1, name: '餐费', value: 'Expenses:Food' })
+    })
+    // 本地：改账本同行 + 改同一账户（不同内容）
+    writeFileSync(ledgerPath, readFileSync(ledgerPath, 'utf8').replace('* "Breakfast"', '* "Breakfast-Local"'))
+    seedLocal(SYNC_ACCOUNTS_FILE, accountsJson({ id: 1, name: '吃饭', value: 'Expenses:Food' }))
+
+    const pushed = (await handlers['sync:push']()) as SyncResult
+    expect(pushed.ok).toBe(false)
+    expect(pushed.conflicts?.map((c) => c.path).sort()).toEqual(['.beanwise/accounts.json', 'main.beancount'])
+
+    // 覆盖性校验：漏文件 / 越权路径 / 删除账本均被拒
+    const ledgerMerged = readFileSync(ledgerPath, 'utf8') + '\n2026-08-09 * "解决" "冲突"\n  Expenses:Food  2.00 CNY\n  Assets:Bank:CNB  -2.00 CNY\n'
+    const onlyLedger = (await handlers['sync:resolve-conflict']({}, {
+      resolved: [{ path: 'main.beancount', content: ledgerMerged }]
+    })) as { ok: boolean; message?: string }
+    expect(onlyLedger.ok).toBe(false)
+    expect(onlyLedger.message).toContain('未处理')
+
+    const extraPath = (await handlers['sync:resolve-conflict']({}, {
+      resolved: [
+        { path: 'main.beancount', content: ledgerMerged },
+        { path: SYNC_ACCOUNTS_FILE, content: accountsJson({ id: 1, name: 'x', value: 'Expenses:Food' }) },
+        { path: SYNC_GITIGNORE_FILE, content: 'x\n' }
+      ]
+    })) as { ok: boolean; message?: string }
+    expect(extraPath.ok).toBe(false)
+    expect(extraPath.message).toContain('并非冲突文件')
+
+    // 账本删除决议被拒（只允许对 JSON 文件采用「删除」）
+    const deleteLedger = (await handlers['sync:resolve-conflict']({}, {
+      resolved: [
+        { path: 'main.beancount', content: null },
+        { path: SYNC_ACCOUNTS_FILE, content: accountsJson({ id: 1, name: '餐费', value: 'Expenses:Food' }) }
+      ]
+    })) as { ok: boolean; message?: string }
+    expect(deleteLedger.ok).toBe(false)
+    expect(deleteLedger.message).toContain('账本文件不能被删除')
+
+    // 非法 JSON（账户库）→ 校验失败，两侧文件均不动
+    const ledgerBefore = readFileSync(ledgerPath, 'utf8')
+    const accountsBefore = localText(SYNC_ACCOUNTS_FILE)
+    const badAccounts = (await handlers['sync:resolve-conflict']({}, {
+      resolved: [
+        { path: 'main.beancount', content: ledgerMerged },
+        { path: SYNC_ACCOUNTS_FILE, content: '{oops' }
+      ]
+    })) as { ok: boolean; message?: string }
+    expect(badAccounts.ok).toBe(false)
+    expect(readFileSync(ledgerPath, 'utf8')).toBe(ledgerBefore) // 两阶段落盘：账本未被写入
+    expect(localText(SYNC_ACCOUNTS_FILE)).toBe(accountsBefore)
+
+    // 正常解决：账本用合并内容、账户库采用远端
+    const resolved = (await handlers['sync:resolve-conflict']({}, {
+      resolved: [
+        { path: 'main.beancount', content: ledgerMerged },
+        { path: SYNC_ACCOUNTS_FILE, content: accountsJson({ id: 1, name: '餐费', value: 'Expenses:Food' }) }
+      ]
+    })) as { ok: boolean }
+    expect(resolved.ok).toBe(true)
+    expect(await readRemoteFile(bareDir)).toBe(ledgerMerged)
+    expect(await readRemoteFile(bareDir, SYNC_ACCOUNTS_FILE)).toContain('餐费')
+    expect(localText(SYNC_ACCOUNTS_FILE)).toContain('餐费')
+  }, 60_000)
+
+  it('无改动重复 push → 远端提交数不变（不再产生空提交）', async () => {
+    const url = await newRepo()
+    await setup()
+    await handlers['sync:configure']({}, { repoUrl: url, pat: 'p' })
+    seedLocal('.beanwise/index.db', 'churn-1')
+    await handlers['sync:push']()
+    const before = await remoteCommitCount(bareDir)
+    for (let i = 0; i < 3; i++) {
+      seedLocal('.beanwise/index.db', `churn-${i + 2}`) // 索引缓存反复变动：旧实现会让工作区恒为「脏」
+      const r = (await handlers['sync:push']()) as SyncResult
+      expect(r.ok).toBe(true)
+    }
+    expect(await remoteCommitCount(bareDir)).toBe(before)
+  }, 60_000)
 
   it('sync:clear → 配置与 PAT 清空', async () => {
     const url = await newRepo()

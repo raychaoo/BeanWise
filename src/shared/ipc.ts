@@ -421,30 +421,44 @@ export interface ConfigureSyncParams {
   pat: string
 }
 
-/** sync:configure 结果（conflict = 场景 C 两端内容不一致的三路快照，base 为空串） */
+/**
+ * 单文件三路快照（`null` = 该侧不存在该文件：从未创建 / 已删除）。
+ * 同步范围见 `shared/sync-files.ts`（账本 + 账户库 + Excel 模板 + .gitignore）。
+ */
+export interface SyncFileConflict {
+  /** 工作区内相对路径（SYNC_TRACKED_FILES 成员），如 '.beanwise/accounts.json' */
+  path: string
+  base: string | null
+  ours: string | null
+  theirs: string | null
+}
+
+/** sync:configure 结果（conflict = 首次接管时存在真冲突，携逐文件三路快照） */
 export interface ConfigureSyncResult {
   ok: boolean
   error?: string
   status?: SyncStatus
   conflict?: boolean
-  base?: string
-  ours?: string
-  theirs?: string
+  conflicts?: SyncFileConflict[]
 }
 
-/** sync:push / sync:pull 结果（conflict 时三路快照，工作区未动） */
+/** sync:push / sync:pull 结果（conflict 时携逐文件三路快照，工作区未动） */
 export interface SyncResult {
   ok: boolean
   conflict?: boolean
-  base?: string
-  ours?: string
-  theirs?: string
+  conflicts?: SyncFileConflict[]
   message?: string
 }
 
-/** sync:resolve-conflict 入参（merged 内容，复用 20MB 上限） */
+/** 单文件合并决议（content=null → 采用「删除该文件」） */
+export interface ResolveFileParam {
+  path: string
+  content: string | null
+}
+
+/** sync:resolve-conflict 入参：必须覆盖全部冲突文件（只提交冲突文件，非冲突文件由主进程按同一输入重新推导） */
 export interface ResolveConflictParams {
-  content: string
+  resolved: ResolveFileParam[]
 }
 
 /** sync:resolve-conflict 结果（status 为落盘后索引状态） */

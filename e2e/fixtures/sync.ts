@@ -10,4 +10,4 @@
  * 空仓初始内容用 seedRemoteInit(server.url, content)，追加远端提交用 seedRemote(server.url, patch)，
  * 验证用 readRemoteFile(bareDir)；afterAll 关闭 server 并 rmSync 裸仓目录。
  */
-export { createBareRepo, readRemoteFile, seedRemote, seedRemoteInit, startGitServer } from '../../src/main/utils/test-servers/git-test-server'
+export { createBareRepo, readRemoteFile, remoteCommitCount, seedRemote, seedRemoteInit, startGitServer } from '../../src/main/utils/test-servers/git-test-server'

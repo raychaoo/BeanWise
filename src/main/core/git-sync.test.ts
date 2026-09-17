@@ -1,12 +1,14 @@
-import { appendFileSync, copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import fs from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import git from 'isomorphic-git'
 import http from 'isomorphic-git/http/node'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { GitSync, GIT_AUTHOR, SYNC_BRANCH } from './git-sync'
-import { createBareRepo, readRemoteFile, seedRemote, startGitServer } from '../utils/test-servers/git-test-server'
+import { mergeTrackedFiles } from './merge-engine'
+import { createBareRepo, readRemoteFile, remoteCommitCount, seedRemote, startGitServer } from '../utils/test-servers/git-test-server'
+import { SYNC_ACCOUNTS_FILE, SYNC_GITIGNORE_BEGIN, SYNC_GITIGNORE_FILE } from '../../shared/sync-files'
 
 const FIXTURE = resolve('python/tests/fixtures/main.beancount')
 /** seedRemote 的远端追加内容（原 seedRemoteCommit 的固定载荷，参数化后由调用方传入） */
@@ -33,6 +35,13 @@ describe('GitSync（M6）', () => {
     rmSync(bareDir, { recursive: true, force: true })
   })
 
+  /** 写工作区内文件（自动建父目录——产品里 .beanwise 由 activateWorkspace 预建） */
+  const seedFile = (relPath: string, content: string): void => {
+    const full = join(workDir, relPath)
+    mkdirSync(dirname(full), { recursive: true })
+    writeFileSync(full, content, 'utf8')
+  }
+
   it('isRepo：init 前 false，init 后 true', async () => {
     const sync = new GitSync({ ledgerPath })
     expect(await sync.isRepo()).toBe(false)
@@ -43,7 +52,7 @@ describe('GitSync（M6）', () => {
   it('场景 A：init → add → commit → remote → push，裸仓可见内容', async () => {
     const sync = new GitSync({ ledgerPath })
     await sync.initRepo()
-    await sync.addLedgerFile()
+    await sync.addTrackedFiles()
     await sync.commit('init: 首次同步')
     await sync.addRemote(remoteUrl)
     await sync.push()
@@ -72,11 +81,11 @@ describe('GitSync（M6）', () => {
 
   it('analyzeMerge：本地领先（空仓）→ local-ahead', async () => {
     const sync = new GitSync({ ledgerPath })
-    await sync.initRepo(); await sync.addLedgerFile(); await sync.commit('init')
+    await sync.initRepo(); await sync.addTrackedFiles(); await sync.commit('init')
     expect(await sync.analyzeMerge()).toEqual({ kind: 'local-ahead' })
   })
 
-  it('analyzeMerge：unrelated 内容一致 → local-ahead（场景 C 接管）', async () => {
+  it('analyzeMerge：unrelated 且账本内容一致 → merge（逐文件均无冲突，靠合并提交接上两端历史）', async () => {
     // 远端先有相同内容（通过第二个工作副本 push）
     const remoteWork = mkdtempSync(join(tmpdir(), 'beanwise-remote2-'))
     try {
@@ -89,17 +98,23 @@ describe('GitSync（M6）', () => {
       await git.push({ fs, http, dir: remoteWork, remote: 'origin', ref: SYNC_BRANCH })
 
       const sync = new GitSync({ ledgerPath })
-      await sync.initRepo(); await sync.addLedgerFile(); await sync.commit('init: 本地')
+      await sync.initRepo(); await sync.addTrackedFiles(); await sync.commit('init: 本地')
       await sync.addRemote(remoteUrl)
       await sync.fetch()
       const status = await sync.analyzeMerge()
-      expect(status.kind).toBe('local-ahead')
+      // 本地多出的 .gitignore 远端没有 → 状态是 merge（M11 前会因「内容一致」短路成 local-ahead）；
+      // 逐文件三路推导后无冲突、无落盘改动，合并提交把两端历史接上（比 force push 丢弃远端历史更好）
+      expect(status.kind).toBe('merge')
+      if (status.kind !== 'merge') return
+      const plan = mergeTrackedFiles(status.files)
+      expect(plan.hasConflict).toBe(false)
+      expect(plan.files.every((f) => f.outcome.kind === 'unchanged')).toBe(true)
     } finally {
       rmSync(remoteWork, { recursive: true, force: true })
     }
   }, 30_000)
 
-  it('analyzeMerge：unrelated 内容不一致 → conflict(base 空串)（场景 C 接管冲突）', async () => {
+  it('analyzeMerge：unrelated 内容不一致 → merge（逐文件 base=null，账本必冲突）', async () => {
     const remoteWork = mkdtempSync(join(tmpdir(), 'beanwise-remote3-'))
     try {
       await git.init({ fs, dir: remoteWork, defaultBranch: SYNC_BRANCH })
@@ -110,36 +125,46 @@ describe('GitSync（M6）', () => {
       await git.push({ fs, http, dir: remoteWork, remote: 'origin', ref: SYNC_BRANCH })
 
       const sync = new GitSync({ ledgerPath })
-      await sync.initRepo(); await sync.addLedgerFile(); await sync.commit('init: 本地')
+      await sync.initRepo(); await sync.addTrackedFiles(); await sync.commit('init: 本地')
       await sync.addRemote(remoteUrl)
       await sync.fetch()
       const status = await sync.analyzeMerge()
-      expect(status.kind).toBe('conflict')
-      if (status.kind === 'conflict') {
-        expect(status.base).toBe('')
-        expect(status.ours).toBe(readFileSync(ledgerPath, 'utf8'))
-        expect(status.theirs).toContain('远端独有')
+      expect(status.kind).toBe('merge')
+      if (status.kind === 'merge') {
+        const ledger = status.files.find((f) => f.path === 'main.beancount')
+        expect(ledger?.base).toBeNull() // unrelated：无共同祖先
+        expect(ledger?.ours).toBe(readFileSync(ledgerPath, 'utf8'))
+        expect(ledger?.theirs).toContain('远端独有')
+        // 逐文件合并 → 账本两侧都新增且不同 → 冲突（M11 起冲突判定在 merge-engine）
+        expect(mergeTrackedFiles(status.files).hasConflict).toBe(true)
       }
     } finally {
       rmSync(remoteWork, { recursive: true, force: true })
     }
   }, 30_000)
 
-  it('analyzeMerge：远端领先（同祖先）→ fast-forward + theirsContent', async () => {
+  it('analyzeMerge：远端领先（同祖先）→ merge + fastForward', async () => {
     const sync = new GitSync({ ledgerPath })
-    await sync.initRepo(); await sync.addLedgerFile(); await sync.commit('init')
+    await sync.initRepo(); await sync.addTrackedFiles(); await sync.commit('init')
     await sync.addRemote(remoteUrl)
     await sync.push()
     await seedRemote(remoteUrl, REMOTE_SEED_PATCH) // 远端新增一笔
     await sync.fetch()
     const status = await sync.analyzeMerge()
-    expect(status.kind).toBe('fast-forward')
-    if (status.kind === 'fast-forward') expect(status.theirsContent).toContain('远端')
+    expect(status.kind).toBe('merge')
+    if (status.kind === 'merge') {
+      expect(status.fastForward).toBe(true)
+      expect(status.files.find((f) => f.path === 'main.beancount')?.theirs).toContain('远端')
+      // 仅远端改动 → 合并计划为「写远端内容」
+      const plan = mergeTrackedFiles(status.files)
+      expect(plan.hasConflict).toBe(false)
+      expect(plan.files.find((f) => f.path === 'main.beancount')?.outcome.kind).toBe('write')
+    }
   }, 30_000)
 
-  it('analyzeMerge：两端改不同位置 → clean-merge（diff3 自动合并）', async () => {
+  it('analyzeMerge：两端改不同位置 → 逐文件自动合并（diff3）', async () => {
     const sync = new GitSync({ ledgerPath })
-    await sync.initRepo(); await sync.addLedgerFile(); await sync.commit('init')
+    await sync.initRepo(); await sync.addTrackedFiles(); await sync.commit('init')
     await sync.addRemote(remoteUrl)
     await sync.push()
     await seedRemote(remoteUrl, REMOTE_SEED_PATCH) // 远端在 EOF 追加一笔
@@ -149,18 +174,24 @@ describe('GitSync（M6）', () => {
     writeFileSync(ledgerPath, readFileSync(ledgerPath, 'utf8')
       .replace('\n2026-01-02 * "Breakfast"',
         '\n2026-08-09 * "本地" "同步测试"\n  Expenses:Food  8.00 CNY\n  Assets:Bank:CNB  -8.00 CNY\n\n2026-01-02 * "Breakfast"'))
-    await sync.addLedgerFile(); await sync.commit('save: 本地提交')
+    await sync.addTrackedFiles(); await sync.commit('save: 本地提交')
     const status = await sync.analyzeMerge()
-    expect(status.kind).toBe('clean-merge')
-    if (status.kind === 'clean-merge') {
-      expect(status.content).toContain('远端')
-      expect(status.content).toContain('本地')
+    expect(status.kind).toBe('merge')
+    if (status.kind === 'merge') {
+      expect(status.fastForward).toBe(false)
+      const plan = mergeTrackedFiles(status.files)
+      expect(plan.hasConflict).toBe(false)
+      const ledgerOutcome = plan.files.find((f) => f.path === 'main.beancount')?.outcome
+      expect(ledgerOutcome?.kind).toBe('write')
+      const content = ledgerOutcome?.kind === 'write' ? ledgerOutcome.content : ''
+      expect(content).toContain('远端')
+      expect(content).toContain('本地')
     }
   }, 30_000)
 
-  it('analyzeMerge：同一行修改 → conflict（三路快照完整）', async () => {
+  it('analyzeMerge：同一行修改 → 冲突快照完整（三态交给 merge-engine）', async () => {
     const sync = new GitSync({ ledgerPath })
-    await sync.initRepo(); await sync.addLedgerFile(); await sync.commit('init')
+    await sync.initRepo(); await sync.addTrackedFiles(); await sync.commit('init')
     await sync.addRemote(remoteUrl)
     await sync.push()
     // 远端把 Breakfast 行改掉
@@ -177,24 +208,151 @@ describe('GitSync（M6）', () => {
     }
     // 本地也改同一行
     writeFileSync(ledgerPath, readFileSync(ledgerPath, 'utf8').replace('* "Breakfast"', '* "Breakfast-Local"'))
-    await sync.addLedgerFile(); await sync.commit('save: 本地改行')
+    await sync.addTrackedFiles(); await sync.commit('save: 本地改行')
     await sync.fetch()
     const status = await sync.analyzeMerge()
-    expect(status.kind).toBe('conflict')
-    if (status.kind === 'conflict') {
-      expect(status.ours).toContain('Breakfast-Local')
-      expect(status.theirs).toContain('Breakfast-Remote')
-      expect(status.base).toContain('Breakfast')
+    expect(status.kind).toBe('merge')
+    if (status.kind === 'merge') {
+      const ledger = status.files.find((f) => f.path === 'main.beancount')
+      expect(ledger?.ours).toContain('Breakfast-Local')
+      expect(ledger?.theirs).toContain('Breakfast-Remote')
+      expect(ledger?.base).toContain('Breakfast')
+      const plan = mergeTrackedFiles(status.files)
+      expect(plan.conflicts.map((c) => c.path)).toEqual(['main.beancount'])
     }
   }, 30_000)
 
   it('hasUncommitted：提交后 false，修改后 true', async () => {
     const sync = new GitSync({ ledgerPath })
-    await sync.initRepo(); await sync.addLedgerFile(); await sync.commit('init')
+    await sync.initRepo(); await sync.addTrackedFiles(); await sync.commit('init')
     expect(await sync.hasUncommitted()).toBe(false)
     appendFileSync(ledgerPath, '\n2026-08-09 * "x" "y"\n  Expenses:Food  1.00 CNY\n  Assets:Bank:CNB  -1.00 CNY\n')
     expect(await sync.hasUncommitted()).toBe(true)
   })
+
+  // ---- M11：追踪文件集 ----
+
+  it('追踪文件集：账户库 / Excel 模板 / .gitignore 一起提交，index.db 与 sync-config.json 被忽略', async () => {
+    const sync = new GitSync({ ledgerPath })
+    await sync.initRepo()
+    seedFile(SYNC_ACCOUNTS_FILE, JSON.stringify({ accounts: [{ id: 1, name: '餐饮', value: 'Expenses:Food', description: '' }] }, null, 2))
+    seedFile('.beanwise/index.db', 'binary-ish')
+    seedFile('.beanwise/sync-config.json', '{"repoUrl":"x"}')
+    await sync.addTrackedFiles()
+    await sync.commit('init: 首次同步')
+    await sync.addRemote(remoteUrl)
+    await sync.push()
+
+    expect(await readRemoteFile(bareDir)).toBe(readFileSync(ledgerPath, 'utf8'))
+    expect(await readRemoteFile(bareDir, SYNC_ACCOUNTS_FILE)).toContain('Expenses:Food')
+    expect(await readRemoteFile(bareDir, SYNC_GITIGNORE_FILE)).toContain('.beanwise/index.db')
+    // 主机密/缓存文件绝不进仓库
+    expect(await readRemoteFile(bareDir, '.beanwise/index.db')).toBeNull()
+    expect(await readRemoteFile(bareDir, '.beanwise/sync-config.json')).toBeNull()
+  }, 30_000)
+
+  it('hasUncommitted 回归：未跟踪的 index.db / sync-config.json 不再让工作区恒为「脏」', async () => {
+    const sync = new GitSync({ ledgerPath })
+    await sync.initRepo(); await sync.addTrackedFiles(); await sync.commit('init')
+    expect(await sync.hasUncommitted()).toBe(false)
+    // 旧实现（statusMatrix 全工作区扫描）在这两个文件存在时恒返回 true → 每次 push 都产生空提交
+    seedFile('.beanwise/index.db', 'binary-ish')
+    seedFile('.beanwise/sync-config.json', '{"repoUrl":"x"}')
+    expect(await sync.hasUncommitted()).toBe(false)
+    // 追踪文件改动仍然认得出
+    seedFile(SYNC_ACCOUNTS_FILE, '{"accounts":[]}')
+    expect(await sync.hasUncommitted()).toBe(true)
+  })
+
+  it('ensureGitignore：无文件时创建；已有用户规则时只追加不覆写；二次调用幂等', async () => {
+    const sync = new GitSync({ ledgerPath })
+    await sync.initRepo()
+    await sync.ensureGitignore()
+    const created = readFileSync(join(workDir, SYNC_GITIGNORE_FILE), 'utf8')
+    expect(created).toContain(SYNC_GITIGNORE_BEGIN)
+    await sync.ensureGitignore()
+    expect(readFileSync(join(workDir, SYNC_GITIGNORE_FILE), 'utf8')).toBe(created) // 幂等
+
+    // 用户自己已有一份 .gitignore → 追加托管块，原规则保留
+    const user = 'node_modules/\n*.log\n'
+    seedFile(SYNC_GITIGNORE_FILE, user)
+    await sync.ensureGitignore()
+    const merged = readFileSync(join(workDir, SYNC_GITIGNORE_FILE), 'utf8')
+    expect(merged.startsWith(user)).toBe(true)
+    expect(merged).toContain(SYNC_GITIGNORE_BEGIN)
+    await sync.ensureGitignore()
+    expect(readFileSync(join(workDir, SYNC_GITIGNORE_FILE), 'utf8')).toBe(merged)
+  })
+
+  it('用户 .gitignore 写了 .beanwise/ 时账户库仍会被提交（force + ignored）', async () => {
+    const sync = new GitSync({ ledgerPath })
+    await sync.initRepo()
+    seedFile(SYNC_GITIGNORE_FILE, '.beanwise/\n')
+    seedFile(SYNC_ACCOUNTS_FILE, JSON.stringify({ accounts: [] }, null, 2))
+    await sync.addTrackedFiles()
+    await sync.commit('init')
+    await sync.addRemote(remoteUrl)
+    await sync.push()
+    // 若 add 未加 force，git.add 会静默跳过被忽略的未跟踪文件 → 账户库永远同步不出去
+    expect(await readRemoteFile(bareDir, SYNC_ACCOUNTS_FILE)).toBe('{\n  "accounts": []\n}')
+  }, 30_000)
+
+  it('同步范围内删除文件 → addTrackedFiles 把删除写进索引并提交', async () => {
+    const sync = new GitSync({ ledgerPath })
+    await sync.initRepo()
+    seedFile(SYNC_ACCOUNTS_FILE, JSON.stringify({ accounts: [{ id: 1, name: 'x', value: 'Expenses:X', description: '' }] }, null, 2))
+    await sync.addTrackedFiles(); await sync.commit('init')
+    await sync.addRemote(remoteUrl); await sync.push()
+    expect(await readRemoteFile(bareDir, SYNC_ACCOUNTS_FILE)).toContain('Expenses:X')
+
+    rmSync(join(workDir, SYNC_ACCOUNTS_FILE))
+    await sync.addTrackedFiles()
+    expect(await sync.hasUncommitted()).toBe(true)
+    await sync.commit('save: 删除账户库')
+    await sync.push()
+    expect(await readRemoteFile(bareDir, SYNC_ACCOUNTS_FILE)).toBeNull()
+  }, 30_000)
+
+  it('analyzeMerge：只改远端账户库 → 逐文件三态独立（账本 unchanged）', async () => {
+    const emptyAccounts = JSON.stringify({ accounts: [] }, null, 2)
+    const sync = new GitSync({ ledgerPath })
+    await sync.initRepo()
+    seedFile(SYNC_ACCOUNTS_FILE, emptyAccounts)
+    await sync.addTrackedFiles(); await sync.commit('init')
+    await sync.addRemote(remoteUrl); await sync.push()
+
+    await seedRemote(remoteUrl, {
+      [SYNC_ACCOUNTS_FILE]: JSON.stringify({ accounts: [{ id: 1, name: '房租', value: 'Expenses:Rent', description: '' }] }, null, 2)
+    })
+    await sync.fetch()
+    const status = await sync.analyzeMerge()
+    expect(status.kind).toBe('merge')
+    if (status.kind !== 'merge') return
+    const ledger = status.files.find((f) => f.path === 'main.beancount')
+    const accounts = status.files.find((f) => f.path === SYNC_ACCOUNTS_FILE)
+    expect(ledger?.base).toBe(ledger?.ours) // 账本本地未动
+    expect(accounts?.ours).toBe(emptyAccounts)
+    expect(accounts?.theirs).toContain('Expenses:Rent')
+    const plan = mergeTrackedFiles(status.files)
+    expect(plan.hasConflict).toBe(false)
+    expect(plan.files.find((f) => f.path === 'main.beancount')?.outcome.kind).toBe('unchanged')
+    expect(plan.files.find((f) => f.path === SYNC_ACCOUNTS_FILE)?.outcome.kind).toBe('write')
+  }, 30_000)
+
+  it('追踪文件集：无改动时不再产生空提交（远程提交数不变）', async () => {
+    const sync = new GitSync({ ledgerPath })
+    await sync.initRepo(); await sync.addTrackedFiles(); await sync.commit('init')
+    await sync.addRemote(remoteUrl); await sync.push()
+    const before = await remoteCommitCount(bareDir)
+
+    seedFile('.beanwise/index.db', 'churn') // 索引缓存反复变动
+    for (let i = 0; i < 3; i++) {
+      await sync.addTrackedFiles()
+      if (await sync.hasUncommitted()) await sync.commit(`save: ${i}`)
+      await sync.push()
+    }
+    expect(await remoteCommitCount(bareDir)).toBe(before)
+  }, 60_000)
 
   it('listServerRefs：空仓 → []；非空 → 有 ref', async () => {
     const sync = new GitSync({ ledgerPath })

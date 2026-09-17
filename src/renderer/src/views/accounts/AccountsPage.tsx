@@ -42,6 +42,7 @@ import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useSta
 import { ACCOUNT_TYPES, type AccountType } from '../../../../shared/account'
 import type { AccountEntry, AddEntryParams } from '../../../../shared/ipc'
 import { useLedgerStore } from '../../stores/ledger'
+import { useSyncStore } from '../../stores/sync'
 import { matchesAccountSearch } from '../../utils/accountSearch'
 import {
   groupAccountsByTab,
@@ -254,22 +255,39 @@ export default function AccountsPage() {
   const [obAmount, setObAmount] = useState('')
   const [obCurrency, setObCurrency] = useState('')
   const [obDate, setObDate] = useState<Dayjs | null>(dayjs())
+  // M11：同步（generation）驱动的重载需要知道「页面有未保存修改」，用 ref 以免触发重渲染/effect 重跑
+  const dirtyRef = useRef(false)
+  const loadedGeneration = useRef<number | null>(null)
+  const generation = useSyncStore((s) => s.generation)
+  /** 任何本地编辑都置脏；保存成功后清除 */
+  const markDirty = useCallback(() => { dirtyRef.current = true }, [])
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const [r, ledger] = await Promise.all([
-          window.beanwise.getAccountConfig(),
-          window.beanwise.listLedgerAccounts()
-        ])
-        setConfigured((r.accounts ?? []).map((a) => ({ ...a, description: a.description ?? '' })))
-        setUsedValues(new Set(ledger.accounts))
-      } catch {
-        setConfigured([])
-        setUsedValues(new Set())
-      }
-    })()
+  // 加载账户库（首次挂载 + 每次成功同步后由 generation 触发；有未保存修改时不覆盖）
+  const reload = useCallback(async () => {
+    try {
+      const [r, ledger] = await Promise.all([
+        window.beanwise.getAccountConfig(),
+        window.beanwise.listLedgerAccounts()
+      ])
+      setConfigured((r.accounts ?? []).map((a) => ({ ...a, description: a.description ?? '' })))
+      setUsedValues(new Set(ledger.accounts))
+    } catch {
+      setConfigured([])
+      setUsedValues(new Set())
+    }
   }, [])
+
+  // M11：账户库在同步范围内，pull/合并可能改写它 → generation 变化时重载；
+  // 但页面有未保存修改时**不覆盖**（避免吞掉用户正在编辑的内容），只提示
+  useEffect(() => {
+    if (loadedGeneration.current === generation) return
+    if (loadedGeneration.current !== null && dirtyRef.current) {
+      message.warning('远端账户库已更新，本地有未保存的修改；保存或放弃后可刷新')
+      return
+    }
+    loadedGeneration.current = generation
+    void reload()
+  }, [generation, reload])
 
   const handleAdd = () => {
     const name = newName.trim()
@@ -300,6 +318,7 @@ export default function AccountsPage() {
       return
     }
     // 新条目 id=0 表示"待主进程分配自增 id"
+    markDirty()
     setConfigured((prev) => [...prev, { id: 0, name, value, description }])
     setNewName('')
     setNewDescription('')
@@ -313,24 +332,28 @@ export default function AccountsPage() {
   // 下面几个 handler 直接作为 memo 表格的 props → 一律 useCallback 稳定引用，
   // 否则表格每次页面重渲染都判定 props 变化，等于 memo 失效
   const handleNameChange = useCallback((id: number, name: string) => {
+    markDirty()
     setConfigured((prev) => prev.map((e) => (e.id === id ? { ...e, name } : e)))
-  }, [])
+  }, [markDirty])
 
   const handleDescriptionChange = useCallback((id: number, description: string) => {
+    markDirty()
     setConfigured((prev) => prev.map((e) => (e.id === id ? { ...e, description } : e)))
-  }, [])
+  }, [markDirty])
 
   // 启停用仅改本地条目，随「保存」按钮显式落盘（保持显式保存模型，避免误触即写盘）；
   // 重新启用写 undefined——序列化时省略，配置文件不存无谓的 enabled: true
   const handleEnabledChange = useCallback((id: number, checked: boolean) => {
+    markDirty()
     setConfigured((prev) => prev.map((e) => (e.id === id ? { ...e, enabled: checked ? undefined : false } : e)))
-  }, [])
+  }, [markDirty])
 
   // 往来类标记（ADR 23）：同 enabled 走显式保存模型。仅资产/负债侧有意义——往来账报表只聚合
   // 这两侧，误标在收支账户上会得到永远空的行，故列渲染也据此禁用。
   const handleCounterpartyChange = useCallback((id: number, checked: boolean) => {
+    markDirty()
     setConfigured((prev) => prev.map((e) => (e.id === id ? { ...e, counterparty: checked ? true : undefined } : e)))
-  }, [])
+  }, [markDirty])
 
   // ---- 批次 I：期初余额 ----
   const openObModal = useCallback((record: AccountEntry) => {
@@ -398,8 +421,9 @@ export default function AccountsPage() {
       message.error('该账户已有记账记录，不可删除')
       return
     }
+    markDirty()
     setConfigured((prev) => prev.filter((e) => e !== record))
-  }, [])
+  }, [markDirty])
 
   const handleSave = async () => {
     const empty = configured.find((e) => !e.name.trim())
@@ -407,7 +431,10 @@ export default function AccountsPage() {
     setSaving(true)
     const ok = await saveAccountConfig(configured.map((e) => ({ ...e, description: e.description ?? '' })))
     setSaving(false)
-    if (ok) message.success('账户配置已保存')
+    if (ok) {
+      dirtyRef.current = false
+      message.success('账户配置已保存')
+    }
   }
 
   // 搜索为纯前端过滤：账户库整份已在内存（getAccountConfig 一次取全量），无需新增 IPC。

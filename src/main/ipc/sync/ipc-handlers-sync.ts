@@ -1,21 +1,29 @@
 /**
- * M6-T3：同步 IPC 六通道（get-status / configure / push / pull / resolve-conflict / clear）。
- * 编排：场景 A/B/C 首同步判别、push/pull 前置快照提交、fetch → analyzeMerge 五分支消费、
- * 合并落盘（writeLedgerChecked）+ 索引重建（refreshIndex）、sync 域互斥（SYNCING，withWriteLock 外第二道闸）。
+ * M6/M11：同步 IPC 六通道（get-status / configure / push / pull / resolve-conflict / clear）。
+ *
+ * 同步范围是**文件集**（shared/sync-files.ts）：账本 + 账户库 + Excel 模板 + 受托管 .gitignore。
+ * 编排：场景 A/B/C 首同步判别、push/pull 前置快照提交、fetch → analyzeMerge →
+ * 逐文件三路合并（core/merge-engine）→ 两阶段落盘（全部校验通过才写）→ 合并提交 +
+ * 索引重建，sync 域互斥（SYNCING，withWriteLock 外第二道闸）。
  *
  * 与 brief 的差异（Task 1/2 已确立的事实，本文件遵守）：
  * - URL 校验放行测试/E2E 通道 http://127.0.0.1:<port> / http://localhost:<port>（isomorphic-git 1.41.3
  *   无 file:// 本地传输，Task 1 起以进程内 smart-HTTP 服务器替代；GitHub https 为主通道）；
  * - 入参校验在 acquireSync 之前、try 之外 → 非法入参 reject（与 add-entry/save-file 同约定；
  *   brief 的 configure 非法入参测试即断言 rejects），且不占用/泄漏同步互斥；
- * - push/pull 的 fast-forward/clean-merge 分支提取共享辅助 applyRemoteMerge（DRY，语义不变）。
+ * - push/pull 的合并分支共用 applyRemoteMerge（DRY，语义不变）；
+ * - M11 起冲突快照为**逐文件三路**（SyncFileConflict[]），取代扁平 base/ours/theirs。
  */
-import { readFileSync } from 'node:fs'
-import type { ConfigureSyncParams, ConfigureSyncResult, ResolveConflictParams, ResolveConflictResult, SyncConfig, SyncResult, SyncStatus } from '../../../shared/ipc'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
+import type { ConfigureSyncParams, ConfigureSyncResult, ResolveConflictParams, ResolveConflictResult, ResolveFileParam, SyncConfig, SyncResult, SyncStatus } from '../../../shared/ipc'
+import { SYNC_ACCOUNTS_FILE, SYNC_GITIGNORE_FILE, SYNC_TEMPLATES_FILE } from '../../../shared/sync-files'
 import type { DrizzleDb } from '../../db/index'
 import { SYNC_BRANCH, type GitSync, type MergeStatus } from '../../core/git-sync'
+import { mergeTrackedFiles, parseAccountsFile, parseTemplatesFile, type MergePlan, type MergedFile } from '../../core/merge-engine'
 import { refreshIndex } from '../../core/index-builder'
-import { writeLedgerChecked } from '../../utils/ledger-writer'
+import { commitStagedLedger, stageLedgerChecked } from '../../utils/ledger-writer'
+import { writeJsonChecked } from '../../utils/json-writer'
 import type { PythonSvc } from '../../core/python-svc'
 import type { IpcRegistrar } from '../ledger/ipc-handlers'
 import type { SyncConfigStore, TokenStore } from '../../stores/token-store'
@@ -56,11 +64,31 @@ function validateConfigureParams(raw: unknown): ConfigureSyncParams {
   return { repoUrl: p.repoUrl, pat: p.pat }
 }
 
-function validateConflictContent(raw: unknown): string {
+/**
+ * resolve-conflict 入参形状校验（拒绝非法入参用，在 acquireSync/try 之外调用）。
+ * path 必须 ∈ 受追踪文件集（天然防目录穿越）；「是否覆盖全部冲突文件」在拿到合并计划后再校验。
+ */
+function validateResolveParams(raw: unknown, allowed: readonly string[]): ResolveFileParam[] {
   const p = (raw ?? {}) as Partial<ResolveConflictParams>
-  if (typeof p.content !== 'string') throw new Error('content 必须是字符串')
-  if (Buffer.byteLength(p.content, 'utf8') > MAX_SYNC_CONTENT_BYTES) throw new Error('合并内容超过 20MB 上限')
-  return p.content
+  if (!Array.isArray(p.resolved) || p.resolved.length === 0) throw new Error('resolved 必须是非空数组')
+  const allowedSet = new Set(allowed)
+  const seen = new Set<string>()
+  let bytes = 0
+  const resolved: ResolveFileParam[] = p.resolved.map((item, idx) => {
+    const r = (item ?? {}) as Partial<ResolveFileParam>
+    if (typeof r.path !== 'string' || !allowedSet.has(r.path)) {
+      throw new Error(`resolved[${idx}].path 必须是受追踪文件`)
+    }
+    if (seen.has(r.path)) throw new Error(`resolved 路径重复：${r.path}`)
+    seen.add(r.path)
+    if (r.content !== null && typeof r.content !== 'string') {
+      throw new Error(`resolved[${idx}].content 必须是字符串或 null`)
+    }
+    bytes += Buffer.byteLength(r.content ?? '', 'utf8')
+    return { path: r.path, content: r.content }
+  })
+  if (bytes > MAX_SYNC_CONTENT_BYTES) throw new Error('合并内容超过 20MB 上限')
+  return resolved
 }
 
 /** 同步互斥：push/pull/resolve/configure 任一进行中，其余触发即拒绝 */
@@ -105,47 +133,99 @@ function requireConfig(deps: SyncDeps): SyncConfig {
   return config
 }
 
-/** push/pull 前置：工作区脏 → 快照提交（保存后自动触发，此时必有未提交改动） */
+/** push/pull 前置：先把追踪文件集纳管进索引，再判脏 → 快照提交（保存后自动触发，此时必有未提交改动） */
 async function snapshotLocal(deps: SyncDeps): Promise<void> {
+  await deps.git.addTrackedFiles()
   if (await deps.git.hasUncommitted()) {
-    await deps.git.addLedgerFile()
     await deps.git.commit(`save: ${new Date().toISOString()}`)
   }
 }
 
-type MergeableStatus = Extract<MergeStatus, { kind: 'fast-forward' } | { kind: 'clean-merge' }>
-
-/**
- * 合并提交（双亲 [HEAD, 远端]——真实 git 合并语义，第一父=本地）。
+/** 合并提交（双亲 [HEAD, 远端]——真实 git 合并语义，第一父=本地）。
  * isomorphic-git 的显式 parent 整体替换默认 [HEAD]，只传远端会让本地历史游离（T3 审查修复）；
- * 单亲提交还会被 push 客户端快进检查拒绝（远端 ref 非祖先）。fetch 已保证远端 ref 存在。
- */
+ * 单亲提交还会被 push 客户端快进检查拒绝（远端 ref 非祖先）。fetch 已保证远端 ref 存在。 */
 async function mergeCommit(deps: SyncDeps, message: string): Promise<string> {
   return deps.git.commit(message, [await deps.git.headOid(), await deps.git.remoteHeadOid()])
 }
 
+/** JSON 追踪文件的结构化校验（与合并引擎共用同一份解析规则） */
+function validateJsonContent(path: string, content: string): void {
+  if (path === SYNC_ACCOUNTS_FILE) parseAccountsFile(content)
+  else if (path === SYNC_TEMPLATES_FILE) parseTemplatesFile(content)
+  else throw new Error(`未知的 JSON 追踪文件：${path}`)
+}
+
+const ledgerNameOf = (deps: SyncDeps): string => basename(deps.ledgerPath)
+const writeContentOf = (file: MergedFile): string => (file.outcome.kind === 'write' ? file.outcome.content : '')
+
 /**
- * push/pull 共用合并分支（DRY，从 brief 两个 handler 的重复代码提取）：
- * 合并/接管内容落盘（校验失败不落盘）→ 双亲合并提交 →（doPush 时）push（adopted=场景 C 接管 → force）
- * → 索引重建。pull 只拉不推（doPush=false）：只读 PAT 不失败、不静默发布本地改动（T3 审查修复）。
+ * 两阶段落盘（M11 多文件合并的关键）：
+ * 阶段 1 全部只读校验（账本写 tmp + Python parse_entries，JSON 解析 + 结构化校验），
+ * 任一失败 → 删 tmp、原文件与索引零改动；阶段 2 才统一替换/删除。
+ * 否则账本校验失败时 JSON 已经写坏——半写状态比不写更糟。
  */
-async function applyRemoteMerge(deps: SyncDeps, config: SyncConfig, status: MergeableStatus, doPush: boolean): Promise<SyncResult> {
-  const content = status.kind === 'fast-forward' ? status.theirsContent : status.content
-  const wrote = await writeLedgerChecked(deps, content)
-  if (!wrote.ok) {
-    markFailed(deps, config, wrote.message ?? '合并结果校验失败')
-    return { ok: false, message: wrote.message }
+async function applyMergePlan(deps: SyncDeps, plan: MergePlan): Promise<{ ok: boolean; message?: string }> {
+  const ledgerName = ledgerNameOf(deps)
+  const writes = plan.files.filter((f) => f.outcome.kind === 'write')
+  const deletes = plan.files.filter((f) => f.outcome.kind === 'delete')
+
+  for (const file of writes) {
+    if (file.path === ledgerName) {
+      const staged = await stageLedgerChecked(deps, writeContentOf(file))
+      if (!staged.ok) return { ok: false, message: staged.message ?? '账本校验失败' }
+      continue
+    }
+    try {
+      validateJsonContent(file.path, writeContentOf(file))
+    } catch (err) {
+      rmSync(`${deps.ledgerPath}.tmp`, { force: true }) // 清理已 staged 的账本 tmp
+      return { ok: false, message: String(err).replace(/^Error:\s*/, '') }
+    }
   }
-  await deps.git.addLedgerFile()
-  await mergeCommit(deps, status.kind === 'fast-forward' ? 'merge: 快进合并' : 'merge: 自动合并')
+
+  for (const file of writes) {
+    if (file.path === ledgerName) {
+      commitStagedLedger(deps.ledgerPath)
+      continue
+    }
+    const result = writeJsonChecked(join(dirname(deps.ledgerPath), file.path), writeContentOf(file), (text) =>
+      validateJsonContent(file.path, text)
+    )
+    if (!result.ok) return result
+  }
+  for (const file of deletes) {
+    rmSync(join(dirname(deps.ledgerPath), file.path), { force: true })
+  }
+  return { ok: true }
+}
+
+function conflictResult(plan: MergePlan): SyncResult {
+  return { ok: false, conflict: true, conflicts: plan.conflicts }
+}
+
+/**
+ * push/pull 共用合并分支（DRY）：
+ * 逐文件三路合并 → 有冲突即返回快照（工作区不动）→ 否则两阶段落盘 → 双亲合并提交
+ * →（doPush 时）push（adopted=场景 C 接管 → force）→ 索引重建。
+ * pull 只拉不推（doPush=false）：只读 PAT 不失败、不静默发布本地改动（T3 审查修复）。
+ */
+async function applyRemoteMerge(deps: SyncDeps, config: SyncConfig, status: Extract<MergeStatus, { kind: 'merge' }>, doPush: boolean): Promise<SyncResult> {
+  const plan = mergeTrackedFiles(status.files, ledgerNameOf(deps))
+  if (plan.hasConflict) {
+    markFailed(deps, config, '同步冲突：需要人工合并')
+    return conflictResult(plan)
+  }
+  const applied = await applyMergePlan(deps, plan)
+  if (!applied.ok) {
+    markFailed(deps, config, applied.message ?? '合并结果校验失败')
+    return { ok: false, message: applied.message }
+  }
+  await deps.git.addTrackedFiles()
+  await mergeCommit(deps, status.fastForward ? 'merge: 快进合并' : 'merge: 自动合并')
   if (doPush) await deps.git.push(config.adopted ?? false)
   await refreshIndex(deps.db, deps.engine, deps.ledgerPath)
   markSynced(deps, config)
   return { ok: true }
-}
-
-function conflictResult(status: Extract<MergeStatus, { kind: 'conflict' }>): SyncResult {
-  return { ok: false, conflict: true, base: status.base, ours: status.ours, theirs: status.theirs }
 }
 
 export function registerSyncHandlers(ipc: IpcRegistrar, deps: SyncDeps): void {
@@ -168,39 +248,57 @@ export function registerSyncHandlers(ipc: IpcRegistrar, deps: SyncDeps): void {
         // 连接测试 + 场景判别：refs 非空 → 远端已有内容
         const refs = await deps.git.listServerRefs(repoUrl)
         const hasRemote = refs.some((r) => r.ref === `refs/heads/${SYNC_BRANCH}`)
-        let hasLocal: boolean
-        try { hasLocal = readFileSync(deps.ledgerPath, 'utf8').length > 0 } catch { hasLocal = false }
+        // 本地已有内容判据 = 任一「内容文件」（账本/账户库/模板）非空。含账户库是关键：
+        // 只判账本会让「账本为空但账户库已配置」的目录被 clone 覆盖（M11 修复）。
+        const hasLocal = deps.git.trackedFiles
+          .filter((f) => f !== SYNC_GITIGNORE_FILE)
+          .some((f) => {
+            const text = readLocalText(deps, f)
+            return text !== null && text !== ''
+          })
 
         let config: SyncConfig = { repoUrl, branch: SYNC_BRANCH, adopted: false }
         if (!hasRemote) {
-          // 场景 A：空仓 → init → commit → remote → push -u
+          // 场景 A：空仓 → init → 纳管/提交 → remote → push -u
           if (!(await deps.git.isRepo())) await deps.git.initRepo()
-          await deps.git.addLedgerFile()
+          await deps.git.addTrackedFiles()
           if (await deps.git.hasUncommitted()) await deps.git.commit('init: 首次同步')
           await deps.git.addRemote(repoUrl)
           await deps.git.push()
         } else if (!hasLocal) {
-          // 场景 B：本地无账本 → clone 到账本目录
+          // 场景 B：本地无内容 → clone 到账本目录
           await deps.git.clone(repoUrl)
           // clone 只落文件、索引仍 missing——首同步用户须立即可见明细（M6 终审修复 I-1）
+          // 另补托管 .gitignore / 纳管（远端可能是旧版本推的，没有忽略规则与账户库）
+          await deps.git.addTrackedFiles()
+          if (await deps.git.hasUncommitted()) await deps.git.commit('init: 首次同步（clone）')
           await refreshIndex(deps.db, deps.engine, deps.ledgerPath)
         } else {
-          // 场景 C：两端都有 → init + commit + remote + fetch → analyzeMerge 判别
-          //（unrelated：内容一致 → local-ahead 接管；不一致 → conflict(base='')）
-          config.adopted = true
+          // 场景 C：两端都有 → init + 纳管/提交 + remote + fetch → analyzeMerge 判别
+          config.adopted = true // unrelated histories 接管 → 后续 push 需 force
           if (!(await deps.git.isRepo())) await deps.git.initRepo()
-          await deps.git.addLedgerFile()
+          await deps.git.addTrackedFiles()
           if (await deps.git.hasUncommitted()) await deps.git.commit('init: 首次同步')
           await deps.git.addRemote(repoUrl)
           await deps.git.fetch()
           const status = await deps.git.analyzeMerge()
-          if (status.kind === 'conflict') {
-            markFailed(deps, config, '接管冲突：本地与远端账本内容不一致')
-            // 内嵌 status 传 syncing=false（返回时 finally 未执行，SYNCING.current 仍为 true——T3 审查修复）
-            return { ok: false, conflict: true, base: status.base, ours: status.ours, theirs: status.theirs, status: toStatus(config, false) }
+          if (status.kind === 'merge') {
+            const merged = await applyRemoteMerge(deps, config, status, true)
+            if (!merged.ok) {
+              // 内嵌 status 传 syncing=false（返回时 finally 未执行，SYNCING.current 仍为 true——T3 审查修复）
+              return {
+                ok: false,
+                conflict: merged.conflict,
+                conflicts: merged.conflicts,
+                error: merged.message,
+                status: toStatus(config, false)
+              }
+            }
+          } else {
+            // up-to-date / local-ahead：远端未被本地领先的内容覆盖 → force push 接管
+            // （unrelated histories 非快进会被远端拒绝）
+            await deps.git.push(true)
           }
-          // local-ahead（内容一致）→ force push 接管（unrelated histories 非快进会被远端拒绝）
-          await deps.git.push(true)
         }
         markSynced(deps, config)
         return { ok: true, status: toStatus(config, false) }
@@ -231,11 +329,7 @@ export function registerSyncHandlers(ipc: IpcRegistrar, deps: SyncDeps): void {
           markSynced(deps, config)
           return { ok: true }
         }
-        if (status.kind === 'fast-forward' || status.kind === 'clean-merge') {
-          return applyRemoteMerge(deps, config, status, true)
-        }
-        markFailed(deps, config, '同步冲突：需要人工合并')
-        return conflictResult(status)
+        return applyRemoteMerge(deps, config, status, true)
       } catch (err) {
         const config = deps.config.load()
         if (config) markFailed(deps, config, String(err))
@@ -255,11 +349,7 @@ export function registerSyncHandlers(ipc: IpcRegistrar, deps: SyncDeps): void {
         await deps.git.fetch()
         const status = await deps.git.analyzeMerge()
         if (status.kind === 'up-to-date' || status.kind === 'local-ahead') { markSynced(deps, config); return { ok: true } }
-        if (status.kind === 'fast-forward' || status.kind === 'clean-merge') {
-          return applyRemoteMerge(deps, config, status, false)
-        }
-        markFailed(deps, config, '同步冲突：需要人工合并')
-        return conflictResult(status)
+        return applyRemoteMerge(deps, config, status, false)
       } catch (err) {
         const config = deps.config.load()
         if (config) markFailed(deps, config, String(err))
@@ -272,7 +362,7 @@ export function registerSyncHandlers(ipc: IpcRegistrar, deps: SyncDeps): void {
   ipc.handle('sync:resolve-conflict', (_event: unknown, raw: unknown): Promise<ResolveConflictResult> =>
     withWriteLock(async () => {
       // 校验在 acquireSync/try 之外：非法入参 reject，且不占用互斥
-      const content = validateConflictContent(raw)
+      const resolved = validateResolveParams(raw, deps.git.trackedFiles)
       acquireSync()
       try {
         const config = requireConfig(deps)
@@ -287,12 +377,47 @@ export function registerSyncHandlers(ipc: IpcRegistrar, deps: SyncDeps): void {
           markFailed(deps, config, '远端已有新变更，冲突快照已过期，请重新处理冲突')
           return { ok: false, message: '远端已有新变更，冲突快照已过期，请重新处理冲突' }
         }
-        const wrote = await writeLedgerChecked(deps, content)
-        if (!wrote.ok) {
-          markFailed(deps, config, wrote.message ?? '合并结果校验失败') // 与 push/pull 分支一致（T3 审查修复）
-          return { ok: false, message: wrote.message }
+        // oids 未变 ⇒ 重算的计划与冲突时逐字节相同，可安全用渲染端决议覆盖对应文件
+        const status = await deps.git.analyzeMerge()
+        if (status.kind !== 'merge') {
+          markSynced(deps, config) // 远端已与本地一致（如对方采用了我方内容）
+          return { ok: true }
         }
-        await deps.git.addLedgerFile()
+        const ledgerName = ledgerNameOf(deps)
+        const plan = mergeTrackedFiles(status.files, ledgerName)
+        const conflictPaths = plan.conflicts.map((c) => c.path)
+        const givenPaths = new Set(resolved.map((r) => r.path))
+        // 覆盖性校验：既不能漏（用未处理内容提交），也不能多（用陈旧/越权路径覆写未冲突文件）
+        const missing = conflictPaths.filter((p) => !givenPaths.has(p))
+        if (missing.length > 0) {
+          return { ok: false, message: `未处理的冲突文件：${missing.join('、')}` }
+        }
+        const extra = resolved.filter((r) => !conflictPaths.includes(r.path))
+        if (extra.length > 0) {
+          return { ok: false, message: `以下文件并非冲突文件，不能在此覆写：${extra.map((r) => r.path).join('、')}` }
+        }
+        // 账本是产品主文件：删除决议一律拒绝（防非法入参清空账本）
+        if (resolved.some((r) => r.path === ledgerName && r.content === null)) {
+          return { ok: false, message: '账本文件不能被删除' }
+        }
+        const byPath = new Map(resolved.map((r) => [r.path, r] as const))
+        const finalPlan: MergePlan = {
+          files: plan.files.map((file) => {
+            const decision = byPath.get(file.path)
+            if (!decision) return file // 非冲突文件沿用三路推导结果
+            return decision.content === null
+              ? { ...file, outcome: { kind: 'delete' } }
+              : { ...file, outcome: { kind: 'write', content: decision.content } }
+          }),
+          hasConflict: false,
+          conflicts: []
+        }
+        const applied = await applyMergePlan(deps, finalPlan)
+        if (!applied.ok) {
+          markFailed(deps, config, applied.message ?? '合并结果校验失败') // 与 push/pull 分支一致（T3 审查修复）
+          return { ok: false, message: applied.message }
+        }
+        await deps.git.addTrackedFiles()
         await mergeCommit(deps, 'merge: 手动解决冲突')
         await deps.git.push(config.adopted ?? false)
         const result = await refreshIndex(deps.db, deps.engine, deps.ledgerPath)
@@ -306,4 +431,11 @@ export function registerSyncHandlers(ipc: IpcRegistrar, deps: SyncDeps): void {
         SYNCING.current = false
       }
     }))
+}
+
+/** 读工作区内某追踪文件（不存在 → null） */
+function readLocalText(deps: SyncDeps, filepath: string): string | null {
+  const path = join(dirname(deps.ledgerPath), filepath)
+  if (!existsSync(path)) return null
+  try { return readFileSync(path, 'utf8') } catch { return null }
 }

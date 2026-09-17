@@ -1,20 +1,28 @@
 /**
- * M6：isomorphic-git 薄封装。账本目录即 git 工作区（唯一事实源铁律），
- * 只追踪账本文件；分支固定 main、remote 固定 origin。
- * 所有远端操作带 30s 超时防悬挂；认证经 AuthProvider 注入（PAT 主进程持有）。
+ * M6/M11：isomorphic-git 薄封装。账本目录即 git 工作区（唯一事实源铁律）。
+ *
+ * 追踪文件集见 `shared/sync-files.ts`：账本 + 账户库 + Excel 导入模板 + 受托管 `.gitignore`；
+ * `.beanwise/index.db`（可重建的索引缓存）与 `.beanwise/sync-config.json`（本机同步元数据）
+ * 由托管块忽略，**永不提交**。分支固定 main、remote 固定 origin，远端操作带 30s 超时防悬挂。
  *
  * 与 brief 代码的 API 差异（isomorphic-git 1.41.3 实测）：
  * - fs 传 node:fs（`git.fs` 在 1.41.3 未导出）；
  * - remote 命令名为 `addRemote`（`git.remote` 在 1.x 已不存在）；
- * - `git.mergeFile` 未导出（1.x 内置为 merge 的 mergeDriver），改用同款 diff3
- *   算法库本地实现 mergeFile，语义与 brief 的 `mergeFile({ marker: false })` 一致。
+ * - `git.mergeFile` 未导出（1.x 内置为 merge 的 mergeDriver），三路合并改由 core/merge-engine
+ *   用同款 diff3 算法库实现（语义与 brief 的 `mergeFile({ marker: false })` 一致）；
+ * - `git.add` 对**不存在**的文件抛 `NotFoundError`（源码 addToIndex），故 add 前必须 existsSync 过滤；
+ * - `git.add` 对**未跟踪且被 .gitignore 命中**的路径会静默跳过（源码 addToIndex
+ *   `if (!force && !isTracked) { if (ignored) return }`）——用户自己的 .gitignore 若写了
+ *   `.beanwise/`，账户库会永远同步不出去，因此 add 必须 `force: true`；
+ * - `git.remove` 幂等（GitIndex.delete 对不存在的条目 no-op），可无脑用于「工作区已删」。
  */
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import fs from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import git, { type AuthCallback, type AuthFailureCallback } from 'isomorphic-git'
+import git, { Errors, type AuthCallback, type AuthFailureCallback } from 'isomorphic-git'
 import http from 'isomorphic-git/http/node'
-import diff3Merge from 'diff3'
+import { SYNC_GITIGNORE_BEGIN, SYNC_GITIGNORE_BLOCK, SYNC_GITIGNORE_FILE, SYNC_LEDGER_FILE, SYNC_TRACKED_FILES } from '../../shared/sync-files'
+import type { FileTriple } from './merge-engine'
 
 export const GIT_AUTHOR = { name: 'BeanWise', email: 'beanwise@local' }
 export const SYNC_BRANCH = 'main'
@@ -22,57 +30,44 @@ export const SYNC_REMOTE = 'origin'
 
 export interface AuthProvider { (): { username: string; password: string } }
 
+/**
+ * 合并分析结论（M11 多文件）：
+ * - up-to-date / local-ahead：无需合并（后者可能是本地领先，也可能本地已有全部远端内容）；
+ * - merge：需要逐文件三路合并——`files` 为每个追踪文件的三态（null = 该侧无此文件），
+ *   冲突判定与结果推导全部交给 core/merge-engine（本层只负责取数据）。
+ */
 export type MergeStatus =
   | { kind: 'up-to-date' }
   | { kind: 'local-ahead' }
-  | { kind: 'fast-forward'; theirsContent: string }
-  | { kind: 'clean-merge'; content: string }
-  | { kind: 'conflict'; base: string; ours: string; theirs: string }
+  | { kind: 'merge'; files: FileTriple[]; fastForward: boolean }
 
 export interface GitSyncOptions {
   ledgerPath: string
+  /** 覆盖追踪文件集（测试用）；缺省 SYNC_TRACKED_FILES，其中账本项按 ledgerPath 的实际文件名替换 */
+  trackedFiles?: readonly string[]
   auth?: AuthProvider
   /** 远端操作超时（ms），默认 30_000 */
   timeoutMs?: number
 }
 
-/** 行分割（保留行尾符），与 isomorphic-git 内部 mergeFile 的 LINEBREAKS 一致 */
-const LINEBREAKS = /^.*(\r?\n|$)/gm
-
-/**
- * 文件级三路合并（diff3，同 isomorphic-git 内置算法）。
- * 无冲突 → cleanMerge=true 返回合并文本；有冲突 → cleanMerge=false，
- * 冲突 hunk 不产出文本（marker:false 语义），调用方改用三路快照交 UI 处理。
- */
-function mergeFile(ours: string, base: string, theirs: string): { cleanMerge: boolean; mergedText: string } {
-  const result = diff3Merge(
-    ours.match(LINEBREAKS) ?? [],
-    base.match(LINEBREAKS) ?? [],
-    theirs.match(LINEBREAKS) ?? []
-  )
-  let cleanMerge = true
-  let mergedText = ''
-  for (const item of result) {
-    if ('ok' in item) {
-      mergedText += item.ok.join('')
-    } else {
-      cleanMerge = false
-    }
-  }
-  return { cleanMerge, mergedText }
-}
-
 export class GitSync {
   private readonly dir: string
-  private readonly file: string
+  /** 追踪文件（相对工作区路径）——提交、三路合并、脏检查全部以它为准 */
+  private readonly files: readonly string[]
   private readonly auth: AuthProvider
   private readonly timeoutMs: number
 
   constructor(opts: GitSyncOptions) {
     this.dir = dirname(opts.ledgerPath)
-    this.file = basename(opts.ledgerPath)
+    const ledgerFile = basename(opts.ledgerPath)
+    this.files = (opts.trackedFiles ?? SYNC_TRACKED_FILES).map((f) => (f === SYNC_LEDGER_FILE ? ledgerFile : f))
     this.auth = opts.auth ?? (() => ({ username: 'x-access-token', password: 'x-oauth-basic' }))
     this.timeoutMs = opts.timeoutMs ?? 30_000
+  }
+
+  /** 追踪文件集（IPC 层用于「本地是否已有内容」判据等） */
+  get trackedFiles(): readonly string[] {
+    return this.files
   }
 
   /** 所有远端操作包超时（本地文件协议同样计数，防 io 悬挂） */
@@ -101,8 +96,39 @@ export class GitSync {
     await git.init({ fs, dir: this.dir, defaultBranch: SYNC_BRANCH })
   }
 
-  async addLedgerFile(): Promise<void> {
-    await git.add({ fs, dir: this.dir, filepath: this.file })
+  private readTextAt(filepath: string): string | null {
+    try { return readFileSync(join(this.dir, filepath), 'utf8') } catch { return null }
+  }
+
+  /**
+   * 幂等纳管 `.gitignore` 托管块：文件缺失 → 创建；已有内容但无 marker → **追加**；
+   * 已含 marker → 原样不动。**绝不覆写用户自己的忽略规则。**
+   */
+  async ensureGitignore(): Promise<void> {
+    const path = join(this.dir, SYNC_GITIGNORE_FILE)
+    const current = this.readTextAt(SYNC_GITIGNORE_FILE)
+    if (current !== null && current.includes(SYNC_GITIGNORE_BEGIN)) return
+    const body = current === null || current.trim() === ''
+      ? `${SYNC_GITIGNORE_BLOCK}\n`
+      : `${current.replace(/\s+$/, '')}\n\n${SYNC_GITIGNORE_BLOCK}\n`
+    writeFileSync(path, body, 'utf8')
+  }
+
+  /**
+   * 把追踪文件集同步到 git 索引（提交的前提——`git.commit` 取的是索引而非工作区）：
+   * 存在的 → add（force：见文件头 .gitignore 说明）；已从工作区删除的 → remove（幂等）。
+   * `.gitignore` 在此统一纳管（唯一入口，保证任何提交路径都带上忽略规则）。
+   */
+  async addTrackedFiles(): Promise<void> {
+    await this.ensureGitignore()
+    const present: string[] = []
+    for (const filepath of this.files) {
+      if (existsSync(join(this.dir, filepath))) present.push(filepath)
+      else await git.remove({ fs, dir: this.dir, filepath })
+    }
+    if (present.length > 0) {
+      await git.add({ fs, dir: this.dir, filepath: [...present], force: true })
+    }
   }
 
   /**
@@ -126,42 +152,46 @@ export class GitSync {
     }))
   }
 
-  private async readBlobText(oid: string): Promise<string> {
-    // oid 是 commit/tree 时 readBlob 必须带 filepath 走树遍历（裸 oid 仅限 blob）
-    const { blob } = await git.readBlob({ fs, dir: this.dir, oid, filepath: this.file })
-    return Buffer.from(blob).toString('utf8')
+  /** 指定 commit 树中某文件的文本；树中无此文件 → null（三态语义需要） */
+  async blobTextAt(oid: string, filepath: string): Promise<string | null> {
+    try {
+      // oid 是 commit/tree 时 readBlob 必须带 filepath 走树遍历（裸 oid 仅限 blob）
+      const { blob } = await git.readBlob({ fs, dir: this.dir, oid, filepath })
+      return Buffer.from(blob).toString('utf8')
+    } catch (err) {
+      if (err instanceof Errors.NotFoundError) return null
+      throw err
+    }
   }
 
   /**
    * fetch 后合并分析（Global Constraints「合并语义」）：
-   * ours=HEAD blob、theirs=refs/remotes/origin/main；unrelated（findMergeBase 返回空数组）
-   * → 内容一致 local-ahead / 不一致 conflict(base='')。
+   * ours=HEAD、theirs=refs/remotes/origin/main、base=findMergeBase（unrelated → 无 base，逐文件为 null）。
+   * 仅做「取哪一版」的判断，逐文件冲突与合并结果交由 core/merge-engine 推导。
    */
   async analyzeMerge(): Promise<MergeStatus> {
-    const oursOid = await git.resolveRef({ fs, dir: this.dir, ref: 'HEAD' })
+    const oursOid = await this.headOid()
     let theirsOid: string
     try {
-      theirsOid = await git.resolveRef({ fs, dir: this.dir, ref: `refs/remotes/${SYNC_REMOTE}/${SYNC_BRANCH}` })
+      theirsOid = await this.remoteHeadOid()
     } catch {
       return { kind: 'local-ahead' } // 远端无 ref（未 fetch 过/空仓）
     }
     if (oursOid === theirsOid) return { kind: 'up-to-date' }
     // findMergeBase 实际返回 oid 数组（同祖先→[base]，unrelated→[]，brief 的 null 判断不适用）
     const [baseOid] = (await git.findMergeBase({ fs, dir: this.dir, oids: [oursOid, theirsOid] })) as string[]
-    const ours = await this.readBlobText(oursOid)
-    if (baseOid === undefined) {
-      // unrelated（场景 C 接管）：内容一致 → 直接接管；不一致 → 三路（base 空）
-      const theirs = await this.readBlobText(theirsOid)
-      if (ours === theirs) return { kind: 'local-ahead' }
-      return { kind: 'conflict', base: '', ours, theirs }
-    }
-    if (baseOid === oursOid) return { kind: 'fast-forward', theirsContent: await this.readBlobText(theirsOid) }
     if (baseOid === theirsOid) return { kind: 'local-ahead' }
-    const theirs = await this.readBlobText(theirsOid)
-    const base = await this.readBlobText(baseOid)
-    const merged = mergeFile(ours, base, theirs)
-    if (merged.cleanMerge) return { kind: 'clean-merge', content: merged.mergedText }
-    return { kind: 'conflict', base, ours, theirs }
+    const files: FileTriple[] = []
+    let fastForward = true
+    for (const path of this.files) {
+      const ours = await this.blobTextAt(oursOid, path)
+      const theirs = await this.blobTextAt(theirsOid, path)
+      const base = baseOid === undefined ? null : await this.blobTextAt(baseOid, path)
+      // 任一侧相对 base 都有改动 → 不是快进（仅用于提交信息措辞）
+      if (base !== ours && base !== theirs && ours !== theirs) fastForward = false
+      files.push({ path, base, ours, theirs })
+    }
+    return { kind: 'merge', files, fastForward }
   }
 
   async push(force = false): Promise<void> {
@@ -196,8 +226,26 @@ export class GitSync {
     return refs.map((r) => ({ ref: r.ref, oid: r.oid }))
   }
 
+  /**
+   * 追踪文件集是否有未提交改动（HEAD 与工作区逐文件比较）。
+   *
+   * **不能用 `statusMatrix({ fs, dir })` 全工作区扫描**：未跟踪文件在矩阵里是 `[path, 0, 2, 0]`，
+   * `head !== workdir` 恒真——`.beanwise/index.db` 长期存在会让本方法永远返回 true，
+   * 于是每次 push/pull 都产生一个空提交（M11 修复的现存 bug）。
+   * 逐文件比对 HEAD blob 也顺带免疫 statusMatrix 的路径前缀匹配（`accounts.json.bak` 之类）。
+   */
   async hasUncommitted(): Promise<boolean> {
-    const matrix = await git.statusMatrix({ fs, dir: this.dir })
-    return matrix.some(([, head, workdir]) => head !== workdir)
+    let headOid: string | null = null
+    try {
+      headOid = await this.headOid()
+    } catch {
+      headOid = null // unborn 新库（尚无提交）
+    }
+    for (const filepath of this.files) {
+      const disk = this.readTextAt(filepath)
+      const head = headOid === null ? null : await this.blobTextAt(headOid, filepath)
+      if (disk !== head) return true
+    }
+    return false
   }
 }

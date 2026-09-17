@@ -17,8 +17,9 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { deflateSync, inflateSync } from 'node:zlib'
-import git from 'isomorphic-git'
+import git, { Errors } from 'isomorphic-git'
 import http from 'isomorphic-git/http/node'
+import { SYNC_LEDGER_FILE } from '../../../shared/sync-files'
 import { GIT_AUTHOR, SYNC_BRANCH } from '../../core/git-sync'
 
 const SIDEBAND_MAX = 65515 // side-band-64k 单条 pkt-line 最大数据字节（1 通道字节 + 数据）
@@ -346,37 +347,79 @@ export async function createBareRepo(): Promise<string> {
   return dir
 }
 
+/** 远端种子内容：string = 账本全文（旧签名）；Record<path, string> = 多文件（M11） */
+export type SeedInitContent = string | Record<string, string>
+
 /**
- * 空仓 → 初始内容（空仓不可 clone——场景 B/C 前置；content 为文件全文）。
+ * 空仓 → 初始内容（空仓不可 clone——场景 B/C 前置；string 为账本全文，或传多文件映射）。
  * clone/commit 显式 ref: main（空裸仓 clone 出的本地仓库 HEAD 停在 master——clone 内部 init 的默认分支）。
  */
-export async function seedRemoteInit(remoteUrl: string, content: string): Promise<void> {
+export async function seedRemoteInit(remoteUrl: string, content: SeedInitContent): Promise<void> {
   const workDir = mkdtempSync(join(tmpdir(), 'beanwise-seed-'))
+  const files: Record<string, string> = typeof content === 'string' ? { [SYNC_LEDGER_FILE]: content } : content
   try {
     await git.init({ fs, dir: workDir, defaultBranch: SYNC_BRANCH })
-    writeFileSync(join(workDir, 'main.beancount'), content)
-    await git.add({ fs, dir: workDir, filepath: 'main.beancount' })
+    for (const [filepath, text] of Object.entries(files)) {
+      const full = join(workDir, filepath)
+      mkdirSync(dirname(full), { recursive: true })
+      writeFileSync(full, text, 'utf8')
+    }
+    await git.add({ fs, dir: workDir, filepath: Object.keys(files), force: true })
     await git.commit({ fs, dir: workDir, message: 'init', author: GIT_AUTHOR, ref: SYNC_BRANCH })
     await git.addRemote({ fs, dir: workDir, remote: 'origin', url: remoteUrl })
     await git.push({ fs, http, dir: workDir, remote: 'origin', ref: SYNC_BRANCH })
   } finally { rmSync(workDir, { recursive: true, force: true }) }
 }
 
-/** 非空裸仓 → 追加一笔（模拟远端他人修改；依赖已有历史） */
-export async function seedRemote(remoteUrl: string, contentPatch: string): Promise<void> {
+/** 远端改动内容：string = 账本追加（旧签名）；Record<path, string | null> = 覆盖写 / null 删除（M11） */
+export type SeedPatch = string | Record<string, string | null>
+
+/** 非空裸仓 → 应用改动（模拟远端他人修改；依赖已有历史） */
+export async function seedRemote(remoteUrl: string, patch: SeedPatch): Promise<void> {
   const workDir = mkdtempSync(join(tmpdir(), 'beanwise-seed-'))
   try {
     await git.clone({ fs, http, dir: workDir, url: remoteUrl, ref: SYNC_BRANCH, singleBranch: true })
-    appendFileSync(join(workDir, 'main.beancount'), contentPatch)
-    await git.add({ fs, dir: workDir, filepath: 'main.beancount' })
+    const touched: string[] = []
+    if (typeof patch === 'string') {
+      appendFileSync(join(workDir, SYNC_LEDGER_FILE), patch)
+      touched.push(SYNC_LEDGER_FILE)
+    } else {
+      for (const [filepath, text] of Object.entries(patch)) {
+        const full = join(workDir, filepath)
+        if (text === null) rmSync(full, { force: true })
+        else {
+          mkdirSync(dirname(full), { recursive: true })
+          writeFileSync(full, text, 'utf8')
+        }
+        touched.push(filepath)
+      }
+    }
+    for (const filepath of touched) {
+      if (existsSync(join(workDir, filepath))) await git.add({ fs, dir: workDir, filepath, force: true })
+      else await git.remove({ fs, dir: workDir, filepath })
+    }
     await git.commit({ fs, dir: workDir, message: 'seed', author: GIT_AUTHOR, ref: SYNC_BRANCH })
     await git.push({ fs, http, dir: workDir, remote: 'origin', ref: SYNC_BRANCH })
   } finally { rmSync(workDir, { recursive: true, force: true }) }
 }
 
-/** 裸仓的 gitdir 即 dir 本身（无 .git 子目录），需显式传 gitdir；HEAD 指向 commit，须带 filepath 走树遍历 */
-export async function readRemoteFile(bareDir: string): Promise<string> {
+/**
+ * 裸仓的 gitdir 即 dir 本身（无 .git 子目录），需显式传 gitdir；HEAD 指向 commit，须带 filepath 走树遍历。
+ * 文件不存在 → null（M11 多文件断言需要区分「无此文件」与「空文件」）。
+ */
+export async function readRemoteFile(bareDir: string, filepath: string = SYNC_LEDGER_FILE): Promise<string | null> {
   const oid = await git.resolveRef({ fs, dir: bareDir, gitdir: bareDir, ref: 'HEAD' })
-  const { blob } = await git.readBlob({ fs, dir: bareDir, gitdir: bareDir, oid, filepath: 'main.beancount' })
-  return Buffer.from(blob).toString('utf8')
+  try {
+    const { blob } = await git.readBlob({ fs, dir: bareDir, gitdir: bareDir, oid, filepath })
+    return Buffer.from(blob).toString('utf8')
+  } catch (err) {
+    if (err instanceof Errors.NotFoundError) return null
+    throw err
+  }
+}
+
+/** 裸仓 HEAD 的提交数（M11：验证不再产生空提交） */
+export async function remoteCommitCount(bareDir: string): Promise<number> {
+  const commits = await git.log({ fs, dir: bareDir, gitdir: bareDir, ref: 'HEAD' })
+  return commits.length
 }

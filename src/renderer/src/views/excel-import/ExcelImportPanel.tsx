@@ -19,6 +19,7 @@ import type {
 } from '../../../../shared/ipc'
 import { methodMapKey, typeMapKey } from '../../../../shared/import-keys'
 import { useLedgerStore } from '../../stores/ledger'
+import { useSyncStore } from '../../stores/sync'
 import ExcelAccountMappingModal from './ExcelAccountMappingModal'
 import ExcelColumnMappingModal from './ExcelColumnMappingModal'
 import ExcelNewAccountSection from './ExcelNewAccountSection'
@@ -50,10 +51,14 @@ export default function ExcelImportPanel({ onImported }: Props) {
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [keyword, setKeyword] = useState('')
+  const generation = useSyncStore((s) => s.generation)
 
+  // M11：模板在同步范围内——generation 变化（pull/合并落盘）后重新拉取，
+  // 合并可能重写模板 id（同 source 收敛），此处重载让列表与 Select 同步
   useEffect(() => {
     void loadTemplates()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generation])
 
   const loadTemplates = async (): Promise<void> => {
     try {
@@ -200,6 +205,7 @@ export default function ExcelImportPanel({ onImported }: Props) {
       setDraft(r.template)
       setSelectedTemplateId(r.template.id)
       await loadTemplates()
+      void useSyncStore.getState().push() // M11：模板随仓库同步（未配置同步时静默跳过）
       message.success('模板已保存')
       if (path) await doPreview(path, r.template)
     } catch (err) {
@@ -221,6 +227,7 @@ export default function ExcelImportPanel({ onImported }: Props) {
         if (r.ok && r.template) {
           setDraft(r.template)
           await loadTemplates()
+          void useSyncStore.getState().push()
           message.success('账户映射已保存')
         } else {
           message.error(r.message ?? '保存失败')
@@ -241,6 +248,7 @@ export default function ExcelImportPanel({ onImported }: Props) {
         setDraft(r.template)
         setSelectedTemplateId(r.template.id)
         await loadTemplates()
+        void useSyncStore.getState().push()
         message.success('模板已保存（含新账户归位与新类型映射）')
       } else {
         message.error(r.message ?? '保存失败')
@@ -266,6 +274,7 @@ export default function ExcelImportPanel({ onImported }: Props) {
           setPreview(null)
           setPreviewOpen(false)
           await loadTemplates()
+          void useSyncStore.getState().push()
           message.success('模板已删除')
         } catch (err) {
           message.error(String(err))
@@ -304,6 +313,8 @@ export default function ExcelImportPanel({ onImported }: Props) {
       if (r.ok) {
         message.success(`已导入 ${r.imported ?? 0} 笔流水${r.skipped ? `，跳过 ${r.skipped} 笔` : ''}`)
         await useLedgerStore.getState().refresh()
+        // 导入会经 syncExcelAccountsToConfig 写账户库（同步范围内）→ 必须推送
+        void useSyncStore.getState().push()
         onImported()
         closePreview()
       } else {

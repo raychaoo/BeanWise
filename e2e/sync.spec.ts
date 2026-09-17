@@ -18,15 +18,26 @@
  *   复位到未配置态（T6 模式），保证用例间与历史运行残留互不污染。
  * - 链路 ② 由 e2e/conflict-t6.spec.ts（T6 临时验收 spec）整合而来，C-1 回归断言（merged 编辑器
  *   无条件渲染）随迁至此；conflict-t6.spec.ts 删除，不留重复冲突测试。
+ * - M11 起同步范围是**文件集**（账本 + 账户库 + Excel 模板 + .gitignore）：冲突载荷为逐文件三态，
+ *   冲突视图按文件分 tab（JSON 文件只做「采用本地 / 采用远端」二选一，不做手工编辑）。
  */
 import { _electron as electron, expect, test, type Page } from '@playwright/test'
-import { readFileSync, rmSync } from 'node:fs'
-import { dirname } from 'node:path'
-import { createBareRepo, readRemoteFile, seedRemote, seedRemoteInit, startGitServer } from './fixtures/sync'
-import { waitForLedgerReady, cleanupFixture, createFixtureCopy } from './fixtures/setup'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { createBareRepo, readRemoteFile, remoteCommitCount, seedRemote, seedRemoteInit, startGitServer } from './fixtures/sync'
+import { waitForLedgerReady, cleanupFixture, createFixtureCopy, seedAccountConfig } from './fixtures/setup'
 
 // GitHub Actions 的 ubuntu runner 无 user namespaces，需关 Chromium 沙箱；本机 Windows 不用
 const launchArgs = process.env['CI'] ? ['.', '--no-sandbox'] : ['.']
+
+/** 账户库文件（结构对齐 JsonAccountConfigStore.save） */
+function accountsJson(...entries: Array<{ id: number; name: string; value: string }>): string {
+  return JSON.stringify({ accounts: entries.map((e) => ({ ...e, description: '' })) }, null, 2)
+}
+/** 仓库内路径一律正斜杠（git 语义），勿用 path.join */
+const ACCOUNTS_REL = '.beanwise/accounts.json'
+const accountsPathOf = (ledgerPath: string): string => join(dirname(ledgerPath), '.beanwise', 'accounts.json')
+const localText = (ledgerPath: string, rel: string): string => readFileSync(join(dirname(ledgerPath), rel), 'utf8')
 
 /** E2E 不复用全局工作目录：显式激活临时目录后重载（与 ledger-index 同模式，批次 A 补齐 hermetic） */
 async function activateWorkspace(win: Page, ledgerPath: string): Promise<void> {
@@ -83,7 +94,7 @@ test('M6 绿灯：配置空仓 → 保存自动 push → 裸仓可见', async ()
 
     // 地面真相：本地文件 + 裸仓均含新交易
     expect(readFileSync(ledgerPath, 'utf8')).toContain('自动同步')
-    await expect.poll(async () => (await readRemoteFile(bareDir)).includes('自动同步')).toBe(true)
+    await expect.poll(async () => ((await readRemoteFile(bareDir)) ?? '').includes('自动同步')).toBe(true)
 
     await app.close()
   } finally {
@@ -144,7 +155,7 @@ test('M6 冲突：远端已有不同内容 → 配置即冲突 → 采用远端 
 
     // 6. 地面真相：落盘文件与裸仓均为最终内容（= 采用远端的 theirs，含「远端已有」+ fixture 交易）
     expect(readFileSync(ledgerPath, 'utf8')).toContain('远端已有')
-    await expect.poll(async () => (await readRemoteFile(bareDir)).includes('远端已有')).toBe(true)
+    await expect.poll(async () => ((await readRemoteFile(bareDir)) ?? '').includes('远端已有')).toBe(true)
     expect(await readRemoteFile(bareDir)).toContain('Breakfast')
 
     await app.close()
@@ -182,6 +193,139 @@ test('M6 拉取：远端新增 → 手动拉取 → 文件更新 + 明细联动'
     // 明细联动（pull 落盘 → refreshIndex → 明细可见远端交易）
     await win.getByRole('menuitem', { name: '明细' }).click()
     await expect(win.locator('.ant-table-tbody')).toContainText('远端拉取')
+
+    await app.close()
+  } finally {
+    await cleanupFixture(ledgerPath)
+    await server.close()
+    rmSync(bareDir, { recursive: true, force: true })
+  }
+})
+
+// ==================== M11：账户库 / Excel 模板随账本同步 ====================
+
+/** 启动 → 激活工作目录 → 复位同步 → 配置裸仓（M11 三条链路的公共前置） */
+async function launchConfigured(ledgerPath: string, url: string): Promise<{ app: Awaited<ReturnType<typeof electron.launch>>; win: Page }> {
+  const app = await electron.launch({
+    args: launchArgs,
+    env: { ...process.env, BEANWISE_LEDGER_PATH: ledgerPath }
+  })
+  const win = await app.firstWindow()
+  await activateWorkspace(win, ledgerPath)
+  await resetSync(win)
+  await configureSync(win, url)
+  return { app, win }
+}
+
+test('M11 账户库：科目保存后自动 push，索引缓存与同步配置不进仓库', async () => {
+  test.setTimeout(180_000)
+  const bareDir = await createBareRepo()
+  const server = await startGitServer(bareDir)
+  const ledgerPath = createFixtureCopy()
+  seedAccountConfig(ledgerPath, [{ id: 1, name: '吃饭', value: 'Expenses:Food' }])
+  try {
+    const { app, win } = await launchConfigured(ledgerPath, server.url)
+
+    // 首同步已把账户库与托管 .gitignore 推送上去
+    await expect.poll(async () => (await readRemoteFile(bareDir, ACCOUNTS_REL)) ?? '').toContain('Expenses:Food')
+    expect(await readRemoteFile(bareDir, '.gitignore')).toContain('.beanwise/index.db')
+
+    // 新增科目 → 保存 → 自动 push（saveAccountConfig 成功后触发 push）
+    await win.getByRole('menuitem', { name: '账户' }).click()
+    await expect(win.getByText('科目管理')).toBeVisible({ timeout: 20000 })
+    await win.getByRole('button', { name: '新增科目' }).click()
+    await win.getByPlaceholder('名称（中文）').fill('房租')
+    await win.getByPlaceholder('路径 如 Bank:CNB').fill('Assets:Rent')
+    await win.getByRole('button', { name: '添加' }).click()
+    await win.getByRole('button', { name: /保\s*存/ }).click()
+    await expect(win.locator('.ant-message')).toContainText('账户配置已保存')
+    await expect(win.locator('.ant-message')).toContainText('已同步到远端')
+
+    await expect.poll(async () => (await readRemoteFile(bareDir, ACCOUNTS_REL)) ?? '').toContain('Assets:Rent')
+    // 缓存/本机元数据被托管忽略规则挡住：不进仓库
+    expect(await readRemoteFile(bareDir, '.beanwise/index.db')).toBeNull()
+    expect(await readRemoteFile(bareDir, '.beanwise/sync-config.json')).toBeNull()
+
+    // 无改动的重复同步不再产生空提交（旧实现因 index.db 未跟踪而每次都提交）
+    await win.getByRole('menuitem', { name: '账户' }).click()
+    const before = await remoteCommitCount(bareDir)
+    await win.getByRole('button', { name: /保\s*存/ }).click()
+    await expect(win.locator('.ant-message')).toContainText('已同步到远端')
+    expect(await remoteCommitCount(bareDir)).toBe(before)
+
+    await app.close()
+  } finally {
+    await cleanupFixture(ledgerPath)
+    await server.close()
+    rmSync(bareDir, { recursive: true, force: true })
+  }
+})
+
+test('M11 拉取：远端账户库更新 → 拉取 → 账户页联动出现新科目', async () => {
+  test.setTimeout(180_000)
+  const bareDir = await createBareRepo()
+  const server = await startGitServer(bareDir)
+  const ledgerPath = createFixtureCopy()
+  seedAccountConfig(ledgerPath, [{ id: 1, name: '吃饭', value: 'Expenses:Food' }])
+  try {
+    const { app, win } = await launchConfigured(ledgerPath, server.url)
+
+    // 远端他人改了账户库（新增科目名）
+    await seedRemote(server.url, {
+      [ACCOUNTS_REL]: accountsJson({ id: 1, name: '吃饭', value: 'Expenses:Food' }, { id: 2, name: '房租', value: 'Expenses:Rent' })
+    })
+
+    await win.getByRole('button', { name: '拉取' }).click()
+    await expect(win.locator('.ant-message')).toContainText('已拉取远端更新')
+    expect(localText(ledgerPath, ACCOUNTS_REL)).toContain('Expenses:Rent')
+
+    // 账户页联动（pull → loadAccounts + generation 重载）
+    await win.getByRole('menuitem', { name: '账户' }).click()
+    await expect(win.getByText('科目管理')).toBeVisible({ timeout: 20000 })
+    // 断言路径列（名称列是 Input，value 不在 DOM 文本里——toContainText 查的是 textContent）
+    await expect(win.locator('.ant-table-tbody')).toContainText('Expenses:Rent', { timeout: 20000 })
+
+    await app.close()
+  } finally {
+    await cleanupFixture(ledgerPath)
+    await server.close()
+    rmSync(bareDir, { recursive: true, force: true })
+  }
+})
+
+test('M11 JSON 冲突：账户库同科目两侧改动 → 冲突 tab 二选一 → 完成合并推送', async () => {
+  test.setTimeout(180_000)
+  const bareDir = await createBareRepo()
+  const server = await startGitServer(bareDir)
+  const ledgerPath = createFixtureCopy()
+  const accountsPath = accountsPathOf(ledgerPath)
+  seedAccountConfig(ledgerPath, [{ id: 1, name: '吃饭', value: 'Expenses:Food' }])
+  try {
+    const { app, win } = await launchConfigured(ledgerPath, server.url)
+
+    // 远端改同名科目；本地也改（不同内容）→ 同一条目两侧都改 → JSON 结构化并集无法解决
+    await seedRemote(server.url, { [ACCOUNTS_REL]: accountsJson({ id: 1, name: '餐费', value: 'Expenses:Food' }) })
+    writeFileSync(accountsPath, accountsJson({ id: 1, name: '吃饭啦', value: 'Expenses:Food' }), 'utf8')
+
+    // 拉取前置快照提交本地改动 → fetch → 冲突（账户库一条）
+    await win.getByRole('button', { name: '拉取' }).click()
+    await expect(win.locator('.ant-message')).toContainText('同步冲突（账户库）')
+    await expect(win.getByRole('menuitem', { name: '合并' })).toBeVisible()
+    await win.getByRole('menuitem', { name: '合并' }).click()
+
+    // JSON 冲突：无 merged 编辑器（display:none），且未选择前「完成合并」禁用
+    await expect(win.getByRole('tab', { name: /账户库/ })).toBeVisible()
+    await expect(win.locator('.conflict-diff .monaco-diff-editor')).toBeVisible()
+    await expect(win.locator('.conflict-merged .monaco-editor')).toBeHidden()
+    await expect(win.getByRole('button', { name: '完成合并' })).toBeDisabled()
+
+    await win.getByRole('button', { name: '采用远端' }).click()
+    await expect(win.getByRole('button', { name: '完成合并' })).toBeEnabled()
+    await win.getByRole('button', { name: '完成合并' }).click()
+    await expect(win.locator('.ant-message')).toContainText('冲突已解决并推送')
+
+    expect(localText(ledgerPath, ACCOUNTS_REL)).toContain('餐费')
+    await expect.poll(async () => (await readRemoteFile(bareDir, ACCOUNTS_REL)) ?? '').toContain('餐费')
 
     await app.close()
   } finally {

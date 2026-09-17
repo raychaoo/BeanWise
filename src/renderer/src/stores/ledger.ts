@@ -166,6 +166,8 @@ export const useLedgerStore = create<LedgerState>((set, get) => {
         }
         const ledger = await window.beanwise.listLedgerAccounts()
         set(mergeAccountOptions(r.accounts, ledger.accounts))
+        // M11：账户库在同步范围内 → 保存后自动 git 同步（与编辑器保存同模式；未配置同步时静默跳过）
+        void useSyncStore.getState().push()
         return true
       } catch (err) {
         message.error(String(err))

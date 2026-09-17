@@ -4,7 +4,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AccountsResult } from '../../../shared/ipc'
 import { JsonAccountConfigStore } from '../../stores/account-config-store'
-import { normalizeAccounts, registerAccountHandlers } from './ipc-handlers-accounts'
+import { normalizeAccounts } from '../../utils/account-normalize'
+import { registerAccountHandlers } from './ipc-handlers-accounts'
 import type { IpcRegistrar } from '../ledger/ipc-handlers'
 
 describe('normalizeAccounts（id/name/value/description 结构）', () => {

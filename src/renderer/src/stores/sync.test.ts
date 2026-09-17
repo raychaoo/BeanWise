@@ -20,6 +20,9 @@ type StubApi = {
   getLedgerStatus: ReturnType<typeof vi.fn>
   listLedgerEntries: ReturnType<typeof vi.fn>
   listLedgerAccounts: ReturnType<typeof vi.fn>
+  getAccountConfig: ReturnType<typeof vi.fn>
+  listLedgerCounterparties: ReturnType<typeof vi.fn>
+  saveAccountConfig: ReturnType<typeof vi.fn>
   refreshLedgerIndex: ReturnType<typeof vi.fn>
 }
 
@@ -34,6 +37,9 @@ function stubBeanwise(overrides: Partial<StubApi> = {}): StubApi {
     getLedgerStatus: vi.fn().mockResolvedValue(null),
     listLedgerEntries: vi.fn().mockResolvedValue({ entries: [], total: 0 }),
     listLedgerAccounts: vi.fn().mockResolvedValue({ accounts: [] }),
+    getAccountConfig: vi.fn().mockResolvedValue({ ok: true, accounts: [] }),
+    listLedgerCounterparties: vi.fn().mockResolvedValue({ counterparties: [] }),
+    saveAccountConfig: vi.fn().mockResolvedValue({ ok: true, accounts: [] }),
     refreshLedgerIndex: vi.fn().mockResolvedValue({ changed: false, status: 'ok', entryCount: 0, errorCount: 0 }),
     ...overrides
   }
@@ -43,7 +49,7 @@ function stubBeanwise(overrides: Partial<StubApi> = {}): StubApi {
 
 beforeEach(() => {
   vi.unstubAllGlobals()
-  useSyncStore.setState({ status: null, conflict: null, syncing: false })
+  useSyncStore.setState({ status: null, conflict: null, syncing: false, generation: 0 })
   useLedgerStore.setState({
     status: null, entries: [], total: 0, accountOptions: [], accountValues: [], loading: false, error: null,
     editorContent: null, editorOriginal: null, editorFingerprint: null,
@@ -68,10 +74,10 @@ it('configure 成功 → status 更新 + 成功提示', async () => {
 })
 
 it('configure 场景 C 冲突 → conflict 落 store + 不报成功', async () => {
-  stubBeanwise({ configureSync: vi.fn().mockResolvedValue({ ok: false, conflict: true, base: '', ours: 'local', theirs: 'remote' }) })
+  stubBeanwise({ configureSync: vi.fn().mockResolvedValue({ ok: false, conflict: true, conflicts: [{ path: 'main.beancount', base: null, ours: 'local', theirs: 'remote' }] }) })
   const ok = await useSyncStore.getState().configure('https://github.com/a/b', 'pat')
   expect(ok).toBe(false)
-  expect(useSyncStore.getState().conflict).toEqual({ base: '', ours: 'local', theirs: 'remote' })
+  expect(useSyncStore.getState().conflict).toEqual({ files: [{ path: 'main.beancount', base: null, ours: 'local', theirs: 'remote' }] })
   expect(message.success).not.toHaveBeenCalled()
   expect(message.warning).toHaveBeenCalled()
 })
@@ -94,10 +100,10 @@ it('push 成功 → 成功提示 + ledgerStore.refresh 联动', async () => {
 })
 
 it('push 冲突 → conflict 落 store + 警告提示', async () => {
-  stubBeanwise({ pushLedger: vi.fn().mockResolvedValue({ ok: false, conflict: true, base: 'b', ours: 'o', theirs: 't' }) })
+  stubBeanwise({ pushLedger: vi.fn().mockResolvedValue({ ok: false, conflict: true, conflicts: [{ path: 'main.beancount', base: 'b', ours: 'o', theirs: 't' }] }) })
   useSyncStore.setState({ status: { configured: true, repoUrl: 'https://github.com/a/b', branch: 'main', lastSyncAt: 1, lastError: null, syncing: false } })
   await useSyncStore.getState().push()
-  expect(useSyncStore.getState().conflict).toEqual({ base: 'b', ours: 'o', theirs: 't' })
+  expect(useSyncStore.getState().conflict).toEqual({ files: [{ path: 'main.beancount', base: 'b', ours: 'o', theirs: 't' }] })
   expect(message.warning).toHaveBeenCalled()
   expect(message.success).not.toHaveBeenCalled()
 })
@@ -124,7 +130,7 @@ it('push：status null（clear 后 / loadStatus 前）→ 静默跳过，不发 
 it('push 成功（先置冲突）→ conflict 清空', async () => {
   // M6 终审修复 I-2b：自动合并落盘后清陈旧快照，防其再覆写刚合并内容
   stubBeanwise()
-  useSyncStore.setState({ status: { configured: true, repoUrl: 'https://github.com/a/b', branch: 'main', lastSyncAt: 1, lastError: null, syncing: false }, conflict: { base: 'b', ours: 'o', theirs: 't' } })
+  useSyncStore.setState({ status: { configured: true, repoUrl: 'https://github.com/a/b', branch: 'main', lastSyncAt: 1, lastError: null, syncing: false }, conflict: { files: [{ path: 'main.beancount', base: 'b', ours: 'o', theirs: 't' }] } })
   await useSyncStore.getState().push()
   expect(useSyncStore.getState().conflict).toBeNull()
   expect(message.success).toHaveBeenCalledWith('已同步到远端')
@@ -132,7 +138,7 @@ it('push 成功（先置冲突）→ conflict 清空', async () => {
 
 it('pull 成功（先置冲突）→ conflict 清空', async () => {
   stubBeanwise()
-  useSyncStore.setState({ conflict: { base: 'b', ours: 'o', theirs: 't' } })
+  useSyncStore.setState({ conflict: { files: [{ path: 'main.beancount', base: 'b', ours: 'o', theirs: 't' }] } })
   await useSyncStore.getState().pull()
   expect(useSyncStore.getState().conflict).toBeNull()
   expect(message.success).toHaveBeenCalledWith('已拉取远端更新')
@@ -163,18 +169,18 @@ it('pull 成功 → 成功提示 + refresh 联动', async () => {
 
 it('resolveConflict 成功 → 冲突清空 + 成功提示 + refresh', async () => {
   const api = stubBeanwise()
-  useSyncStore.setState({ conflict: { base: 'b', ours: 'o', theirs: 't' } })
-  const ok = await useSyncStore.getState().resolveConflict('merged')
+  useSyncStore.setState({ conflict: { files: [{ path: 'main.beancount', base: 'b', ours: 'o', theirs: 't' }] } })
+  const ok = await useSyncStore.getState().resolveConflict([{ path: 'main.beancount', content: 'merged' }])
   expect(ok).toBe(true)
-  expect(api.resolveSyncConflict).toHaveBeenCalledWith({ content: 'merged' })
+  expect(api.resolveSyncConflict).toHaveBeenCalledWith({ resolved: [{ path: 'main.beancount', content: 'merged' }] })
   expect(useSyncStore.getState().conflict).toBeNull()
   expect(message.success).toHaveBeenCalled()
 })
 
 it('resolveConflict 校验失败 → 错误提示 + 冲突保留', async () => {
   stubBeanwise({ resolveSyncConflict: vi.fn().mockResolvedValue({ ok: false, message: 'Transaction does not balance' }) })
-  useSyncStore.setState({ conflict: { base: 'b', ours: 'o', theirs: 't' } })
-  const ok = await useSyncStore.getState().resolveConflict('bad')
+  useSyncStore.setState({ conflict: { files: [{ path: 'main.beancount', base: 'b', ours: 'o', theirs: 't' }] } })
+  const ok = await useSyncStore.getState().resolveConflict([{ path: 'main.beancount', content: 'bad' }])
   expect(ok).toBe(false)
   expect(useSyncStore.getState().conflict).not.toBeNull()
   expect(message.error).toHaveBeenCalled()
@@ -188,6 +194,57 @@ it('clear → 状态清空', async () => {
   expect(message.success).toHaveBeenCalledWith('已清除同步配置')
 })
 
-it('保存成功自动触发 push（ledger-editor 链路）', async () => {
-  // 由 ledger-editor.test.ts 追加（见 Step 4）
+// ---- M11：账户库 / 模板在同步范围内 ----
+
+const CONFIGURED = { configured: true, repoUrl: 'https://github.com/a/b', branch: 'main', lastSyncAt: 1, lastError: null, syncing: false }
+
+it('push 成功 → generation 自增 + 账户下拉重载（合并可能已改写账户库）', async () => {
+  const api = stubBeanwise()
+  useSyncStore.setState({ status: CONFIGURED, generation: 0 })
+  await useSyncStore.getState().push()
+  expect(useSyncStore.getState().generation).toBe(1)
+  expect(api.getAccountConfig).toHaveBeenCalled()
+})
+
+it('多文件冲突 → 警告文案含文件标签 + generation 不变（未落盘）', async () => {
+  stubBeanwise({
+    pushLedger: vi.fn().mockResolvedValue({
+      ok: false,
+      conflict: true,
+      conflicts: [
+        { path: 'main.beancount', base: 'b', ours: 'o', theirs: 't' },
+        { path: '.beanwise/accounts.json', base: 'b', ours: 'o', theirs: 't' }
+      ]
+    })
+  })
+  useSyncStore.setState({ status: CONFIGURED, generation: 0 })
+  await useSyncStore.getState().push()
+  expect(message.warning).toHaveBeenCalledWith(expect.stringContaining('账本、账户库'))
+  expect(useSyncStore.getState().generation).toBe(0)
+  expect(useSyncStore.getState().conflict?.files).toHaveLength(2)
+})
+
+it('resolveConflict 成功 → generation 自增 + 账户下拉重载', async () => {
+  const api = stubBeanwise()
+  useSyncStore.setState({ conflict: { files: [{ path: 'main.beancount', base: 'b', ours: 'o', theirs: 't' }] }, generation: 0 })
+  const ok = await useSyncStore.getState().resolveConflict([{ path: 'main.beancount', content: 'merged' }])
+  expect(ok).toBe(true)
+  expect(useSyncStore.getState().generation).toBe(1)
+  expect(api.getAccountConfig).toHaveBeenCalled()
+})
+
+it('账户库保存成功 → 自动 push（账户库在同步范围内）', async () => {
+  const api = stubBeanwise({ saveAccountConfig: vi.fn().mockResolvedValue({ ok: true, accounts: [] }) })
+  useSyncStore.setState({ status: CONFIGURED })
+  const ok = await useLedgerStore.getState().saveAccountConfig([])
+  expect(ok).toBe(true)
+  expect(api.pushLedger).toHaveBeenCalled()
+})
+
+it('账户库保存失败 → 不触发 push', async () => {
+  const api = stubBeanwise({ saveAccountConfig: vi.fn().mockResolvedValue({ ok: false, message: '账户路径不能重复' }) })
+  useSyncStore.setState({ status: CONFIGURED })
+  const ok = await useLedgerStore.getState().saveAccountConfig([])
+  expect(ok).toBe(false)
+  expect(api.pushLedger).not.toHaveBeenCalled()
 })
