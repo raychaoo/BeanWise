@@ -177,6 +177,7 @@ ormalizeAccountOpens 补 open（minDate）→ 导入后
 ### 4.7 模板持久化
 
 - 每工作目录一份 <workspace>/.beanwise/excel-import-templates.json（JsonExcelTemplateStore，写法同 wechat/config-store.ts）。
+- **M11 起随 git 同步**（模板属「重建成本高的纯用户数据」，换电脑不该重配）：保存/删除/导入成功后自动 push；两侧都改过时按 `source`（去重标记 `<source>:<rowId>` 的前缀，跨机器同源模板必须收敛为一条，故不能按随机生成的 `id`）做三路结构化并集，只有同一 source 两侧改成不同内容才要求用户在冲突视图二选一。
 - 模板结构：
 
 `	s

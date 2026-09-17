@@ -64,10 +64,12 @@
 | 组件 | 路径 | 说明 |
 |---|---|---|
 | 账本文件 | `<workspace>/main.beancount` | 固定文件名；首笔录入自动补账户 open 行 |
-| SQLite 索引 | `<workspace>/.beanwise/index.db` | ledger_meta / entries / postings 三表，可随时重建 |
-| 同步配置 | `<workspace>/.beanwise/sync-config.json` | repoUrl / branch / adopted / lastSyncAt / lastError |
-| 通用账户库 | `<workspace>/.beanwise/accounts.json` | AccountEntry[]（id / name / value / description?） |
-| git 仓库 | `<workspace>/.git` | 只追踪账本文件，分支固定 main |
+| SQLite 索引 | `<workspace>/.beanwise/index.db` | ledger_meta / entries / postings 三表，可随时重建；**已 gitignore** |
+| 同步配置 | `<workspace>/.beanwise/sync-config.json` | repoUrl / branch / adopted / lastSyncAt / lastError；**已 gitignore**（本机元数据） |
+| 通用账户库 | `<workspace>/.beanwise/accounts.json` | AccountEntry[]（id / name / value / description?）；**随 git 同步** |
+| Excel 导入模板 | `<workspace>/.beanwise/excel-import-templates.json` | 多模板（列映射 + 方向规则 + 账户映射）；**随 git 同步** |
+| `.gitignore` | `<workspace>/.gitignore` | 同步范围内的受托管块（`# >>> BeanWise 同步托管块 >>>`），只追加不覆写用户规则 |
+| git 仓库 | `<workspace>/.git` | 追踪账本 + 账户库 + 模板 + `.gitignore`（范围见 `src/shared/sync-files.ts`），分支固定 main |
 
 - 主进程持有一份**动态运行时**（`Runtime`：db / ledgerPath / gitSync / syncTokens / syncConfig / accountConfig），`activateWorkspace(dir)` 先关旧 DB → 重建全部组件 → fire-and-forget 刷新索引；已注册 IPC handler 经 getter 读到最新值
 - PAT / API Key **不写在工作目录内**：safeStorage 加密后存 electron-store（`sync-tokens` 按工作目录路径小写键隔离、`ai-tokens`），避免凭据进仓库

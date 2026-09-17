@@ -27,9 +27,10 @@
 | M8 | 图表报表 + 发布加固 | M4, M5, M6, M7 | 图表渲染真实数据；升级演练；完整发布演练（tag → Release → 更新，待首版人工） ✅ 完成（2026-08-12） |
 | M9 | 工作目录 + 通用账户库 | M4, M6, M7, M8 | 工作目录切换后账本/索引/仓库/配置整体隔离重建；账户库增删改 + 录入两行配对校验生效 ✅（2026-08-22） |
 | M10 | 通用 Excel 流水导入 | M4, M9 | 非微信 xlsx/csv 经列映射+账户映射导入；新交易账户检测/处理（策略 C）；去重；多模板持久化 |
+| M11 | 同步范围扩展（文件集） | M6, M9, M10 | 换电脑 clone 后账户库与 Excel 模板自动恢复；两机各自新增账户/模板 → 无冲突并集；索引缓存/本机同步配置不进仓库，且无改动时不再产生空提交 ✅（2026-09-17） |
 
 ```plain
-M1 ──┬──▶ M3 ──┬──▶ M4 ──┬──▶ M8 ──▶ M9 ──▶ M10
+M1 ──┬──▶ M3 ──┬──▶ M4 ──┬──▶ M8 ──▶ M9 ──▶ M10 ──▶ M11
 M2 ──┘        ├──▶ M5    ┘
               ├──▶ M6
               └──▶ M7
@@ -72,10 +73,10 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
   | `ledger:read-file`（M5） | 无（路径主进程持有） | `{ok, content?, fingerprint?, message?}`（ENOENT → ok:false + message；fingerprint 为打开基线 sha256，保存时比对） |
   | `ledger:save-file`（M5） | `{content, expectedFingerprint}` | `{ok, conflict?, diskContent?, diskFingerprint?, fingerprint?, status?, entryCount?, errorCount?, message?}`（conflict = 外部修改冲突未落盘，disk* 为同一次读取快照） |
   | `sync:get-status`（M6） | 无 | `SyncStatus`（configured/repoUrl?/branch?/lastSyncAt?/lastError?/syncing） |
-  | `sync:configure`（M6） | `{repoUrl, pat}` | `{ok, error?, status?, conflict?, base?, ours?, theirs?}`（测试连接 + 首同步场景 A/B/C；conflict = 场景 C 接管冲突，base 空串） |
-  | `sync:push`（M6） | 无 | `{ok, conflict?, base?, ours?, theirs?, message?}`（commit 快照 → fetch → diff3 自动合并 → push） |
-  | `sync:pull`（M6） | 无 | `{ok, conflict?, base?, ours?, theirs?, message?}`（fetch → 自动合并 → 落盘 + refreshIndex） |
-  | `sync:resolve-conflict`（M6） | `{content}` | `{ok, status?, entryCount?, errorCount?, message?}`（tmp 校验落盘 → commit → push → refreshIndex） |
+  | `sync:configure`（M6/M11） | `{repoUrl, pat}` | `{ok, error?, status?, conflict?, conflicts?}`（测试连接 + 首同步场景 A/B/C；conflicts = 逐文件三路快照 `SyncFileConflict[]`，各字段可为 null） |
+  | `sync:push`（M6/M11） | 无 | `{ok, conflict?, conflicts?, message?}`（纳管 + 快照 commit → fetch → 逐文件三路合并 → push） |
+  | `sync:pull`（M6/M11） | 无 | `{ok, conflict?, conflicts?, message?}`（fetch → 逐文件三路合并 → 落盘 + refreshIndex，只拉不推） |
+  | `sync:resolve-conflict`（M6/M11） | `{resolved: [{path, content\|null}]}`（必须覆盖全部冲突文件；账本不可删） | `{ok, status?, entryCount?, errorCount?, message?}`（两阶段校验落盘 → commit → push → refreshIndex） |
   | `sync:clear`（M6） | 无 | `{ok}` |
   | `ai:get-status`（M7） | 无 | `AiStatus`（configured/model；**不含 Key**——渲染端永不接触密钥） |
   | `ai:save-config`（M7） | `{apiKey}` | `{ok, error?}`（Key 经 safeStorage 存主进程，渲染端不落 state） |
@@ -134,6 +135,7 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
 | M8 | Ant Charts 报表、electron-updater 升级链、发布加固（无签名口径）、发布演练 | — |
 | M9 | 工作目录模型（workspace 域四通道 + WorkspaceGate/WorkspaceSwitcher + electron-store current/recents；每目录独立 db/git/同步配置，切换整页 reload）、通用账户库（accounts 域两通道 + `.beanwise/accounts.json` + 录入下拉 = 账本账户 ∪ 账户库）、双行配对校验（两行不能同为 Income/Expenses）、报表余额树收入正显示、AI 未配置隐藏入口 | 多账本文件追踪（仍单文件 main.beancount）；账户 value 编辑（创建后不可改） |
 | M10 | 通用 Excel 流水导入（excel 域七通道 + 列映射/方向判定/账户映射两层映射 + 新交易账户检测与处理策略 C + `beanwise-import` 去重标记 + 多模板持久化 `.beanwise/excel-import-templates.json`；复用 open 校正/原子落盘/索引重建/账户库同步） | 关键字自动归类（对方/商品→科目）；微信导入重构为通用模板；导入回滚；多币种自动折算 |
+| M11 | 同步范围扩展（2026-09-17）：追踪文件集 = 账本 + 账户库 + Excel 模板 + 受托管 `.gitignore`（`src/shared/sync-files.ts` 单一事实源）；`index.db`/`sync-config.json` 走托管忽略块；GitSync 多文件化（`addTrackedFiles`/`ensureGitignore`/`blobTextAt`，add 带 `force` 防用户忽略规则吞数据）；脏判定改逐文件比对 HEAD blob（修掉「每次 push 产生空提交」）；`core/merge-engine.ts` 纯函数三态合并 + JSON 语义键结构化并集（收敛性属性测试）+ 两阶段落盘；冲突载荷改逐文件三态，ConflictView 按文件分 tab（JSON 只做二选一）；账户库/模板保存后自动 push + `generation` 驱动视图重载；场景 B 判据收窄为「任一内容文件非空」（不再 clone 覆盖本地账户库） | 三方合并的 base 快照 UI（当前只对比 ours/theirs）；`.gitignore` 冲突不做专项 UI（走文本三路合并）；账户库跨机 id 稳定（当前可重排，仅影响界面排序） |
 
 ## 排序理由与风险
 
