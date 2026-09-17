@@ -40,9 +40,9 @@ Beancount 文件 ──唯一事实源──▶ 变更后增量解析 ──▶ 
 - 解析结果缓存（文件 mtime + hash 判空跳过）
 - 增量解析失败时回退全量解析，并记录日志
 
-## git 同步与冲突处理（M6 定稿 2026-08-10；M11 扩展为文件集 2026-09-17）
+## git 同步与冲突处理（M6 定稿 2026-08-10；M11 扩展为文件集；M12 加本机代理 2026-09-17）
 
-- 同步引擎：isomorphic-git（1.41.3，纯 JS 实现 git 协议，无原生依赖），封装为 GitSync（init/addTrackedFiles/ensureGitignore/commit/fetch/analyzeMerge/blobTextAt）；账本目录即 git 工作区（唯一事实源铁律），**同步范围见下一节**，分支固定 `main`、remote 固定 `origin`；远端操作统一 30s 超时
+- 同步引擎：isomorphic-git（1.41.3，纯 JS 实现 git 协议，无原生依赖），封装为 GitSync（init/addTrackedFiles/ensureGitignore/commit/fetch/analyzeMerge/blobTextAt）；账本目录即 git 工作区（唯一事实源铁律），**同步范围见下一节**，分支固定 `main`、remote 固定 `origin`
 - 传输：**isomorphic-git 1.x 不支持 file:// 本地传输**（1.x 已移除），测试/E2E 用进程内 smart-HTTP 服务器（`src/main/utils/test-servers/git-test-server.ts`）替代；URL 校验放行测试通道 `http://127.0.0.1:<port>` / `http://localhost:<port>`（仅回环）+ 生产通道 `https://github.com/owner/repo`
 - PAT：用户使用时输入，safeStorage 加密后 base64 落 electron-store（`sync-tokens`，**按工作目录路径键隔离**，M9 起由 `ElectronWorkspaceTokenStore` 持有），不落盘明文、渲染进程 state 无 PAT；同步配置（repoUrl/branch/adopted/lastSyncAt/lastError）存 `<workspace>/.beanwise/sync-config.json`（`JsonSyncConfigStore`）
 - 首同步三场景：A 空仓（init + 纳管/提交 + push -u）；B 本地无内容（clone 到账本目录；判据是**任一内容文件非空**，见下）；C 两端都有内容（init + 纳管/提交 + fetch + analyzeMerge 接管）
@@ -52,6 +52,7 @@ Beancount 文件 ──唯一事实源──▶ 变更后增量解析 ──▶ 
 - 快照提交的脏判定：**逐追踪文件比对 HEAD blob 与工作区**（不用 `statusMatrix` 全工作区扫描——未跟踪文件会让 `head !== workdir` 恒真，曾导致每次 push 产生空提交）
 - 推送失败（网络 / 权限 / 校验失败）：本地提交/文件保留，lastError 落状态条提示重试；**pull 只拉不推**（只读 PAT 不失败、不静默发布本地改动）
 - syncing 互斥：push / pull / configure / resolve 任一进行中，其余触发即拒绝（writeLock 之外的第二道闸）
+- **本机代理与超时（M12）**：GitHub 直连不可达时同步只剩「git 操作超时（30000ms）」，无从下手。故同步设置新增「本机网络」区——**代理地址**（只支持 HTTP/HTTPS，手动填写，不读系统代理/环境变量；拒绝携带用户名密码，密钥只进 safeStorage）与**超时**（1~600 秒，默认 30）。代理经 `core/git-network.ts` 包一层 http 插件注入 `agent`（isomorphic-git 顶层命令不接受 `agent`，只有插件层收并透传给 simple-get，见 ADR 29）；配置存**机器级** electron-store `git-network`（不随工作目录、不进仓库），`network()` 每次远端调用求值 → 改完立即生效；**目标为本机回环时一律绕过代理**（否则配了代理连测试用的进程内 git 服务器都走代理）。三个通道：`sync:get-network` / `sync:save-network`（非法地址返回 ok:false 而非 reject）/ `sync:test-connection`（用已保存配置做真实 git 握手 `listServerRefs`，把「代理没开」「代理没放行」「PAT 不对」分开报）
 
 ## 同步文件集与合并算法（M11 定稿，2026-09-17）
 

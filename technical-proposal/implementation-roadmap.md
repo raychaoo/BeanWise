@@ -28,9 +28,10 @@
 | M9 | 工作目录 + 通用账户库 | M4, M6, M7, M8 | 工作目录切换后账本/索引/仓库/配置整体隔离重建；账户库增删改 + 录入两行配对校验生效 ✅（2026-08-22） |
 | M10 | 通用 Excel 流水导入 | M4, M9 | 非微信 xlsx/csv 经列映射+账户映射导入；新交易账户检测/处理（策略 C）；去重；多模板持久化 |
 | M11 | 同步范围扩展（文件集） | M6, M9, M10 | 换电脑 clone 后账户库与 Excel 模板自动恢复；两机各自新增账户/模板 → 无冲突并集；索引缓存/本机同步配置不进仓库，且无改动时不再产生空提交 ✅（2026-09-17） |
+| M12 | 同步网络适应性（本机代理 + 可配置超时） | M6, M11 | 同步设置里可配 HTTP 代理与超时并即时生效（无需重启/切目录）；配了代理后直连与回环行为不变（回环绕过有单测+E2E 钉死）；连接测试能把「代理不可达」「代理未放行」「PAT 不对」分开报 ✅（2026-09-17） |
 
 ```plain
-M1 ──┬──▶ M3 ──┬──▶ M4 ──┬──▶ M8 ──▶ M9 ──▶ M10 ──▶ M11
+M1 ──┬──▶ M3 ──┬──▶ M4 ──┬──▶ M8 ──▶ M9 ──▶ M10 ──▶ M11 ──▶ M12
 M2 ──┘        ├──▶ M5    ┘
               ├──▶ M6
               └──▶ M7
@@ -61,7 +62,7 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
 - 类型定义唯一来源：`src/shared/ipc.ts` → preload 白名单 → main handler 注册，禁止旁路
 - 通道命名：`{domain}:{action}` 小写 kebab，如 `ledger:validate`、`sync:push`、`ai:parse`
 - 主进程对所有入参做类型与路径校验（防目录穿越）
-- M3 定稿 ledger 通道 + M6 追加 sync 六通道 + M7 追加 ai 四通道 + M9 追加 accounts/workspace（类型唯一来源 `src/shared/ipc.ts`，跨里程碑复用）：
+- M3 定稿 ledger 通道 + M6 追加 sync 六通道 + M7 追加 ai 四通道 + M9 追加 accounts/workspace + M12 追加 sync 网络三通道（类型唯一来源 `src/shared/ipc.ts`，跨里程碑复用）：
 
   | 通道 | params | result 要点 |
   |---|---|---|
@@ -78,6 +79,9 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
   | `sync:pull`（M6/M11） | 无 | `{ok, conflict?, conflicts?, message?}`（fetch → 逐文件三路合并 → 落盘 + refreshIndex，只拉不推） |
   | `sync:resolve-conflict`（M6/M11） | `{resolved: [{path, content\|null}]}`（必须覆盖全部冲突文件；账本不可删） | `{ok, status?, entryCount?, errorCount?, message?}`（两阶段校验落盘 → commit → push → refreshIndex） |
   | `sync:clear`（M6） | 无 | `{ok}` |
+  | `sync:get-network`（M12） | 无 | `GitNetworkConfig`（proxyUrl / timeoutSec；**机器级**，不随工作目录） |
+  | `sync:save-network`（M12） | `GitNetworkConfig` | `{ok, error?, network?}`（非法代理地址 → ok:false 回显，不 reject） |
+  | `sync:test-connection`（M12） | `{repoUrl?}`（缺省用已保存配置） | `{ok, message}`（真实 git 握手 `listServerRefs`；诊断区分代理不可达 / 未放行 / 认证失败） |
   | `ai:get-status`（M7） | 无 | `AiStatus`（configured/model；**不含 Key**——渲染端永不接触密钥） |
   | `ai:save-config`（M7） | `{apiKey}` | `{ok, error?}`（Key 经 safeStorage 存主进程，渲染端不落 state） |
   | `ai:clear-config`（M7） | 无 | `{ok}` |
@@ -136,6 +140,7 @@ dist-python/      # PyInstaller 固定输出（与 electron-builder 的 dist/ �
 | M9 | 工作目录模型（workspace 域四通道 + WorkspaceGate/WorkspaceSwitcher + electron-store current/recents；每目录独立 db/git/同步配置，切换整页 reload）、通用账户库（accounts 域两通道 + `.beanwise/accounts.json` + 录入下拉 = 账本账户 ∪ 账户库）、双行配对校验（两行不能同为 Income/Expenses）、报表余额树收入正显示、AI 未配置隐藏入口 | 多账本文件追踪（仍单文件 main.beancount）；账户 value 编辑（创建后不可改） |
 | M10 | 通用 Excel 流水导入（excel 域七通道 + 列映射/方向判定/账户映射两层映射 + 新交易账户检测与处理策略 C + `beanwise-import` 去重标记 + 多模板持久化 `.beanwise/excel-import-templates.json`；复用 open 校正/原子落盘/索引重建/账户库同步） | 关键字自动归类（对方/商品→科目）；微信导入重构为通用模板；导入回滚；多币种自动折算 |
 | M11 | 同步范围扩展（2026-09-17）：追踪文件集 = 账本 + 账户库 + Excel 模板 + 受托管 `.gitignore`（`src/shared/sync-files.ts` 单一事实源）；`index.db`/`sync-config.json` 走托管忽略块；GitSync 多文件化（`addTrackedFiles`/`ensureGitignore`/`blobTextAt`，add 带 `force` 防用户忽略规则吞数据）；脏判定改逐文件比对 HEAD blob（修掉「每次 push 产生空提交」）；`core/merge-engine.ts` 纯函数三态合并 + JSON 语义键结构化并集（收敛性属性测试）+ 两阶段落盘；冲突载荷改逐文件三态，ConflictView 按文件分 tab（JSON 只做二选一）；账户库/模板保存后自动 push + `generation` 驱动视图重载；场景 B 判据收窄为「任一内容文件非空」（不再 clone 覆盖本地账户库） | 三方合并的 base 快照 UI（当前只对比 ours/theirs）；`.gitignore` 冲突不做专项 UI（走文本三路合并）；账户库跨机 id 稳定（当前可重排，仅影响界面排序） |
+| M12 | 同步网络适应性（2026-09-17）：`core/git-network.ts` 包 http 插件注入代理 agent（isomorphic-git 顶层命令不收 `agent`，只有插件层透传给 simple-get）；机器级 electron-store `git-network`（代理 + 超时）；同步设置「本机网络」区 + `sync:get/save-network`、`sync:test-connection` 三通道；超时 1~600s 可配（默认 30），`network()` 每次调用求值即时生效；目标回环一律直连 | SOCKS5；系统代理/环境变量自动探测（只手动填）；带认证的代理（需把密码放 safeStorage）；超时后中断底层 socket（isomorphic-git 1.41.3 不支持 signal，仍是 `Promise.race`）；代理只作用于 git 同步（updater 走 Electron 网络栈、AI 走主进程 fetch，都不动） |
 
 ## 排序理由与风险
 
