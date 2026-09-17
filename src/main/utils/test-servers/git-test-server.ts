@@ -20,6 +20,7 @@ import { deflateSync, inflateSync } from 'node:zlib'
 import git, { Errors } from 'isomorphic-git'
 import http from 'isomorphic-git/http/node'
 import { SYNC_LEDGER_FILE } from '../../../shared/sync-files'
+import type { GitAuthor } from '../../../shared/ipc'
 import { GIT_AUTHOR, SYNC_BRANCH } from '../../core/git-sync'
 
 const SIDEBAND_MAX = 65515 // side-band-64k 单条 pkt-line 最大数据字节（1 通道字节 + 数据）
@@ -422,4 +423,18 @@ export async function readRemoteFile(bareDir: string, filepath: string = SYNC_LE
 export async function remoteCommitCount(bareDir: string): Promise<number> {
   const commits = await git.log({ fs, dir: bareDir, gitdir: bareDir, ref: 'HEAD' })
   return commits.length
+}
+
+/**
+ * 工作目录（有 `.git` 子目录的普通仓库）HEAD 的提交人姓名/邮箱（M13）。
+ * E2E 用它读**真实 commit 对象**，把「设置里改提交人 → 落盘到 commit」整条链路钉死，
+ * 而不只是断言界面/IPC 的返回值。只取 name/email：author 与 committer 的 timestamp
+ * 各取一次 Date.now()，跨秒边界可能不等。
+ */
+export async function readLocalHeadAuthor(workspaceDir: string): Promise<{ author: GitAuthor; committer: GitAuthor }> {
+  const commits = await git.log({ fs, dir: workspaceDir, depth: 1 })
+  const head = commits[0]
+  if (!head) throw new Error('工作目录尚无提交')
+  const pick = (a: { name?: string; email?: string }): GitAuthor => ({ name: a.name ?? '', email: a.email ?? '' })
+  return { author: pick(head.commit.author), committer: pick(head.commit.committer) }
 }

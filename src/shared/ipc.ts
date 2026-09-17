@@ -38,6 +38,7 @@ export type IpcChannel = 'ledger:refresh-index' | 'ledger:status' | 'ledger:list
   | 'sync:get-status' | 'sync:configure' | 'sync:push' | 'sync:pull'
   | 'sync:resolve-conflict' | 'sync:clear'
   | 'sync:get-network' | 'sync:save-network' | 'sync:test-connection'
+  | 'sync:get-identity' | 'sync:save-identity' | 'sync:detect-identity'
   | 'ai:get-status' | 'ai:save-config' | 'ai:clear-config' | 'ai:parse'
   | 'report:net-worth' | 'report:balances' | 'report:income-expense' | 'report:years' | 'report:trial-balance' | 'report:cash-flow' | 'report:breakdown' | 'report:export-pdf' | 'report:counterparty-ledger' | 'report:counterparty-transactions'
   | 'update:check' | 'update:status' | 'update:install'
@@ -457,6 +458,77 @@ export interface TestConnectionParams {
 export interface TestConnectionResult {
   ok: boolean
   message: string
+}
+
+/** git 提交人（author == committer，见 ADR 30） */
+export interface GitAuthor {
+  name: string
+  email: string
+}
+
+/**
+ * 生效身份的来源：
+ * - `manual`：用户在同步设置里手填（两个字段都填才生效）；
+ * - `pat`：由该工作目录的 PAT 调 `GET /user` 识别（`<id>+<login>@users.noreply.github.com`）；
+ * - `default`：内置兜底 `BeanWise <beanwise@local>`（未手填且识别不到时）。
+ */
+export type GitIdentitySource = 'manual' | 'pat' | 'default'
+
+export interface GitIdentity extends GitAuthor {
+  source: GitIdentitySource
+}
+
+/** 姓名/邮箱长度上限：主进程校验与渲染端表单共用一份，防两处漂移 */
+export const GIT_IDENTITY_NAME_MAX = 64
+export const GIT_IDENTITY_EMAIL_MAX = 254
+
+/** 手填的提交人（**两个字段都填才生效**：要么都填、要么都留空） */
+export interface GitIdentityManual {
+  name: string
+  email: string
+}
+
+/** `GET /user` 的识别结果缓存（`email` 字段不可信——私有邮箱时为 null，故只留 id/login/name） */
+export interface DetectedGitIdentity {
+  login: string
+  id: number
+  /** GitHub 昵称（可能为 null；被净化成空时退用 login） */
+  name: string | null
+  /** 识别时间（ISO，界面展示用） */
+  at: string
+}
+
+/**
+ * sync:get-identity 结果。`effective` 是**推导出来的**只读值（manual > detected > 内置兜底），
+ * 渲染端只展示不提交；提交时主进程按同一函数逐次求值。
+ *
+ * `detected` 是**该工作目录的 PAT** 的派生物，故与 PAT 同域（按工作目录路径隔离）——换账本目录
+ * 不会把上一个账本的身份带过来；`manual` 是机器级（提交人是人，不是账本目录的属性）。
+ */
+export interface GitIdentityState {
+  manual: GitIdentityManual | null
+  detected: DetectedGitIdentity | null
+  effective: GitIdentity
+}
+
+/** sync:save-identity 入参：都填 = 保存手填值；都为 null/空串 = 清空手填值（回落到识别/兜底） */
+export interface SaveIdentityParams {
+  name?: string | null
+  email?: string | null
+}
+
+/** sync:save-identity 结果（校验失败 → ok:false，不 throw——渲染端直接回显） */
+export interface SaveIdentityResult {
+  ok: boolean
+  error?: string
+  state?: GitIdentityState
+}
+
+/** sync:detect-identity 结果（message 为可读中文诊断，留在弹窗里；ok:false 不 throw） */
+export interface DetectIdentityResult {
+  ok: boolean
+  message: string
+  state?: GitIdentityState
 }
 
 /**

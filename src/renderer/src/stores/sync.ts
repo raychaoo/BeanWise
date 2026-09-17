@@ -9,7 +9,7 @@
  */
 import { message } from 'antd'
 import { create } from 'zustand'
-import type { GitNetworkConfig, ResolveFileParam, SyncFileConflict, SyncStatus, TestConnectionResult } from '../../../shared/ipc'
+import type { DetectIdentityResult, GitIdentityState, GitNetworkConfig, ResolveFileParam, SaveIdentityParams, SyncFileConflict, SyncStatus, TestConnectionResult } from '../../../shared/ipc'
 import { describeConflicts } from '../../../shared/sync-files'
 import { useLedgerStore } from './ledger'
 
@@ -25,6 +25,8 @@ interface SyncState {
   generation: number
   /** M12 本机网络配置（代理 + 超时）——机器级，与工作目录无关 */
   network: GitNetworkConfig | null
+  /** M13 提交人身份（手填值机器级 + 识别缓存按工作目录隔离 + 推导出的生效值） */
+  identity: GitIdentityState | null
   loadStatus(): Promise<void>
   configure(repoUrl: string, pat: string): Promise<boolean>
   push(): Promise<void>
@@ -34,6 +36,9 @@ interface SyncState {
   loadNetwork(): Promise<void>
   saveNetwork(config: GitNetworkConfig): Promise<boolean>
   testConnection(repoUrl?: string): Promise<TestConnectionResult>
+  loadIdentity(): Promise<void>
+  saveIdentity(params: SaveIdentityParams): Promise<boolean>
+  detectIdentity(): Promise<DetectIdentityResult>
 }
 
 /** 响应是否携带可用的冲突快照（conflict:true 但载荷缺失视为普通失败） */
@@ -47,6 +52,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   syncing: false,
   generation: 0,
   network: null,
+  identity: null,
 
   loadStatus: async () => {
     try {
@@ -209,6 +215,48 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       return await window.beanwise.testSyncConnection({ repoUrl })
     } catch (err) {
       return { ok: false, message: `连接测试失败：${String(err)}` }
+    }
+  },
+
+  // ---- M13 提交人身份：手填值机器级，识别缓存按工作目录隔离（见 stores/git-identity-store） ----
+
+  /** 打开弹窗时拉当前身份（生效值由主进程推导，渲染端只展示） */
+  loadIdentity: async () => {
+    try {
+      set({ identity: await window.beanwise.getGitIdentity() })
+    } catch (err) {
+      set({ identity: null })
+      message.error(`读取提交人身份失败：${String(err)}`)
+    }
+  },
+
+  saveIdentity: async (params) => {
+    try {
+      const r = await window.beanwise.saveGitIdentity(params)
+      if (!r.ok) {
+        message.error(r.error ?? '提交人身份保存失败')
+        return false
+      }
+      if (r.state) set({ identity: r.state })
+      message.success('提交人身份已保存（只影响之后的提交）')
+      return true
+    } catch (err) {
+      message.error(`提交人身份保存失败：${String(err)}`)
+      return false
+    }
+  },
+
+  /**
+   * 识别 GitHub 身份（用本工作目录的 PAT，走已配置的代理）。
+   * **不弹 toast**——诊断文案（代理不可达/未放行/PAT 无效/超时）要留在弹窗里，同 testConnection。
+   */
+  detectIdentity: async () => {
+    try {
+      const r = await window.beanwise.detectGitIdentity()
+      if (r.state) set({ identity: r.state })
+      return r
+    } catch (err) {
+      return { ok: false, message: `识别失败：${String(err)}` }
     }
   }
 }))

@@ -403,4 +403,44 @@ describe('GitSync（M6）', () => {
     await expect(sync.listServerRefs('https://example.invalid/beanwise.git'))
       .rejects.toThrow('git 操作超时（1000ms）')
   }, 30_000)
+
+  // ==================== M13：提交人身份 ====================
+
+  it('M13 身份注入：author 与 committer 都是注入值（不传 committer → 回落到 author）', async () => {
+    const sync = new GitSync({
+      ledgerPath,
+      identity: () => ({ name: 'Zhang San', email: '42+zhangsan@users.noreply.github.com' })
+    })
+    await sync.initRepo()
+    await sync.addTrackedFiles()
+    await sync.commit('save: 带身份')
+
+    // 读回**真实 commit 对象**（不只看返回值）——只断言 name/email：
+    // 两处 timestamp 各取一次 Date.now()，跨秒边界时 author/committer 的秒数可能不同（会 flake）
+    const oid = await sync.headOid()
+    const { commit } = await git.readCommit({ fs, dir: workDir, oid })
+    const expected = { name: 'Zhang San', email: '42+zhangsan@users.noreply.github.com' }
+    expect(commit.author).toMatchObject(expected)
+    expect(commit.committer).toMatchObject(expected)
+  })
+
+  it('M13 未注入身份 → 仍是内置兜底（与 M12 之前行为一致）；注入函数抛错也回落到兜底', async () => {
+    const plain = new GitSync({ ledgerPath })
+    await plain.initRepo()
+    await plain.addTrackedFiles()
+    await plain.commit('save: 兜底')
+    const { commit } = await git.readCommit({ fs, dir: workDir, oid: await plain.headOid() })
+    expect(commit.author).toMatchObject(GIT_AUTHOR)
+    expect(commit.committer).toMatchObject(GIT_AUTHOR)
+
+    // 配置读坏绝不能断掉同步（同 GitNetworkStore.load / createGitHttp 的兜底原则）
+    const broken = new GitSync({
+      ledgerPath,
+      identity: () => { throw new Error('store 读坏了') }
+    })
+    await broken.addTrackedFiles()
+    await broken.commit('save: 兜底（配置损坏）')
+    const { commit: commit2 } = await git.readCommit({ fs, dir: workDir, oid: await broken.headOid() })
+    expect(commit2.author).toMatchObject(GIT_AUTHOR)
+  })
 })

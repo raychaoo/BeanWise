@@ -9,6 +9,7 @@ import { applyCsp } from './core/csp'
 import { createDrizzle, openDatabase } from './db'
 import { GitSync } from './core/git-sync'
 import { defaultGitNetwork } from './core/git-network'
+import { resolveGitIdentity } from './core/git-identity'
 import { refreshIndex } from './core/index-builder'
 import { registerAiHandlers } from './ipc/ai/ipc-handlers-ai'
 import { registerLedgerHandlers } from './ipc/ledger/ipc-handlers'
@@ -24,6 +25,7 @@ import { JsonExcelTemplateStore } from './excel/config-store'
 import { ElectronAiTokenStore, ElectronWorkspaceTokenStore } from './stores/token-store'
 import type { SyncConfigStore, TokenStore } from './stores/token-store'
 import { ElectronGitNetworkStore } from './stores/git-network-store'
+import { ElectronGitIdentityStore } from './stores/git-identity-store'
 import { createUpdaterService } from './stores/updater'
 import { ElectronWorkspaceStore } from './stores/workspace-store'
 import { JsonSyncConfigStore } from './stores/workspace-config-store'
@@ -96,6 +98,9 @@ let quitHandled = false
 let workspaceStore: ElectronWorkspaceStore | null = null
 /** M12 本机 git 网络配置（代理 + 超时）：机器级，**不随工作目录重建** */
 let gitNetworkStore: ElectronGitNetworkStore | null = null
+/** M13 提交人身份（手填值机器级 + 识别缓存按工作目录隔离）：单实例，**不随工作目录重建**
+ *  （electron-store 把整份对象缓存在内存里，两个实例会互相覆盖） */
+let gitIdentityStore: ElectronGitIdentityStore | null = null
 
 /** 往来类账户路径（ADR 23）：读账户库 counterparty 标志，**调用时实时取值**
  * （账户库可先于账本变化，注册时快照会读到旧值）。录入挂链与往来账报表共用此源。 */
@@ -127,7 +132,12 @@ function activateWorkspace(workspaceDir: string): void {
     ledgerPath,
     auth: () => ({ username: 'x-access-token', password: runtime.syncTokens?.load() ?? '' }),
     // M12：每次远端调用实时求值 → 同步设置里改完代理/超时立即生效，无需重建 GitSync
-    network: () => gitNetworkStore?.load() ?? null
+    network: () => gitNetworkStore?.load() ?? null,
+    // M13：每次提交实时求值（纯本地，绝不联网——识别结果已缓存在 store 里）
+    identity: () => {
+      const view = gitIdentityStore?.load(workspaceDir) ?? { manual: null, detected: null }
+      return resolveGitIdentity(view.manual, view.detected)
+    }
   })
 
   // 刷新索引（fire-and-forget）
@@ -144,6 +154,7 @@ app.whenReady().then(() => {
   pythonSvc = new PythonSvc({ command: resolveEngineCommand() })
   workspaceStore = new ElectronWorkspaceStore()
   gitNetworkStore = new ElectronGitNetworkStore()
+  gitIdentityStore = new ElectronGitIdentityStore()
 
   // 工作目录域四通道（choose/open/get-status；open 内部触发 activateWorkspace）
   registerWorkspaceHandlers(ipcMain, {
@@ -200,7 +211,7 @@ app.whenReady().then(() => {
     }
   })
 
-  // sync 域九通道（M6/M11 六 + M12 网络三）
+  // sync 域十二通道（M6/M11 六 + M12 网络三 + M13 身份三）
   registerSyncHandlers(ipcMain, {
     get engine() { return pythonSvc! },
     get db() { return runtime.db! },
@@ -228,6 +239,20 @@ app.whenReady().then(() => {
         gitNetworkStore.save(config)
       }
     },
+    identity: {
+      load: (workspaceDir) => gitIdentityStore?.load(workspaceDir) ?? { manual: null, detected: null },
+      saveManual: (manual) => {
+        if (!gitIdentityStore) throw new Error('内部错误：应用尚未就绪')
+        gitIdentityStore.saveManual(manual)
+      },
+      saveDetected: (workspaceDir, detected) => {
+        if (!gitIdentityStore) throw new Error('内部错误：应用尚未就绪')
+        gitIdentityStore.saveDetected(workspaceDir, detected)
+      }
+    },
+    // M13：GitHub API 根。BEANWISE_GITHUB_API_BASE_URL 为测试/E2E 注入进程内假服务器
+    // （默认官方 api.github.com）；**只从主进程 env 取**，绝不接受渲染端传入。
+    githubApiBaseUrl: process.env['BEANWISE_GITHUB_API_BASE_URL'],
     get git() { return runtime.gitSync! }
   })
 

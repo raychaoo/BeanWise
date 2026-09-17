@@ -10,6 +10,13 @@ vi.mock('antd', () => ({ message }))
 import { useSyncStore } from './sync'
 import { useLedgerStore } from './ledger'
 
+/** M13：默认身份态（未手填、未识别 → 内置兜底） */
+const DEFAULT_IDENTITY_STATE = {
+  manual: null,
+  detected: null,
+  effective: { name: 'BeanWise', email: 'beanwise@local', source: 'default' as const }
+}
+
 type StubApi = {
   getSyncStatus: ReturnType<typeof vi.fn>
   configureSync: ReturnType<typeof vi.fn>
@@ -20,6 +27,9 @@ type StubApi = {
   getGitNetwork: ReturnType<typeof vi.fn>
   saveGitNetwork: ReturnType<typeof vi.fn>
   testSyncConnection: ReturnType<typeof vi.fn>
+  getGitIdentity: ReturnType<typeof vi.fn>
+  saveGitIdentity: ReturnType<typeof vi.fn>
+  detectGitIdentity: ReturnType<typeof vi.fn>
   getLedgerStatus: ReturnType<typeof vi.fn>
   listLedgerEntries: ReturnType<typeof vi.fn>
   listLedgerAccounts: ReturnType<typeof vi.fn>
@@ -40,6 +50,9 @@ function stubBeanwise(overrides: Partial<StubApi> = {}): StubApi {
     getGitNetwork: vi.fn().mockResolvedValue({ proxyUrl: null, timeoutSec: 30 }),
     saveGitNetwork: vi.fn().mockResolvedValue({ ok: true, network: { proxyUrl: null, timeoutSec: 30 } }),
     testSyncConnection: vi.fn().mockResolvedValue({ ok: true, message: '连接成功（直连）' }),
+    getGitIdentity: vi.fn().mockResolvedValue(DEFAULT_IDENTITY_STATE),
+    saveGitIdentity: vi.fn().mockResolvedValue({ ok: true, state: DEFAULT_IDENTITY_STATE }),
+    detectGitIdentity: vi.fn().mockResolvedValue({ ok: true, message: '已识别 GitHub 身份：koko', state: DEFAULT_IDENTITY_STATE }),
     getLedgerStatus: vi.fn().mockResolvedValue(null),
     listLedgerEntries: vi.fn().mockResolvedValue({ entries: [], total: 0 }),
     listLedgerAccounts: vi.fn().mockResolvedValue({ accounts: [] }),
@@ -55,7 +68,7 @@ function stubBeanwise(overrides: Partial<StubApi> = {}): StubApi {
 
 beforeEach(() => {
   vi.unstubAllGlobals()
-  useSyncStore.setState({ status: null, conflict: null, syncing: false, generation: 0, network: null })
+  useSyncStore.setState({ status: null, conflict: null, syncing: false, generation: 0, network: null, identity: null })
   useLedgerStore.setState({
     status: null, entries: [], total: 0, accountOptions: [], accountValues: [], loading: false, error: null,
     editorContent: null, editorOriginal: null, editorFingerprint: null,
@@ -296,4 +309,60 @@ it('testConnection：把诊断文案原样返回（不当 toast 弹掉），异�
   const thrown = await useSyncStore.getState().testConnection()
   expect(thrown.ok).toBe(false)
   expect(thrown.message).toContain('连接测试失败')
+})
+
+// ==================== M13：提交人身份 ====================
+
+it('loadIdentity → 身份态落 store；失败则置空并提示', async () => {
+  const manualState = {
+    manual: { name: 'Zhang San', email: 'zhang@example.com' },
+    detected: null,
+    effective: { name: 'Zhang San', email: 'zhang@example.com', source: 'manual' as const }
+  }
+  stubBeanwise({ getGitIdentity: vi.fn().mockResolvedValue(manualState) })
+  await useSyncStore.getState().loadIdentity()
+  expect(useSyncStore.getState().identity).toEqual(manualState)
+
+  stubBeanwise({ getGitIdentity: vi.fn().mockRejectedValue(new Error('boom')) })
+  await useSyncStore.getState().loadIdentity()
+  expect(useSyncStore.getState().identity).toBeNull()
+  expect(message.error).toHaveBeenCalled()
+})
+
+it('saveIdentity：成功落 store + 提示「只影响之后的提交」；校验失败 → ok:false + 回显主进程文案', async () => {
+  const api = stubBeanwise({
+    saveGitIdentity: vi.fn()
+      .mockResolvedValueOnce({ ok: true, state: DEFAULT_IDENTITY_STATE })
+      .mockResolvedValueOnce({ ok: false, error: '姓名与邮箱要一起填，或都留空（留空则用 GitHub 自动识别）' })
+  })
+  expect(await useSyncStore.getState().saveIdentity({ name: 'Zhang San', email: 'zhang@example.com' })).toBe(true)
+  expect(useSyncStore.getState().identity).toEqual(DEFAULT_IDENTITY_STATE)
+  expect(message.success).toHaveBeenCalledWith('提交人身份已保存（只影响之后的提交）')
+
+  expect(await useSyncStore.getState().saveIdentity({ name: 'Li Si', email: null })).toBe(false)
+  expect(message.error).toHaveBeenCalledWith('姓名与邮箱要一起填，或都留空（留空则用 GitHub 自动识别）')
+  expect(api.saveGitIdentity).toHaveBeenCalledTimes(2)
+})
+
+it('detectIdentity：结果与状态都透传（不弹 toast——诊断要留在弹窗里），异常兜成结果对象', async () => {
+  const patState = {
+    manual: null,
+    detected: { login: 'koko', id: 42, name: 'Koko Zhang', at: '2026-09-18T00:00:00.000Z' },
+    effective: { name: 'Koko Zhang', email: '42+koko@users.noreply.github.com', source: 'pat' as const }
+  }
+  stubBeanwise({
+    detectGitIdentity: vi.fn()
+      .mockResolvedValueOnce({ ok: true, message: '已识别 GitHub 身份：koko', state: patState })
+      .mockRejectedValueOnce(new Error('boom'))
+  })
+  const ok = await useSyncStore.getState().detectIdentity()
+  expect(ok.ok).toBe(true)
+  expect(useSyncStore.getState().identity).toEqual(patState)
+  expect(message.error).not.toHaveBeenCalled() // 诊断留在弹窗里，不走 toast
+
+  const thrown = await useSyncStore.getState().detectIdentity()
+  expect(thrown.ok).toBe(false)
+  expect(thrown.message).toContain('识别失败')
+  // 失败不清掉已有的身份态（识别失败不该把用户的手填/缓存值抹掉）
+  expect(useSyncStore.getState().identity).toEqual(patState)
 })

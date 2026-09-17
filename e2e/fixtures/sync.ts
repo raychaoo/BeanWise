@@ -10,4 +10,6 @@
  * 空仓初始内容用 seedRemoteInit(server.url, content)，追加远端提交用 seedRemote(server.url, patch)，
  * 验证用 readRemoteFile(bareDir)；afterAll 关闭 server 并 rmSync 裸仓目录。
  */
-export { createBareRepo, readRemoteFile, remoteCommitCount, seedRemote, seedRemoteInit, startGitServer } from '../../src/main/utils/test-servers/git-test-server'
+export { createBareRepo, readLocalHeadAuthor, readRemoteFile, remoteCommitCount, seedRemote, seedRemoteInit, startGitServer } from '../../src/main/utils/test-servers/git-test-server'
+// M13：进程内假 GitHub API（配 BEANWISE_GITHUB_API_BASE_URL 指向它，见 e2e/sync.spec.ts）
+export { startFakeGitHub, type FakeGitHub } from '../../src/main/utils/test-servers/fake-github-server'

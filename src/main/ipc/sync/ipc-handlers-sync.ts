@@ -1,7 +1,8 @@
 /**
- * M6/M11/M12：同步 IPC 九通道。
+ * M6/M11/M12/M13：同步 IPC 十二通道。
  * M6/M11 六通道：get-status / configure / push / pull / resolve-conflict / clear。
  * M12 三通道：get-network / save-network / test-connection（本机代理与超时，见 core/git-network）。
+ * M13 三通道：get-identity / save-identity / detect-identity（提交人身份，见 core/git-identity）。
  *
  * 同步范围是**文件集**（shared/sync-files.ts）：账本 + 账户库 + Excel 模板 + 受托管 .gitignore。
  * 编排：场景 A/B/C 首同步判别、push/pull 前置快照提交、fetch → analyzeMerge →
@@ -18,17 +19,19 @@
  */
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import type { ConfigureSyncParams, ConfigureSyncResult, GitNetworkConfig, ResolveConflictParams, ResolveConflictResult, ResolveFileParam, SaveNetworkResult, SyncConfig, SyncResult, SyncStatus, TestConnectionParams, TestConnectionResult } from '../../../shared/ipc'
+import type { ConfigureSyncParams, ConfigureSyncResult, DetectIdentityResult, GitIdentityState, GitNetworkConfig, ResolveConflictParams, ResolveConflictResult, ResolveFileParam, SaveIdentityResult, SaveNetworkResult, SyncConfig, SyncResult, SyncStatus, TestConnectionParams, TestConnectionResult } from '../../../shared/ipc'
 import { SYNC_ACCOUNTS_FILE, SYNC_GITIGNORE_FILE, SYNC_TEMPLATES_FILE } from '../../../shared/sync-files'
 import type { DrizzleDb } from '../../db/index'
 import { SYNC_BRANCH, type GitSync, type MergeStatus } from '../../core/git-sync'
 import { normalizeGitNetwork } from '../../core/git-network'
+import { describeIdentityError, fetchGitHubUser, resolveGitIdentity, validateManualIdentity } from '../../core/git-identity'
 import { mergeTrackedFiles, parseAccountsFile, parseTemplatesFile, type MergePlan, type MergedFile } from '../../core/merge-engine'
 import { refreshIndex } from '../../core/index-builder'
 import { commitStagedLedger, stageLedgerChecked } from '../../utils/ledger-writer'
 import { writeJsonChecked } from '../../utils/json-writer'
 import type { PythonSvc } from '../../core/python-svc'
 import type { IpcRegistrar } from '../ledger/ipc-handlers'
+import type { GitIdentityStore } from '../../stores/git-identity-store'
 import type { GitNetworkStore } from '../../stores/git-network-store'
 import type { SyncConfigStore, TokenStore } from '../../stores/token-store'
 import { withWriteLock } from '../../utils/write-lock'
@@ -41,9 +44,16 @@ export interface SyncDeps {
   config: SyncConfigStore
   /** M12 本机网络配置（代理 + 超时）——机器级，与工作目录无关 */
   network: GitNetworkStore
+  /** M13 提交人身份（手填机器级 + 识别缓存按工作目录隔离，见 stores/git-identity-store） */
+  identity: GitIdentityStore
   git: GitSync
   /** 可注入时间源（lastSyncAt 测试） */
   now?: () => number
+  /**
+   * M13 GitHub API 根（仅测试/E2E 注入回环假服务器用；缺省官方 api.github.com）。
+   * **绝不由渲染端控制**——否则等于给出一个「把 PAT 发到任意地址」的原语。
+   */
+  githubApiBaseUrl?: string
 }
 
 const GITHUB_REPO_URL_RE = /^https:\/\/github\.com\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+(\/[A-Za-z0-9._/-]*)?$/
@@ -138,6 +148,49 @@ async function testConnection(deps: SyncDeps, raw: unknown): Promise<TestConnect
   } catch (err) {
     return { ok: false, message: describeConnectionError(err, network) }
   }
+}
+
+/**
+ * M13 身份识别缓存的工作目录键来源——与 PAT 同域（token-store 的 workspaceStorageKey）。
+ * 识别缓存按工作目录隔离，绝不能让上一个账本的 GitHub 身份漏到新账本（会挂错提交人）。
+ */
+const workspaceDirOf = (deps: SyncDeps): string => (deps.ledgerPath === '' ? '' : dirname(deps.ledgerPath))
+
+/** 当前生效身份 + 存储原貌（`effective` 是推导值，渲染端只读展示；提交时主进程按同一函数求值） */
+function buildIdentityState(deps: SyncDeps): GitIdentityState {
+  const view = deps.identity.load(workspaceDirOf(deps))
+  return { ...view, effective: resolveGitIdentity(view.manual, view.detected) }
+}
+
+/**
+ * M13 识别 GitHub 身份并把结果缓存到该工作目录下。PAT 只在主进程（safeStorage）取用，不出主进程。
+ * 读配置 + 一次 HTTP，不做同步内容写入，故不进 writeLock / SYNCING（不该被进行中的 push/pull 挡住）。
+ */
+async function detectIdentity(deps: SyncDeps): Promise<DetectIdentityResult> {
+  const pat = deps.tokens.load()
+  if (!pat) return { ok: false, message: '尚未保存访问令牌（PAT），请先配置同步后再识别' }
+  const network = deps.network.load()
+  try {
+    const user = await fetchGitHubUser(pat, {
+      network,
+      ...(deps.githubApiBaseUrl === undefined ? {} : { baseUrl: deps.githubApiBaseUrl })
+    })
+    const at = new Date(deps.now ? deps.now() : Date.now()).toISOString()
+    deps.identity.saveDetected(workspaceDirOf(deps), { login: user.login, id: user.id, name: user.name, at })
+    return { ok: true, message: `已识别 GitHub 身份：${user.login}`, state: buildIdentityState(deps) }
+  } catch (err) {
+    return { ok: false, message: describeIdentityError(err, network) }
+  }
+}
+
+/**
+ * `sync:configure` 成功后顺带做一次 best-effort 识别（用户口径「没配置时就用二」→ 首次配置零额外操作）。
+ * **只在真 GitHub 远端上做**：单测/E2E 的远端都是回环地址，跳过可保证测试零外连、零拖慢。
+ * 在 writeLock **之外**调用——锁内做网络探测会把账本保存排队，且 SYNCING 期间会让渲染端误报
+ * 「同步进行中，请稍候」；失败静默，识别不成绝不能影响 configure 的结果。
+ */
+function detectIdentityInBackground(deps: SyncDeps): void {
+  void detectIdentity(deps).catch(() => undefined)
 }
 
 /** 同步互斥：push/pull/resolve/configure 任一进行中，其余触发即拒绝 */
@@ -283,6 +336,9 @@ export function registerSyncHandlers(ipc: IpcRegistrar, deps: SyncDeps): void {
   ipc.handle('sync:clear', (): { ok: boolean } => {
     deps.tokens.clear()
     deps.config.clear()
+    // M13：识别缓存是该目录 PAT 的派生物，PAT 一清就该一起清（否则提交仍挂着已撤销 PAT 换来的身份）。
+    // 手填的提交人是**机器级**设置，不随某个工作目录的同步配置一起清（弹窗里有说明）。
+    deps.identity.saveDetected(workspaceDirOf(deps), null)
     return { ok: true }
   })
 
@@ -303,8 +359,25 @@ export function registerSyncHandlers(ipc: IpcRegistrar, deps: SyncDeps): void {
   ipc.handle('sync:test-connection', (_event: unknown, raw: unknown): Promise<TestConnectionResult> =>
     testConnection(deps, raw))
 
-  ipc.handle('sync:configure', (_event: unknown, raw: unknown): Promise<ConfigureSyncResult> =>
-    withWriteLock(async () => {
+  // M13 提交人身份三通道。手填值机器级；识别缓存按工作目录隔离（见 stores/git-identity-store）。
+  // detect 不收任何参数——API 根只由主进程 deps 注入，防止渲染端把 PAT 指到任意地址。
+  ipc.handle('sync:get-identity', (): GitIdentityState => buildIdentityState(deps))
+
+  ipc.handle('sync:save-identity', (_event: unknown, raw: unknown): SaveIdentityResult => {
+    // 非法/半填不让保存（返回 ok:false 而非 reject——表单要就地回显，如「姓名与邮箱要一起填」）
+    try {
+      const manual = validateManualIdentity(raw)
+      deps.identity.saveManual(manual)
+      return { ok: true, state: buildIdentityState(deps) }
+    } catch (err) {
+      return { ok: false, error: String(err).replace(/^Error:\s*/, '') }
+    }
+  })
+
+  ipc.handle('sync:detect-identity', (): Promise<DetectIdentityResult> => detectIdentity(deps))
+
+  ipc.handle('sync:configure', async (_event: unknown, raw: unknown): Promise<ConfigureSyncResult> => {
+    const result = await withWriteLock(async (): Promise<ConfigureSyncResult> => {
       // 入参校验在 acquireSync/try 之外：非法入参 reject（与 add-entry/save-file 同约定），且不占用互斥
       const { repoUrl, pat } = validateConfigureParams(raw)
       acquireSync()
@@ -375,7 +448,13 @@ export function registerSyncHandlers(ipc: IpcRegistrar, deps: SyncDeps): void {
       } finally {
         SYNCING.current = false
       }
-    }))
+    })
+    // M13：首次配置顺带识别一次 GitHub 身份（best-effort、**锁外**、失败静默）。
+    // 只对**真 GitHub 远端**做——单测/E2E 的远端是回环地址，跳过保证测试零外连、零拖慢。
+    const repoUrl = deps.config.load()?.repoUrl ?? ''
+    if (result.ok && GITHUB_REPO_URL_RE.test(repoUrl)) detectIdentityInBackground(deps)
+    return result
+  })
 
   ipc.handle('sync:push', (): Promise<SyncResult> =>
     withWriteLock(async () => {

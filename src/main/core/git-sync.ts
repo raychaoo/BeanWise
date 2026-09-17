@@ -3,7 +3,8 @@
  *
  * 追踪文件集见 `shared/sync-files.ts`：账本 + 账户库 + Excel 导入模板 + 受托管 `.gitignore`；
  * `.beanwise/index.db`（可重建的索引缓存）与 `.beanwise/sync-config.json`（本机同步元数据）
- * 由托管块忽略，**永不提交**。分支固定 main、remote 固定 origin，远端操作带 30s 超时防悬挂。
+ * 由托管块忽略，**永不提交**。分支固定 main、remote 固定 origin，远端操作带 30s 超时防悬挂
+ * （M12 起可经 `network` 配代理与超时）；提交人身份经 `identity` 注入（M13，author == committer）。
  *
  * 与 brief 代码的 API 差异（isomorphic-git 1.41.3 实测）：
  * - fs 传 node:fs（`git.fs` 在 1.41.3 未导出）；
@@ -22,11 +23,12 @@ import { basename, dirname, join } from 'node:path'
 import git, { Errors, type AuthCallback, type AuthFailureCallback } from 'isomorphic-git'
 import type { HttpClient } from 'isomorphic-git/http/node'
 import { SYNC_GITIGNORE_BEGIN, SYNC_GITIGNORE_BLOCK, SYNC_GITIGNORE_FILE, SYNC_LEDGER_FILE, SYNC_TRACKED_FILES } from '../../shared/sync-files'
-import type { GitNetworkConfig } from '../../shared/ipc'
+import type { GitAuthor, GitNetworkConfig } from '../../shared/ipc'
 import { createGitHttp } from './git-network'
 import type { FileTriple } from './merge-engine'
 
-export const GIT_AUTHOR = { name: 'BeanWise', email: 'beanwise@local' }
+/** 兜底提交人（未手填、且识别不到 GitHub 身份时的 author/committer，见 ADR 30） */
+export const GIT_AUTHOR: GitAuthor = { name: 'BeanWise', email: 'beanwise@local' }
 export const SYNC_BRANCH = 'main'
 export const SYNC_REMOTE = 'origin'
 
@@ -55,6 +57,11 @@ export interface GitSyncOptions {
    * 缺省（测试/未注入）→ 直连 + timeoutMs。
    */
   network?: () => GitNetworkConfig | null
+  /**
+   * M13 提交人身份——**每次提交求值**（纯本地，绝不联网；见 core/git-identity）。
+   * 缺省（测试/未注入）→ 兜底 GIT_AUTHOR，行为与 M12 之前完全一致。
+   */
+  identity?: () => GitAuthor
 }
 
 export class GitSync {
@@ -64,6 +71,7 @@ export class GitSync {
   private readonly auth: AuthProvider
   private readonly timeoutMs: number
   private readonly network?: () => GitNetworkConfig | null
+  private readonly identity?: () => GitAuthor
   /** 包了代理注入的 http 插件（唯一注入面，见 core/git-network） */
   private readonly http: HttpClient
 
@@ -74,6 +82,7 @@ export class GitSync {
     this.auth = opts.auth ?? (() => ({ username: 'x-access-token', password: 'x-oauth-basic' }))
     this.timeoutMs = opts.timeoutMs ?? 30_000
     this.network = opts.network
+    this.identity = opts.identity
     this.http = createGitHttp(() => this.network?.() ?? null)
   }
 
@@ -157,7 +166,16 @@ export class GitSync {
    * （save: ...）不传 parent，保持单亲 [HEAD]。
    */
   async commit(message: string, parent?: string[]): Promise<string> {
-    return git.commit({ fs, dir: this.dir, message, author: GIT_AUTHOR, parent })
+    // 不传 committer：isomorphic-git 的 normalizeCommitterObject 优先级为
+    // git config ← author ← 显式 committer（index.cjs:6043-6063），故 author 即 committer。
+    // 身份求值兜底：配置读坏绝不能断掉同步（同 GitNetworkStore.load / createGitHttp 的原则）。
+    let author: GitAuthor = GIT_AUTHOR
+    try {
+      author = this.identity?.() ?? GIT_AUTHOR
+    } catch {
+      author = GIT_AUTHOR
+    }
+    return git.commit({ fs, dir: this.dir, message, author, parent })
   }
 
   async addRemote(url: string): Promise<void> {

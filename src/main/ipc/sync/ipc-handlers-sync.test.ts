@@ -10,11 +10,14 @@ import { SYNC_ACCOUNTS_FILE, SYNC_GITIGNORE_FILE } from '../../../shared/sync-fi
 import { getLedgerStatus } from '../../core/index-builder'
 import { registerSyncHandlers } from './ipc-handlers-sync'
 import type { IpcRegistrar } from '../ledger/ipc-handlers'
-import type { ConfigureSyncResult, GitNetworkConfig, SaveNetworkResult, SyncConfig, SyncResult, TestConnectionResult } from '../../../shared/ipc'
+import type { ConfigureSyncResult, DetectedGitIdentity, GitIdentityManual, GitIdentityState, GitNetworkConfig, SaveIdentityResult, SaveNetworkResult, SyncConfig, SyncResult, TestConnectionResult } from '../../../shared/ipc'
 import { PythonSvc } from '../../core/python-svc'
 import { normalizeGitNetwork } from '../../core/git-network'
+import { resolveGitIdentity } from '../../core/git-identity'
 import type { GitNetworkStore } from '../../stores/git-network-store'
+import type { GitIdentityStore } from '../../stores/git-identity-store'
 import type { SyncConfigStore, TokenStore } from '../../stores/token-store'
+import { FAKE_GITHUB_USER, startFakeGitHub, type FakeGitHub } from '../../utils/test-servers/fake-github-server'
 import git from 'isomorphic-git'
 import http from 'isomorphic-git/http/node'
 
@@ -44,6 +47,21 @@ class InMemoryNetworkStore implements GitNetworkStore {
   load() { return this.cfg }
   save(c: GitNetworkConfig) { this.cfg = normalizeGitNetwork(c) }
 }
+/** 内存 GitIdentityStore（M13；CI 无 electron-store）。手填值机器级 + 识别缓存按工作目录键隔离，
+ *  与 ElectronGitIdentityStore 同语义（store 侧用 resolve().toLowerCase()） */
+class InMemoryIdentityStore implements GitIdentityStore {
+  private manual: GitIdentityManual | null = null
+  private readonly detected = new Map<string, DetectedGitIdentity>()
+  private keyOf(workspaceDir: string) { return resolve(workspaceDir).toLowerCase() }
+  load(workspaceDir: string) {
+    return { manual: this.manual, detected: this.detected.get(this.keyOf(workspaceDir)) ?? null }
+  }
+  saveManual(manual: GitIdentityManual | null) { this.manual = manual }
+  saveDetected(workspaceDir: string, detected: DetectedGitIdentity | null) {
+    if (detected === null) this.detected.delete(this.keyOf(workspaceDir))
+    else this.detected.set(this.keyOf(workspaceDir), detected)
+  }
+}
 
 describe('sync handlers（M6）', () => {
   let db: ReturnType<typeof createDrizzle>
@@ -61,23 +79,33 @@ describe('sync handlers（M6）', () => {
     return server.url
   }
 
-  async function setup(opts: { seed?: string; withLocal?: boolean } = {}): Promise<{ tokens: TokenStore; config: SyncConfigStore; network: InMemoryNetworkStore }> {
+  async function setup(opts: { seed?: string; withLocal?: boolean; githubApiBaseUrl?: string } = {}): Promise<{ tokens: TokenStore; config: SyncConfigStore; network: InMemoryNetworkStore; identity: InMemoryIdentityStore }> {
     workDir = mkdtempSync(join(tmpdir(), 'beanwise-synch-'))
     ledgerPath = join(workDir, 'main.beancount')
     if (opts.withLocal !== false) copyFileSync(FIXTURE, ledgerPath)
     const tokens: TokenStore = new InMemoryTokenStore()
     const config: SyncConfigStore = new InMemoryConfigStore()
     const network = new InMemoryNetworkStore()
+    const identity = new InMemoryIdentityStore()
+    const identityOf = () => {
+      const view = identity.load(workDir)
+      return resolveGitIdentity(view.manual, view.detected)
+    }
     const gitSync = new GitSync({
       ledgerPath,
       auth: () => ({ username: 'x-access-token', password: tokens.load() ?? '' }),
-      network: () => network.load()
+      network: () => network.load(),
+      identity: identityOf
     })
     const ipc: IpcRegistrar = { handle: (c, l) => { handlers[c] = l as (...args: unknown[]) => unknown } }
     handlers = {}
-    registerSyncHandlers(ipc, { db, engine, ledgerPath, tokens, config, network, git: gitSync, now: () => FIXED_NOW })
+    registerSyncHandlers(ipc, {
+      db, engine, ledgerPath, tokens, config, network, identity, git: gitSync,
+      now: () => FIXED_NOW,
+      ...(opts.githubApiBaseUrl === undefined ? {} : { githubApiBaseUrl: opts.githubApiBaseUrl })
+    })
     if (opts.seed) await seedRemote(server!.url, opts.seed)
-    return { tokens, config, network }
+    return { tokens, config, network, identity }
   }
 
   afterEach(async () => {
@@ -531,5 +559,133 @@ describe('sync handlers（M6）', () => {
     const r = await handlers['sync:test-connection']({}, { repoUrl: 'https://github.com/beanwise/test' }) as TestConnectionResult
     expect(r.ok).toBe(false)
     expect(r.message).toContain('http://127.0.0.1:1')
+  }, 30_000)
+
+  // ==================== M13：提交人身份 ====================
+
+  it('M13 sync:get-identity：默认 = 内置兜底（未手填、未识别）', async () => {
+    await setup()
+    expect(await handlers['sync:get-identity']()).toEqual({
+      manual: null,
+      detected: null,
+      effective: { name: 'BeanWise', email: 'beanwise@local', source: 'default' }
+    })
+  })
+
+  it('M13 sync:save-identity：合法 → 落库且生效值变手填；非法/半填 → ok:false 且不落库', async () => {
+    const { identity } = await setup()
+    const ok = await handlers['sync:save-identity']({}, { name: 'Zhang San', email: 'zhang@example.com' }) as SaveIdentityResult
+    expect(ok.ok).toBe(true)
+    expect(ok.state?.manual).toEqual({ name: 'Zhang San', email: 'zhang@example.com' })
+    expect(ok.state?.effective).toEqual({ name: 'Zhang San', email: 'zhang@example.com', source: 'manual' })
+    expect(identity.load(workDir).manual).toEqual({ name: 'Zhang San', email: 'zhang@example.com' })
+
+    const half = await handlers['sync:save-identity']({}, { name: 'Li Si', email: '' }) as SaveIdentityResult
+    expect(half.ok).toBe(false)
+    expect(half.error).toContain('一起填')
+    // 半填被拒后手填值不变（否则会静默清掉用户已保存的身份）
+    expect(identity.load(workDir).manual).toEqual({ name: 'Zhang San', email: 'zhang@example.com' })
+
+    const injected = await handlers['sync:save-identity']({}, { name: 'Li Si', email: 'a@b.c\ncommitter Evil <x> 1 +0000' }) as SaveIdentityResult
+    expect(injected.ok).toBe(false)
+    expect(injected.error).toContain('不能包含换行')
+  }, 30_000)
+
+  it('M13 sync:save-identity 两个都留空 → 清空手填值，回落自动识别/兜底', async () => {
+    const { identity } = await setup()
+    await handlers['sync:save-identity']({}, { name: 'Zhang San', email: 'zhang@example.com' })
+    const cleared = await handlers['sync:save-identity']({}, { name: null, email: null }) as SaveIdentityResult
+    expect(cleared.ok).toBe(true)
+    expect(cleared.state?.manual).toBeNull()
+    expect(cleared.state?.effective.source).toBe('default')
+    expect(identity.load(workDir).manual).toBeNull()
+  })
+
+  it('M13 sync:detect-identity：未保存 PAT → ok:false（不触网）', async () => {
+    await setup({ githubApiBaseUrl: 'http://127.0.0.1:1' })
+    const r = await handlers['sync:detect-identity']() as { ok: boolean; message: string }
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('PAT')
+  })
+
+  it('M13 sync:detect-identity：识别成功 → 生效值变 GitHub 身份（noreply 邮箱），凭据与 UA 正确', async () => {
+    const fakeApi: FakeGitHub = await startFakeGitHub()
+    try {
+      const { tokens, identity } = await setup({ githubApiBaseUrl: fakeApi.url })
+      tokens.save('ghp_test')
+
+      const r = await handlers['sync:detect-identity']() as { ok: boolean; message: string; state: GitIdentityState }
+      expect(r.ok).toBe(true)
+      expect(r.state.effective).toEqual({
+        name: FAKE_GITHUB_USER.name,
+        email: `42+koko@users.noreply.github.com`,
+        source: 'pat'
+      })
+      expect(r.state.detected).toEqual({ login: 'koko', id: 42, name: 'Koko Zhang', at: new Date(FIXED_NOW).toISOString() })
+      // 识别缓存落在**本工作目录**键下，且请求带着 PAT 与必需 UA
+      expect(identity.load(workDir).detected?.login).toBe('koko')
+      expect(identity.load(join(workDir, '..', 'some-other-ledger')).detected).toBeNull()
+      expect(fakeApi.requests[0]?.authorization).toBe('Bearer ghp_test')
+      expect(fakeApi.requests[0]?.userAgent).toBe('BeanWise')
+    } finally {
+      await fakeApi.close()
+    }
+  }, 30_000)
+
+  it('M13 手填优先于识别结果；保存手填值不清掉识别缓存', async () => {
+    const fakeApi = await startFakeGitHub()
+    try {
+      const { tokens, identity } = await setup({ githubApiBaseUrl: fakeApi.url })
+      tokens.save('ghp_test')
+      await handlers['sync:detect-identity']()
+
+      const saved = await handlers['sync:save-identity']({}, { name: 'Zhang San', email: 'zhang@example.com' }) as SaveIdentityResult
+      expect(saved.state?.effective.source).toBe('manual')
+      // 保存手填值不得清掉识别缓存（两个半边各写各的）
+      expect(identity.load(workDir).detected?.login).toBe('koko')
+
+      const cleared = await handlers['sync:save-identity']({}, { name: null, email: null }) as SaveIdentityResult
+      expect(cleared.state?.effective.source).toBe('pat')
+    } finally {
+      await fakeApi.close()
+    }
+  }, 30_000)
+
+  it('M13 识别失败（GitHub 401）→ ok:false + 诊断文案，且不写入识别缓存', async () => {
+    const fakeApi = await startFakeGitHub({ status: 401, body: '{"message":"Bad credentials"}' })
+    try {
+      const { tokens, identity } = await setup({ githubApiBaseUrl: fakeApi.url })
+      tokens.save('ghp_bad')
+      const r = await handlers['sync:detect-identity']() as { ok: boolean; message: string }
+      expect(r.ok).toBe(false)
+      expect(r.message).toContain('认证失败')
+      expect(identity.load(workDir).detected).toBeNull()
+    } finally {
+      await fakeApi.close()
+    }
+  }, 30_000)
+
+  it('M13 configure 尾随识别：回环仓库地址不触发（保证单测/E2E 零外连零拖慢）', async () => {
+    const url = await newRepo()
+    const { identity } = await setup({ githubApiBaseUrl: 'http://127.0.0.1:1' })
+    expect(await handlers['sync:configure']({}, { repoUrl: url, pat: 'test-pat' })).toMatchObject({ ok: true })
+    expect(identity.load(workDir).detected).toBeNull()
+  }, 60_000)
+
+  it('M13 sync:clear：清掉本工作目录的识别缓存，保留机器级手填值', async () => {
+    const fakeApi = await startFakeGitHub()
+    try {
+      const { tokens, identity } = await setup({ githubApiBaseUrl: fakeApi.url })
+      tokens.save('ghp_test')
+      await handlers['sync:detect-identity']()
+      await handlers['sync:save-identity']({}, { name: 'Zhang San', email: 'zhang@example.com' })
+
+      expect(await handlers['sync:clear']()).toEqual({ ok: true })
+      // 识别缓存是该目录 PAT 的派生物 → 一起清；手填值是机器级设置 → 保留
+      expect(identity.load(workDir).detected).toBeNull()
+      expect(identity.load(workDir).manual).toEqual({ name: 'Zhang San', email: 'zhang@example.com' })
+    } finally {
+      await fakeApi.close()
+    }
   }, 30_000)
 })

@@ -4,8 +4,8 @@
  */
 import Store from 'electron-store'
 import { safeStorage } from 'electron'
-import { resolve } from 'node:path'
 import type { SyncConfig } from '../../shared/ipc'
+import { workspaceStorageKey } from '../utils/workspace-key'
 
 export interface TokenStore {
   load(): string | null
@@ -17,11 +17,6 @@ export interface SyncConfigStore {
   load(): SyncConfig | null
   save(config: SyncConfig): void
   clear(): void
-}
-
-/** Windows 盘符大小写和路径分隔符不影响同一个目录的标识 */
-function workspaceStorageKey(workspaceDir: string): string {
-  return resolve(workspaceDir).toLowerCase()
 }
 
 /** 按工作目录隔离的 PAT。密文仍在 userData，避免把凭据文件放进账本仓库。 */

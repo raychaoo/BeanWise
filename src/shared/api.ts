@@ -19,6 +19,10 @@ import type {
   ExcelTemplateSaveResult,
   GetEntryParams,
   GitNetworkConfig,
+  DetectIdentityResult,
+  GitIdentityState,
+  SaveIdentityParams,
+  SaveIdentityResult,
   GetEntryResult,
   AccountsResult,
   SaveAccountsParams,
@@ -138,6 +142,12 @@ export interface BeanWiseApi {
   saveGitNetwork(params: GitNetworkConfig): Promise<SaveNetworkResult>
   /** 连接测试：按已保存网络配置对仓库做一次真实 git 握手（验证代理/网络/地址/PAT） */
   testSyncConnection(params: TestConnectionParams): Promise<TestConnectionResult>
+  /** 读提交人身份（手填值 + 该工作目录的自动识别缓存 + 推导出的生效值） */
+  getGitIdentity(): Promise<GitIdentityState>
+  /** 保存手填提交人（两个都填才生效；都留空 = 清空手填值 → 回落自动识别/兜底） */
+  saveGitIdentity(params: SaveIdentityParams): Promise<SaveIdentityResult>
+  /** 用本工作目录的 PAT 识别 GitHub 身份并缓存（不收参数——API 根只由主进程注入） */
+  detectGitIdentity(): Promise<DetectIdentityResult>
   /** AI 配置状态（不含 Key——渲染端永不接触密钥） */
   getAiStatus(): Promise<AiStatus>
   /** 配置 DeepSeek API Key（safeStorage 加密，仅主进程持有） */

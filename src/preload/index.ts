@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { APP_NAME } from '../shared/app'
 import type { BeanWiseApi } from '../shared/api'
 import { UPDATE_STATUS_CHANNEL } from '../shared/ipc'
-import type { AddEntryParams, AiParseParams, ConfigureSyncParams, ExcelImportParams, ExcelImportTemplate, ExcelParseParams, ExcelPreviewParams, GetEntryParams, GitNetworkConfig, ListEntriesParams, ReportBalancesParams, ReportBreakdownParams, ReportCashFlowParams, ReportCounterpartyLedgerResult, ReportCounterpartyTransactionsParams, ReportCounterpartyTransactionsResult, ReportIncomeExpenseParams, ReportNetWorthParams, ReportTrialBalanceParams, ReportYearsResult, ResolveConflictParams, SaveAccountsParams, SaveAiConfigParams, SaveFileParams, TestConnectionParams, UpdateEntryParams, UpdateState } from '../shared/ipc'
+import type { AddEntryParams, AiParseParams, ConfigureSyncParams, DetectIdentityResult, ExcelImportParams, ExcelImportTemplate, ExcelParseParams, ExcelPreviewParams, GetEntryParams, GitIdentityState, GitNetworkConfig, ListEntriesParams, ReportBalancesParams, ReportBreakdownParams, ReportCashFlowParams, ReportCounterpartyLedgerResult, ReportCounterpartyTransactionsParams, ReportCounterpartyTransactionsResult, ReportIncomeExpenseParams, ReportNetWorthParams, ReportTrialBalanceParams, ReportYearsResult, ResolveConflictParams, SaveAccountsParams, SaveAiConfigParams, SaveFileParams, SaveIdentityParams, SaveIdentityResult, TestConnectionParams, UpdateEntryParams, UpdateState } from '../shared/ipc'
 
 const api: BeanWiseApi = {
   appName: APP_NAME,
@@ -42,6 +42,10 @@ const api: BeanWiseApi = {
   getGitNetwork: (): Promise<GitNetworkConfig> => ipcRenderer.invoke('sync:get-network'),
   saveGitNetwork: (params: GitNetworkConfig) => ipcRenderer.invoke('sync:save-network', params),
   testSyncConnection: (params: TestConnectionParams) => ipcRenderer.invoke('sync:test-connection', params),
+  getGitIdentity: (): Promise<GitIdentityState> => ipcRenderer.invoke('sync:get-identity'),
+  saveGitIdentity: (params: SaveIdentityParams): Promise<SaveIdentityResult> =>
+    ipcRenderer.invoke('sync:save-identity', params),
+  detectGitIdentity: (): Promise<DetectIdentityResult> => ipcRenderer.invoke('sync:detect-identity'),
   getAiStatus: () => ipcRenderer.invoke('ai:get-status'),
   saveAiConfig: (params: SaveAiConfigParams) => ipcRenderer.invoke('ai:save-config', params),
   clearAiConfig: () => ipcRenderer.invoke('ai:clear-config'),
