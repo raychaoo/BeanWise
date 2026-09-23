@@ -40,7 +40,17 @@ export async function stageLedgerChecked(
   const tmpPath = `${deps.ledgerPath}.tmp`
   rmSync(tmpPath, { force: true }) // 清理崩溃残留（best-effort）
   writeFileSync(tmpPath, content, 'utf8')
-  const parsed = await deps.engine.parseEntries(tmpPath)
+  let parsed: Awaited<ReturnType<PythonSvc['parseEntries']>>
+  try {
+    parsed = await deps.engine.parseEntries(tmpPath)
+  } catch (err) {
+    // 引擎 RPC 失败时 parseEntries 是 **throw**（进程缺失 ENOENT / 方法不存在 -32601 / 超时），
+    // 不像账本校验错误那样返回 errors。这里不删，tmp 就永久留在账本目录——M14 实测踩到过：
+    // 一条 2.4MB 的 main.beancount.tmp 躺了两天（.gitignore 里有 *.beancount.tmp，所以同步不受影响）。
+    // 下一行那只在文件开头 best-effort 的 rmSync 才是自愈点，但它要等到**下一次成功保存**。
+    rmSync(tmpPath, { force: true })
+    throw err
+  }
   if (parsed.errors.length > 0) {
     rmSync(tmpPath, { force: true })
     return { ok: false, message: parsed.errors.map((e) => e.message).join('; ') }
