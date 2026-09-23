@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
-    "dist:win": "npm run build && electron-builder --win",
+    "dist:win": "npm run build:python && npm run build && electron-builder --win && node scripts/verify-dist.mjs",
     "build:python": "node scripts/build-python.mjs",
     "postinstall": "node scripts/postinstall.mjs"
   },

@@ -9,9 +9,13 @@ asarUnpack:
   - "**/node_modules/better-sqlite3/**"
 npmRebuild: false  # better-sqlite3 13.x 带 in-tarball N-API prebuild（Electron 43 验证加载），无需编译
 extraResources:
-  # M2：PyInstaller 产物打入安装包（resources/python/beancount-engine.exe，M3 PythonSvc 定位点）
+  # M2：PyInstaller 产物打入安装包（resources/python/beancount-engine.exe，M3 PythonSvc 定位点）；
+  # M14 修复：from 是**文件**时 `to` 被当作目的**文件名**——app-builder-lib/fileMatcher.copyFiles 先
+  # ensureNoEndSlash 削掉尾斜杠，只有 `to` 已存在且是目录才会追加 basename，否则直接拷成该路径。
+  # 故 `to: python/` 产出的是名为 `python` 的**文件**（13MB），主进程找
+  # resources/python/beancount-engine.exe 必 ENOENT。目录形式对**单文件源**无效，必须写全文件名。
   - from: dist-python/beancount-engine.exe
-    to: python/
+    to: python/beancount-engine.exe
 publish:
   provider: github    # electron-updater 从 GitHub Releases 读 latest.yml
   owner: raychaoo
