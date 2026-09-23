@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react'
 import type { CashFlowPoint, ReportGranularity } from '../../../../shared/ipc'
 import { useReportsStore } from '../../stores/reports'
 import { formatAmount } from '../../utils/format'
+import { INTERNAL_TRANSFER_NOTE } from '../../utils/internalTransfer'
 
 const GRANULARITY_OPTIONS: Array<{ label: string; value: ReportGranularity }> = [
   { label: '日', value: 'day' },
@@ -111,7 +112,7 @@ export default function CashFlowTable() {
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="口径：Assets 组全部账户视为资金池（个人记账语境假设），池内互转不计，按运营货币计"
+        message={`口径：Assets 组全部账户视为资金池（个人记账语境假设），池内互转不计，按运营货币计 · ${INTERNAL_TRANSFER_NOTE}`}
       />
       {error && <Alert type="error" showIcon style={{ marginBottom: 12 }} message={error} />}
       <Spin spinning={loading}>

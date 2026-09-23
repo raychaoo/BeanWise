@@ -88,6 +88,13 @@ body,
   background: var(--bw-ink-neutral-soft);
 }
 
+// 口径小字（口径单源见 src/renderer/src/utils/internalTransfer.ts）：报表卡底表注 / 指标卡脚注。
+// 必须 block：Typography.Text 渲染成 inline span，垂直方向的 margin 无效、撑不开间距。
+.note-secondary {
+  display: block;
+  margin-top: 8px;
+}
+
 // 主内容区滚动条（细圆角，跟随主题）
 .page-scroll {
   &::-webkit-scrollbar {

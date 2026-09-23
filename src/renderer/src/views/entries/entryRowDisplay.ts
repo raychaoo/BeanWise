@@ -42,7 +42,7 @@ export const TX_KIND_META: Record<TxKind, TxKindMeta> = {
   lend: { label: '借出', tone: 'lend', hint: '资金转入往来类账户，形成对对方的应收——不是支出' },
   borrow: { label: '借入', tone: 'lend', hint: '资金从往来类负债账户流入，形成对对方的应付——不是收入' },
   recover: { label: '收回', tone: 'lend', hint: '对方还款，往来类账户的应收减少' },
-  repay: { label: '还款', tone: 'lend', hint: '偿还往来类负债账户，应付减少' },
+  repay: { label: '还款', tone: 'lend', hint: '偿还往来类负债账户，应付减少——不是支出' },
   transfer: { label: '转账', tone: 'neutral', hint: '账户间搬移，不产生损益、不改变债权债务' },
   equity: { label: '权益', tone: 'neutral', hint: '权益调整（含期初余额），不产生损益' }
 }

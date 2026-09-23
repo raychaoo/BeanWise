@@ -19,6 +19,7 @@ import { useLedgerStore } from '../../stores/ledger'
 import { useReportsStore } from '../../stores/reports'
 import { useThemeContext } from '../../theme/ThemeProvider'
 import { formatAmount } from '../../utils/format'
+import { INTERNAL_TRANSFER_NOTE, NET_SURPLUS_FORMULA } from '../../utils/internalTransfer'
 import BalanceSheetTable from './BalanceSheetTable'
 import CashFlowTable from './CashFlowTable'
 import CounterpartyLedgerTable from './CounterpartyLedgerTable'
@@ -331,6 +332,16 @@ function TrendPane() {
                     { title: '累计', dataIndex: 'cumulative', align: 'right', render: (_dom, row) => <span className={`num ${row.cumulative.startsWith('-') ? 'num-negative' : ''}`}>{formatAmount(row.cumulative)}</span> }
                   ]}
                 />
+              )}
+              {/*
+                * 口径单源（utils/internalTransfer）：净结余的两条关键信息——公式、以及还款/借入等
+                * 账内搬移不参与。放卡底表注而非 SummaryPill.hint：@media print 隐藏 .summary-pill-row
+                * （reports.less:130），放芯片里会随导出 PDF 一起丢。
+                */}
+              {incomeSummary && (
+                <Typography.Text type="secondary" className="note-secondary">
+                  {NET_SURPLUS_FORMULA} · {INTERNAL_TRANSFER_NOTE}
+                </Typography.Text>
               )}
             </Card>
           </div>

@@ -15,6 +15,7 @@ import type { AccountBalance, IncomeExpensePoint } from '../../../../shared/ipc'
 import { useLedgerStore } from '../../stores/ledger'
 import { useReportsStore } from '../../stores/reports'
 import { formatAmount } from '../../utils/format'
+import { INTERNAL_TRANSFER_NOTE } from '../../utils/internalTransfer'
 import { buildIncomeStatementRows, flattenLeaves, type StatementRow } from './statement'
 import '../../styles/views/reports.less'
 
@@ -98,6 +99,12 @@ export default function IncomeStatementTable() {
         <Typography.Text type="secondary">
           本月口径：自然月 · 明细口径：截至 {year} 年末累计 · 单位：{currency}（运营货币）
         </Typography.Text>
+        {/*
+          * 口径单源（utils/internalTransfer）。作兄弟节点而非并入上一句：.report-sheet__head 是
+          * flex + gap:16px + wrap（reports.less:44-50），单个 flex item 会在自己内部按 CJK 断行、
+          * 把上面那句从中间劈开；兄弟节点则整块折到第二行，行距由 gap 提供（故不加 .note-secondary）。
+          */}
+        <Typography.Text type="secondary">{INTERNAL_TRANSFER_NOTE}</Typography.Text>
       </div>
       {error && <Alert type="error" showIcon style={{ marginBottom: 16 }} message={error} />}
       <Spin spinning={loading}>

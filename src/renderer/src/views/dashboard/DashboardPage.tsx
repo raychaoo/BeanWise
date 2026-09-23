@@ -21,6 +21,7 @@ import { useLedgerStore } from '../../stores/ledger'
 import { useSemanticColors } from '../../theme/useSemanticColors'
 import { useThemeContext } from '../../theme/ThemeProvider'
 import { formatAmount } from '../../utils/format'
+import { INTERNAL_TRANSFER_NOTE, NET_SURPLUS_FORMULA } from '../../utils/internalTransfer'
 import { addDecimalStrings, negateDecimal } from '../../../../shared/decimal'
 import type { IncomeExpensePoint, NetWorthPoint } from '../../../../shared/ipc'
 import '../../styles/views/dashboard.less'
@@ -220,6 +221,17 @@ export default function DashboardPage() {
           {otherCurrencies.map((c) => `${formatAmount(c.number)} ${c.currency}`).join(' / ')}
         </Typography.Text>
       )}
+
+      {/*
+        * 口径单源（utils/internalTransfer）。放指标行下方而非「本月收支」卡内：该卡列宽仅 ~254px，
+        * 19 字小字在 14px 下需 ~266px，必然折成两行、把第 4 张卡撑高 52px，底边与其他三张错开
+        * （ui-ux-pro-max `compact-label-overflow`：不要让紧凑标签折到第二行）。行级小字有整行
+        * 宽度、绝不折行，卡片高度也就保持一致。「本月口径：」点名主体，避免被读成为上排
+        * 总资产/总负债也作限定（还款确实会改变这两个数）。
+        */}
+      <Typography.Text type="secondary" className="note-secondary">
+        本月口径：{NET_SURPLUS_FORMULA} · {INTERNAL_TRANSFER_NOTE}
+      </Typography.Text>
 
       {/* 第二行：收支对比 + 现金流量 */}
       <Row gutter={[16, 16]} className="dashboard-charts">
