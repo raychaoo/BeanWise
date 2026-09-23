@@ -65,7 +65,13 @@ export class PythonSvc {
       this.retryTimer = null
     }
     const [cmd, ...args] = this.options.command
-    const proc = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'inherit'] })
+    // windowsHide 必须显式打开：引擎是 **console 子系统**可执行文件（service.spec `console=True`——
+    // stdio 服务不能 windowed），而 Electron 是 GUI 子系统、**没有控制台**。Windows 在「无控制台的父进程
+    // 创建 console 子进程」时会**新分配一个控制台窗口**（黑窗口），且引擎是常驻进程 → 窗口不会闪一下就没了，
+    // 而是整场会话挂着。windowsHide 走 CREATE_NO_WINDOW：控制台照旧分配（stderr 等句柄仍有效），只是不显窗口。
+    // dev 下不复现的原因：`npm run dev` 的 Electron 继承终端的控制台，子进程直接挂上去，不新建窗口——
+    // 与 extraResources 那类坑一样，只有从资源管理器启动的安装版才暴露。
+    const proc = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true })
     this.proc = proc
     proc.stdin?.on('error', () => {}) // 进程提前退出时忽略管道错误
     proc.stdout?.on('error', () => {})
